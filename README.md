@@ -1,4 +1,4 @@
-# dekui
+# DekUI
 
 This is a mod to make Majora's Mask 3D fully functional on one screen. In fact, the bottom screen isn't even accessible.
 
@@ -11,20 +11,25 @@ A custom fork of Azahar is used as the backing engine.
 ## Features
 
 - Gear, Masks, Items, and Map accessible all through one screen with item models and descriptions preserved
+- 60fps interpolation with CPU (default) and GPU options; select Original in Graphics for 30fps
 - Full Bomber's Notebook functionality on one screen
 - Song menu, song of double time, and give item menus accessible on one screen
 - File select and options on one screen
 - On-screen minimap (hold ZR and press SELECT to hide or show it)
 - Project Restoration features (https://restoration.zora.re/)
+- New toggleable restoration features (classic saving, classic owl statue behavior, classic Song of Double Time, stop Bombers from running up to you)
+  - Classic Saving allows saving at owl statues, but not feather statues. Saving returns to the title screen only when a save from a Song of Time reset already exists.
 - Redesigned HUD elements (smaller and wider textboxes, thicker magic bar) meant to emulate a console-like experience
 - HUD scaling, positioning, spacing, and visibility controls
-- Difficulty options (damage multiplier, adjustable red potion, blue potion, and bottled fairy healing, no heart, rupee, fairy, or magic drops, disabled ammo pickups, rupee loss or moon crash on death, and doubled purchase prices)
+- Difficulty options (damage multiplier, adjustable red potion, blue potion, and bottled fairy healing, no heart, rupee, fairy, or magic drops, disabled ammo pickups, rupee loss or moon crash on death, and 2×/3× purchase prices)
+- A 60 Hz display and 1× draw distances are recommended for interpolation
 - Widescreen, increased FOV, and slider to adjust camera distance
 - References in text to the bottom screen and other 3DS specific features have been replaced with any new controls for a more console-like experience
 - Correct rupee sounds for HLE audio (for the first time through a 3DS emulator!)
 - Pause menu background image adapts to resolution (3DS/emulators default to 240p)
 - Correct bloom lighting at higher resolutions
 - Custom texture support
+- French and Spanish support with translations for custom button prompts and new dialogue
 - Many other minor changes in camera and HUD elements
 
 ## Screenshots
@@ -54,13 +59,9 @@ A custom fork of Azahar is used as the backing engine.
 
 ## Planned features
 
-- Android/MacOS support
-- Ultrawide/4:3 support
-- More difficulty options
-- Toggleable restoration features
-- Randomizer support
-- Graphical enhancements
-- 60fps
+- Android support
+- Graphical enhancements (depth of field, ambient occlusion)
+- Further improvements to 60fps interpolation (the aim is perfection)
 - Further UI polishing/redesign and bug fixing
 
 ## Getting started
@@ -71,6 +72,24 @@ A custom fork of Azahar is used as the backing engine.
 
 **Press F1 to open settings and adjust camera zoom, HUD layout, controls, audio, graphics, and difficulty.**
 
+
+## Updating
+
+1. Close DekUI and back up your entire `user` folder.
+2. Extract the complete new release into a separate writable folder.
+3. Copy your existing `user` folder and game file beside the new application.
+4. Launch the new version.
+
+Saves, HUD settings, graphics preferences, custom textures, and unrelated mods are preserved. On first launch, recognized older menu layouts update automatically with backups; customized layouts are kept.
+
+If the upgrade fails or is interrupted, the game will not open; relaunch to retry. Resource backups are retained under `user/setup/resource-upgrade-backup-*` after success, or `user/setup/resource-upgrade-pending/backup` while an upgrade is pending. Do not delete your `user` folder or these backups to troubleshoot.
+
+## Reporting issues
+
+Found a bug or crash? Please report it at:
+https://github.com/tgacquin/mm3d-dekui/issues
+
+Include your version, operating system, and steps to reproduce the issue.
 
 ## Note about this project
 
