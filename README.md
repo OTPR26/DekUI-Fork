@@ -84,6 +84,19 @@ Saves, HUD settings, graphics preferences, custom textures, and unrelated mods a
 
 If the upgrade fails or is interrupted, the game will not open; relaunch to retry. Resource backups are retained under `user/setup/resource-upgrade-backup-*` after success, or `user/setup/resource-upgrade-pending/backup` while an upgrade is pending. Do not delete your `user` folder or these backups to troubleshoot.
 
+## Troubleshooting
+
+### Mac can't detect file
+
+Try this:
+
+1. Close DekUI and open Terminal.
+2. Type xattr -dr com.apple.quarantine , including the trailing space.
+3. Drag Dekui.app into Terminal, then press Return.
+4. Reopen DekUI.
+
+Dragging it into the terminal will give the full path of it. It should work from there on out.
+
 ## Reporting issues
 
 Found a bug or crash? Please report it at:
