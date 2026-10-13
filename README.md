@@ -86,8 +86,7 @@ If the upgrade fails or is interrupted, the game will not open; relaunch to retr
 
 ## Troubleshooting
 
-### Mac can't detect file
-
+### My Mac won't detect .3ds or .cci file
 Try this:
 
 1. Close DekUI and open Terminal.
