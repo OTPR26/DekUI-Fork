@@ -1,0 +1,122 @@
+{
+  "rewrites": {
+    "3528": {
+      "¿Cuánto quieres ": "Coste: {factor} veces tu ",
+      "apostar": "apuesta",
+      "?": ".",
+      "Escoge la cantidad con ": "Elige con "
+    },
+    "0656": {
+      "Saco de bombas grande:": "Saco grande:"
+    },
+    "066f": {
+      "Entonces, ¿quieres comprar un": "¿Quieres comprar un",
+      "barril de pólvora ": "barril de pólvora",
+      "por ": " a "
+    },
+    "0773": {
+      "Bueno... Para ti son solo ": "Para ti son "
+    }
+  },
+  "shorten": {
+    "0654": {
+      "Este saco para transportar": "Un saco para transportar"
+    },
+    "0678": {
+      "Esta puede ser tu última": "Puede ser tu última"
+    },
+    "0679": {
+      "te vendo uno por ": "lo vendo por "
+    },
+    "067a": {
+      "te vendo uno por ": "lo vendo por "
+    },
+    "06b6": {
+      "su salud! Podrá llevarla en": "su salud! Llévela en"
+    },
+    "06d3": {
+      "Creo que te ayuda o algo así.": "Creo que te ayuda."
+    },
+    "0843": {
+      "¡Está preparada para curarlo todo!": "¡Preparada para curarlo todo!"
+    },
+    "085b": {
+      "Descuento para grupos": "Descuento a grupos"
+    },
+    "085d": {
+      "¿Solo un billete? Entonces el precio": "¿Un billete? El precio"
+    },
+    "0880": {
+      "agotada. Lo siento.": "agotada. Perdón."
+    },
+    "0bc9": {
+      "Es un poco cara, pero merece ": "Es cara, pero merece "
+    },
+    "0bcf": {
+      "Cuando estés bajo de salud,": "Si estás bajo de salud,"
+    },
+    "12df": {
+      "Bébela para restablecer tu salud": "Bébela para recuperar salud"
+    },
+    "29f4": {
+      "A este precio, debe de ser robada.": "A este precio, será robada."
+    },
+    "59d8": {
+      "¿Quieres pescar un rato?": "¿Quieres pescar?"
+    },
+    "59da": {
+      "Muy bien, entonces son ": "Entonces son "
+    },
+    "0655": {
+      "No, gracias": "No"
+    },
+    "0657": {
+      "No, gracias": "No"
+    },
+    "06b7": {
+      "No, gracias": "No"
+    },
+    "06d4": {
+      "No, gracias": "No"
+    },
+    "0844": {
+      "No, gracias": "No"
+    },
+    "0bca": {
+      "No, gracias": "No"
+    },
+    "0bd0": {
+      "No, gracias": "No"
+    },
+    "12e0": {
+      "No, gracias": "No"
+    },
+    "29f5": {
+      "No, gracias": "No"
+    },
+    "3466": {
+      "No, gracias": "No"
+    },
+    "3490": {
+      "No, gracias": "No"
+    },
+    "0652": {
+      "son muy prácticas, lustrosas y": "son prácticas, lustrosas y"
+    },
+    "0653": {
+      "No, gracias": "No"
+    },
+    "0bc7": {
+      "Vuelan bien, pero necesitarás": "Vuelan bien, pero necesitas"
+    },
+    "0bc8": {
+      "No, gracias": "No"
+    },
+    "1612": {
+      "¡Le venderé una ": "¡Le vendo una "
+    },
+    "1617": {
+      "Leee venderé una ": "Leee vendo una "
+    }
+  }
+}

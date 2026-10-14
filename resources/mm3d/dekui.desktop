@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Dekui
+Comment=Play with Dekui
+Icon=io.github.tgacquin.dekui
+Exec=azahar
+TryExec=azahar
+Categories=Game;
+StartupWMClass=io.github.tgacquin.dekui

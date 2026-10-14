@@ -1,0 +1,78 @@
+name: Dekui macOS (Apple Silicon)
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - '.github/workflows/mm3d-macos-test.yml'
+      - '.gitmodules'
+      - '.gitattributes'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - 'CMakeModules/**'
+      - 'src/**'
+      - 'externals/**'
+      - 'dist/**'
+      - 'resources/**'
+      - 'tools/mm3d/**'
+      - 'license.txt'
+  workflow_dispatch:
+concurrency:
+  group: mm3d-macos-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          submodules: recursive
+          fetch-depth: 1
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install build tools
+        run: brew install cmake ninja ccache
+      - name: Verify runner and revision
+        run: |
+          test "$(uname -m)" = arm64
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git log -1 --format='%H %s' >> "$GITHUB_STEP_SUMMARY"
+      - name: Read release version
+        id: release
+        run: echo "version=$(python3 tools/mm3d/release_version.py)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v5
+        with:
+          path: .ccache-macos
+          key: macos-arm64-ccache-v1-${{ github.sha }}
+          restore-keys: macos-arm64-ccache-v1-
+      - name: Configure, build, test and package
+        run: |
+          set -o pipefail
+          bash tools/mm3d/macos/build-ci.sh 2>&1 | tee macos-build.log
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Dekui-macOS-Diagnostics-${{ github.sha }}
+          path: |
+            macos-build.log
+            build-macos/CMakeFiles/CMakeConfigureLog.yaml
+            build-macos/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Dekui-${{ steps.release.outputs.version }}-macOS-arm64-${{ github.sha }}
+          path: artifacts/Dekui-${{ steps.release.outputs.version }}-macOS-arm64.zip
+          if-no-files-found: error
+      - name: Archive matching source
+        timeout-minutes: 15
+        run: python3 tools/mm3d/package_source.py artifacts/Dekui-${{ steps.release.outputs.version }}-macOS-Source.tar.gz
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Dekui-${{ steps.release.outputs.version }}-macOS-Source-${{ github.sha }}
+          path: artifacts/Dekui-${{ steps.release.outputs.version }}-macOS-Source.tar.gz
+          if-no-files-found: error

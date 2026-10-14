@@ -1,0 +1,307 @@
+// Copyright 2024-2026 Citra Emulator Project / Azahar Emulator Project
+// Licensed under GPLv2 or any later version
+// Refer to the license.txt file included.
+
+#include <algorithm>
+#include "common/assert.h"
+#include "video_core/rasterizer_cache/pixel_format.h"
+#include "video_core/renderer_vulkan/vk_instance.h"
+#include "video_core/renderer_vulkan/vk_render_manager.h"
+#include "video_core/renderer_vulkan/vk_scheduler.h"
+#include "video_core/renderer_vulkan/vk_texture_runtime.h"
+
+namespace Vulkan {
+
+constexpr u32 MinDrawsToFlush = 20;
+
+using VideoCore::PixelFormat;
+using VideoCore::SurfaceType;
+
+RenderManager::RenderManager(const Instance& instance, Scheduler& scheduler)
+    : instance{instance}, scheduler{scheduler} {
+    scheduler.RegisterReplayDrain([this] { DrainReplay(); });
+}
+
+RenderManager::~RenderManager() {
+    scheduler.FlushReplay();
+    scheduler.RegisterReplayDrain({});
+}
+
+void RenderManager::SwapReplayState() {
+    std::swap(images, replay_images);
+    std::swap(aspects, replay_aspects);
+    std::swap(shadow_rendering, replay_shadow_rendering);
+    std::swap(pass, replay_pass);
+    std::swap(num_draws, replay_num_draws);
+}
+
+RenderManager::ReplayScope::ReplayScope(RenderManager& manager_, bool eligible,
+                                        std::span<const vk::Image> writes) {
+    if (!eligible || !manager_.scheduler.ReplayBatchingEnabled()) return;
+    manager = &manager_;
+    if (!manager->scheduler.HasReplay()) {
+        manager->replay_writes.clear();
+        manager->replay_writes_known = true;
+    }
+    manager->replay_writes_known &= !writes.empty();
+    for (const auto image : writes) {
+        if (image && std::find(manager->replay_writes.begin(), manager->replay_writes.end(), image) ==
+                         manager->replay_writes.end())
+            manager->replay_writes.push_back(image);
+    }
+    manager->SwapReplayState();
+    manager->scheduler.BeginReplayCapture();
+}
+
+bool RenderManager::CanReadbackBeforeReplay(vk::Image source) const {
+    return source && scheduler.HasReplay() && replay_writes_known && !replay_writes.empty() &&
+           std::find(replay_writes.begin(), replay_writes.end(), source) == replay_writes.end();
+}
+
+RenderManager::ReplayScope::~ReplayScope() {
+    if (!manager) return;
+    manager->scheduler.EndReplayCapture();
+    manager->SwapReplayState();
+    if (manager->scheduler.ReplayLimitReached()) manager->scheduler.FlushReplay();
+}
+
+void RenderManager::DrainReplay() {
+    // End the still-open native pass before appending replay work. The replay
+    // lane has its own pass state and may span many recorded draw scopes.
+    EndRendering();
+    SwapReplayState();
+    scheduler.BeginReplayCapture();
+    EndRendering();
+    scheduler.EndReplayCapture();
+    SwapReplayState();
+    replay_writes.clear();
+    replay_writes_known = false;
+}
+
+void RenderManager::BeginRendering(const Framebuffer* framebuffer,
+                                   Common::Rectangle<u32> draw_rect) {
+    const vk::Rect2D render_area = {
+        .offset{
+            .x = static_cast<s32>(draw_rect.left),
+            .y = static_cast<s32>(draw_rect.bottom),
+        },
+        .extent{
+            .width = draw_rect.GetWidth(),
+            .height = draw_rect.GetHeight(),
+        },
+    };
+    const RenderPass new_pass = {
+        .framebuffer = framebuffer->Handle(),
+        .render_pass = framebuffer->RenderPass(),
+        .render_area = render_area,
+        .clear = {},
+        .do_clear = false,
+    };
+    // Drain before replacing attachment metadata: pending replay may sample an
+    // attachment that the new framebuffer will overwrite.
+    if (scheduler.HasReplay() &&
+        (!(pass == new_pass) || !scheduler.NativeDrawActive())) scheduler.FlushReplay();
+    images = framebuffer->Images();
+    aspects = framebuffer->Aspects();
+    shadow_rendering = framebuffer->shadow_rendering;
+    BeginRendering(new_pass);
+}
+
+void RenderManager::BeginRendering(const RenderPass& new_pass) {
+    // Even a matching framebuffer is an ordering boundary outside a native
+    // draw scope. Drain before the equality shortcut, so it is reopened below.
+    if (!scheduler.NativeDrawActive() && !scheduler.CapturingReplay()) {
+        scheduler.FlushReplay();
+    }
+    if (pass == new_pass) [[likely]] {
+        num_draws++;
+        return;
+    }
+
+    EndRendering();
+    ++passes_started;
+    scheduler.Record([info = new_pass](vk::CommandBuffer cmdbuf) {
+        const vk::RenderPassBeginInfo renderpass_begin_info = {
+            .renderPass = info.render_pass,
+            .framebuffer = info.framebuffer,
+            .renderArea = info.render_area,
+            .clearValueCount = info.do_clear ? 1u : 0u,
+            .pClearValues = &info.clear,
+        };
+        cmdbuf.beginRenderPass(renderpass_begin_info, vk::SubpassContents::eInline);
+    });
+
+    pass = new_pass;
+}
+
+void RenderManager::EndRendering() {
+    if (!scheduler.CapturingReplay() && !scheduler.DrainingReplay() &&
+        !scheduler.ReadingBeforeReplay()) scheduler.FlushReplay();
+    if (!pass.render_pass) {
+        return;
+    }
+
+    scheduler.Record([images = images, aspects = aspects,
+                      shadow_rendering = shadow_rendering](vk::CommandBuffer cmdbuf) {
+        u32 num_barriers = 0;
+        vk::PipelineStageFlags pipeline_flags{};
+        vk::AccessFlags src_access_flags{};
+        std::array<vk::ImageMemoryBarrier, 2> barriers;
+        for (u32 i = 0; i < images.size(); i++) {
+            if (!images[i]) {
+                continue;
+            }
+            const bool is_color = static_cast<bool>(aspects[i] & vk::ImageAspectFlagBits::eColor);
+            if (is_color) {
+                pipeline_flags |= shadow_rendering
+                                      ? vk::PipelineStageFlagBits::eFragmentShader
+                                      : vk::PipelineStageFlagBits::eColorAttachmentOutput;
+                src_access_flags = shadow_rendering ? vk::AccessFlagBits::eShaderWrite
+                                                    : vk::AccessFlagBits::eColorAttachmentWrite;
+            } else {
+                pipeline_flags |= vk::PipelineStageFlagBits::eEarlyFragmentTests |
+                                  vk::PipelineStageFlagBits::eLateFragmentTests;
+                src_access_flags = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+            }
+            barriers[num_barriers++] = vk::ImageMemoryBarrier{
+                .srcAccessMask = src_access_flags,
+                .dstAccessMask =
+                    vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eTransferRead,
+                .oldLayout = vk::ImageLayout::eGeneral,
+                .newLayout = vk::ImageLayout::eGeneral,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .image = images[i],
+                .subresourceRange{
+                    .aspectMask = aspects[i],
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = VK_REMAINING_ARRAY_LAYERS,
+                },
+            };
+        }
+        cmdbuf.endRenderPass();
+        if (num_barriers == 0) {
+            return;
+        }
+        cmdbuf.pipelineBarrier(pipeline_flags,
+                               vk::PipelineStageFlagBits::eFragmentShader |
+                                   vk::PipelineStageFlagBits::eTransfer,
+                               vk::DependencyFlagBits::eByRegion, 0, nullptr, 0, nullptr,
+                               num_barriers, barriers.data());
+    });
+
+    // Reset state.
+    pass.render_pass = VK_NULL_HANDLE;
+    images = {};
+    aspects = {};
+    shadow_rendering = false;
+
+    // The Mali guide recommends flushing at the end of each major renderpass
+    // Testing has shown this has a significant effect on rendering performance
+    if (num_draws > MinDrawsToFlush && instance.ShouldFlush() &&
+        !scheduler.CapturingReplay() && !scheduler.DrainingReplay() &&
+        !scheduler.ReadingBeforeReplay()) {
+        scheduler.Flush();
+        num_draws = 0;
+    }
+}
+
+vk::RenderPass RenderManager::GetRenderpass(VideoCore::PixelFormat color,
+                                            VideoCore::PixelFormat depth, bool is_clear) {
+    std::scoped_lock lock{cache_mutex};
+
+    const u32 color_index =
+        color == VideoCore::PixelFormat::Invalid ? NumColorFormats : static_cast<u32>(color);
+    const u32 depth_index =
+        depth == VideoCore::PixelFormat::Invalid
+            ? NumDepthFormats
+            : (static_cast<u32>(depth - VideoCore::PixelFormat::NumColorFormat));
+
+    ASSERT_MSG(color_index <= NumColorFormats && depth_index <= NumDepthFormats,
+               "Invalid color index {} and/or depth_index {}", color_index, depth_index);
+
+    vk::UniqueRenderPass& renderpass = cached_renderpasses[color_index][depth_index][is_clear];
+    if (!renderpass) {
+        const vk::Format color_format = instance.GetTraits(color).native;
+        const vk::Format depth_format = instance.GetTraits(depth).native;
+        const vk::AttachmentLoadOp load_op =
+            is_clear ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad;
+        renderpass = CreateRenderPass(color_format, depth_format, load_op);
+    }
+
+    return *renderpass;
+}
+
+vk::UniqueRenderPass RenderManager::CreateRenderPass(vk::Format color, vk::Format depth,
+                                                     vk::AttachmentLoadOp load_op) const {
+    u32 attachment_count = 0;
+    std::array<vk::AttachmentDescription, 2> attachments;
+
+    bool use_color = false;
+    vk::AttachmentReference color_attachment_ref{};
+    bool use_depth = false;
+    vk::AttachmentReference depth_attachment_ref{};
+
+    if (color != vk::Format::eUndefined) {
+        attachments[attachment_count] = vk::AttachmentDescription{
+            .format = color,
+            .loadOp = load_op,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+            .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
+            .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
+            .initialLayout = vk::ImageLayout::eGeneral,
+            .finalLayout = vk::ImageLayout::eGeneral,
+        };
+
+        color_attachment_ref = vk::AttachmentReference{
+            .attachment = attachment_count++,
+            .layout = vk::ImageLayout::eGeneral,
+        };
+
+        use_color = true;
+    }
+
+    if (depth != vk::Format::eUndefined) {
+        attachments[attachment_count] = vk::AttachmentDescription{
+            .format = depth,
+            .loadOp = load_op,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+            .stencilLoadOp = load_op,
+            .stencilStoreOp = vk::AttachmentStoreOp::eStore,
+            .initialLayout = vk::ImageLayout::eGeneral,
+            .finalLayout = vk::ImageLayout::eGeneral,
+        };
+
+        depth_attachment_ref = vk::AttachmentReference{
+            .attachment = attachment_count++,
+            .layout = vk::ImageLayout::eGeneral,
+        };
+
+        use_depth = true;
+    }
+
+    const vk::SubpassDescription subpass = {
+        .pipelineBindPoint = vk::PipelineBindPoint::eGraphics,
+        .inputAttachmentCount = 0,
+        .pInputAttachments = nullptr,
+        .colorAttachmentCount = use_color ? 1u : 0u,
+        .pColorAttachments = &color_attachment_ref,
+        .pResolveAttachments = 0,
+        .pDepthStencilAttachment = use_depth ? &depth_attachment_ref : nullptr,
+    };
+
+    const vk::RenderPassCreateInfo renderpass_info = {
+        .attachmentCount = attachment_count,
+        .pAttachments = attachments.data(),
+        .subpassCount = 1,
+        .pSubpasses = &subpass,
+        .dependencyCount = 0,
+        .pDependencies = nullptr,
+    };
+
+    return instance.GetDevice().createRenderPassUnique(renderpass_info);
+}
+
+} // namespace Vulkan

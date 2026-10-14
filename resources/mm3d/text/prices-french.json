@@ -1,0 +1,93 @@
+{
+  "rewrites": {
+    "3528": {
+      "Combien veux-tu ": "Coût: {factor} fois ta ",
+      "gager": "mise",
+      "?": ".",
+      "Choisis une mise avec ": "Choisis avec "
+    },
+    "067a": {
+      ", j'en vends pour ": ", je vends à "
+    },
+    "59d8": {
+      "poisson? C'est ": "poisson? "
+    }
+  },
+  "shorten": {
+    "06af": {
+      "Je prends, c'est sûr ": "Je prends"
+    },
+    "06b6": {
+      "Elle peut vous sauver la vie! ": "Elle peut vous sauver!"
+    },
+    "06b7": {
+      "Je prends, c'est sûr": "Je prends"
+    },
+    "06cb": {
+      "C'est ça, le prix est dessus...": "Le prix est dessus..."
+    },
+    "06cc": {
+      "Oui, ça m'intéresse": "Oui, je prends"
+    },
+    "06d3": {
+      "J'pense que, euh... ça t'aide. Et ": "Euh... ça t'aide. Et "
+    },
+    "06d4": {
+      "Je la prends": "Je prends"
+    },
+    "0773": {
+      "Hé... Pour toi, c'est ": "Pour toi, c'est "
+    },
+    "0843": {
+      "Je viens de mettre au point cet": "Je viens de créer cet"
+    },
+    "0844": {
+      "Je la prends": "Je prends"
+    },
+    "0880": {
+      "En fait, je n'arrive pas à trouver": "Je n'arrive pas à trouver"
+    },
+    "0bc9": {
+      "Un peu cher, mais ça vaut la peine!": "Cher, mais ça vaut la peine!"
+    },
+    "0bca": {
+      "J'achète tout de suite": "J'achète"
+    },
+    "0bcf": {
+      "Si jamais tu manques d'énergie ": "Si tu manques d'énergie "
+    },
+    "0bd0": {
+      "Potion rouge :": "Potion rouge:"
+    },
+    "12db": {
+      "C'est le bouclier qu'utilisent les ": "Le bouclier qu'utilisent les "
+    },
+    "12dc": {
+      "J'achète bien sûr": "J'achète"
+    },
+    "12df": {
+      "Bois-la quand ton énergie vitale ": "Bois-la quand ton énergie "
+    },
+    "12e0": {
+      "Je la prends": "Je prends"
+    },
+    "29f4": {
+      "À ce prix, c'est pas du vol...": "C'est pas du vol..."
+    },
+    "29f5": {
+      "Pas du tout": "Non merci"
+    },
+    "3490": {
+      "Non merci": "Non"
+    },
+    "0477": {
+      "... Au fait, à cette heure, il y a": "... À cette heure, il y a"
+    },
+    "0652": {
+      "Ces bombes en forme de souris": "Ces bombes-souris"
+    },
+    "0653": {
+      "Je les prends": "Je prends"
+    }
+  }
+}

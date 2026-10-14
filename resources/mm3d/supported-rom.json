@@ -1,0 +1,7 @@
+{
+  "program_id": "0004000000125500",
+  "remaster_version": 2,
+  "main_partition_bytes": 654643200,
+  "main_partition_sha256": "9c756279e3ec00bb9009f92ca2e7b9ec8b1fcdfcd9de057658b209caa24323da",
+  "description": "Verified local decrypted USA Rev 1 main partition; other dumps not yet supported."
+}

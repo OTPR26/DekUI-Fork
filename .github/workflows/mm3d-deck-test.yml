@@ -1,0 +1,77 @@
+name: Dekui Linux / Steam Deck
+on:
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+concurrency:
+  group: mm3d-deck-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  deck:
+    runs-on: ubuntu-24.04
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 2G
+      CCACHE_COMPILERCHECK: content
+      EXTRA_QT_PLUGINS: waylandcompositor
+      EXTRA_PLATFORM_PLUGINS: libqwayland-egl.so;libqwayland-generic.so
+    steps:
+      - name: Free unused hosted-runner SDKs before pulling build image
+        run: |
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          submodules: recursive
+          fetch-depth: 1
+      - name: Read release version
+        id: release
+        shell: bash
+        run: |
+          release_version=$(python3 tools/mm3d/release_version.py)
+          echo "version=$release_version" >> "$GITHUB_OUTPUT"
+      - name: Verify build revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git log -1 --format='%H %s' | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/cache/restore@v5
+        with:
+          path: .ccache
+          key: deck-ccache-v1-${{ github.sha }}-${{ github.run_id }}
+          restore-keys: deck-ccache-v1-
+      - name: Build, test and package in Linux toolchain container
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -v "$GITHUB_WORKSPACE:/workspace" -w /workspace \
+            -e CCACHE_DIR=/workspace/.ccache -e CCACHE_BASEDIR=/workspace \
+            -e CCACHE_MAXSIZE -e CCACHE_COMPILERCHECK \
+            -e EXTRA_QT_PLUGINS -e EXTRA_PLATFORM_PLUGINS \
+            opensauce04/azahar-build-environment:latest \
+            bash tools/mm3d/deck/build-ci.sh
+          df -h /
+      - uses: actions/cache/save@v5
+        if: always()
+        with:
+          path: .ccache
+          key: deck-ccache-v1-${{ github.sha }}-${{ github.run_id }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Dekui-${{ steps.release.outputs.version }}-Linux-x86_64-${{ github.sha }}
+          path: artifacts/Dekui-${{ steps.release.outputs.version }}-Linux-x86_64.tar.gz
+          if-no-files-found: error
+      - name: Archive matching source
+        timeout-minutes: 15
+        run: python3 tools/mm3d/package_source.py artifacts/Dekui-${{ steps.release.outputs.version }}-Source.tar.gz
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Dekui-${{ steps.release.outputs.version }}-Source-${{ github.sha }}
+          path: artifacts/Dekui-${{ steps.release.outputs.version }}-Source.tar.gz
+          if-no-files-found: error

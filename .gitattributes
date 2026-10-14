@@ -1,0 +1,20 @@
+dist/languages/* linguist-vendored
+dist/qt_themes/* linguist-vendored
+externals/* linguist-vendored
+*.h linguist-language=cpp
+
+# These upstream files are checksum-pinned; never rewrite their bytes on checkout.
+resources/mm3d/project-restoration/** -text
+
+# Release defaults and migration hashes must be identical on every runner.
+resources/mm3d/defaults/** -text
+resources/mm3d/layout-migration.json -text
+
+# Also exclude private workspace material from GitHub-generated source archives.
+/HANDOFF.md export-ignore
+/DEVELOPMENT.md export-ignore
+/Project export-ignore
+/--visibility-depth export-ignore
+/artifacts export-ignore
+/assets export-ignore
+/resources/mm3d/project-restoration/romfs/message export-ignore

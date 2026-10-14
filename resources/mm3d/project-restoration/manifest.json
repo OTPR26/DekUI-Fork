@@ -1,0 +1,19 @@
+{
+  "repository": "https://github.com/leoetlino/project-restoration",
+  "source_commit": "8bb2a7b8ab00a609c9c0edbd979380c21d26ed23",
+  "release_url": "https://github.com/leoetlino/project-restoration/releases/download/v1.5.9/mm3d_project_restoration_plus_hd_hud_v1.5.9-5-g8bb2a7b.7z",
+  "archive_sha256": "69e10b92ab52ddcb8347e28353410f5cc5b8ea0b0d884913fd793db46fcf1a3b",
+  "variant": "v110/citra, standard aiming",
+  "sha256": {
+    "LICENSE.md": "62f171d4d8b6726df61f18a6bbc0a70f79c4bc2134d837d35c81fc6289a2d84d",
+    "NOTICE.txt": "66508a93fbcfad102ee7fd409d729825948a7b6371faefd4a34d7fafeb046a01",
+    "SOURCE.tar.gz": "103fe4aa76e75f2849fc2b856bbf9426772a372813cb44b809e1277fb3be1c0b",
+    "code.bps": "23adab85ddc9922a2e1c54749854db5e03fcce7316709c1332fe1a9366d10e11",
+    "exheader.bin": "8ec1b20a0704b623e457edea53eaf483ab151915704e84c45ea142908d005fab",
+    "romfs/layout/Joker.Main.New.gar": "3b5918df9251366f3688965bed882e56d1056d5e6dee2a479a8596cb884fc639",
+    "romfs/layout/Joker.Main.Play.gar": "5b143a1e033a409e6ee9272d4d04f1902f4b2a11cc443f9b6c8128471617a16c",
+    "romfs/layout/Joker.mfpj": "ab79c65145c39a24dab8bf795e923ef5a56c1a85670a92ab86819af50402b237"
+  },
+  "hud_archive_url": "https://zora.re/dl/mm3d_big_screen_layout_779512b.7z",
+  "hud_archive_sha256": "2c55e262b65edcbfafbb896d2434d5eb3ccb966183e86229602a72a92d525b35"
+}

@@ -1,29 +1,51 @@
 # Source and builds
 
-Each release must provide the complete corresponding source alongside its Windows and Steam Deck downloads. The source archive must match the revision used to build those binaries.
+This repository contains Dekui's application source, tests, setup and packaging
+scripts, and platform build workflows. The initial source import is a clean
+snapshot; private development history and working notes are not included.
+Upstream copyright notices and dependency licenses remain intact.
 
-Release source snapshots include the application code, setup and packaging scripts, build definitions, tests, and pinned submodule sources. Bundled Project Restoration has its own matching source archive and notices under `resources/mm3d/project-restoration/`. Build dependencies downloaded by the build scripts remain identified there.
+## Get the source
 
-Snapshots do not need a Git checkout to inspect the code. They do not include internal working notes or the development repository’s Git history. Copyright notices and dependency licenses remain intact.
+```sh
+git clone --recurse-submodules https://github.com/tgacquin/mm3d-dekui.git
+cd mm3d-dekui
+```
+
+For an existing checkout, run `git submodule update --init --recursive` after
+pulling changes. Dependencies are pinned to the revisions recorded by Git.
+GitHub's automatically generated source ZIP and tarball do not include submodule
+contents. Use a recursive clone or a complete source archive attached to a release.
 
 ## Build reference
 
-The source archive contains the platform workflows and scripts used by the builds:
+The workflows specify the toolchains, dependencies and build commands:
 
 - Windows: `.github/workflows/mm3d-windows-test.yml` and `tools/mm3d/windows/build-ci.sh`.
-- Steam Deck: `.github/workflows/mm3d-deck-test.yml` and `tools/mm3d/deck/build-ci.sh`.
+- Steam Deck / Linux: `.github/workflows/mm3d-deck-test.yml` and `tools/mm3d/deck/build-ci.sh`.
+- macOS: `.github/workflows/mm3d-macos-test.yml` and `tools/mm3d/macos/build-ci.sh`.
 
-Use the toolchain and dependency versions/configuration in those workflows. Windows uses MSYS2 UCRT64; Deck uses the build environment selected by its workflow. Both enable `ENABLE_MM3D_PRESENTATION` and `ENABLE_MM3D_GAME_FOLDER` and disable `ENABLE_BUILTIN_KEYBLOB`.
+Windows uses MSYS2 UCRT64, Deck uses the Linux container specified by its workflow,
+and macOS targets Apple Silicon. The scripts configure Dekui, build the application,
+run tests and prepare portable packages. The embedded crypto-key fallback has been
+removed; no built-in key blob is included.
 
-The scripts build the app, run tests, and prepare portable packages. Source-archive creation from Git is a separate maintainer step; an extracted source snapshot already contains the archived submodule sources.
+Current implementation references are in `tools/mm3d/INTERPOLATION.md` and
+`docs/mm3d/classic-saving.md`. Release checks are in `tools/mm3d/RELEASE-CHECKS.txt`;
+opt-in performance capture instructions are in `tools/mm3d/deck/DIAGNOSTICS.md`.
 
-## Release contents
+## Release source and notices
 
-A published release should contain:
+Each binary release must include complete corresponding source for the revision
+used to build it, SHA-256 checksums, and required dependency notices. From a clean
+Git checkout with all pinned submodules initialized, create the source archive with:
 
-- The Windows ZIP and Steam Deck package.
-- Matching complete source archive(s) for those binaries.
-- SHA-256 checksums for the downloadable files.
-- Release notes describing changes and known limitations.
+```sh
+python3 tools/mm3d/package_source.py artifacts/Dekui-Source.tar.gz
+```
 
-A binary release should not be published without its matching source and required notices. This repository is a release hub, not a claim that its documentation alone is the application’s source.
+These archives include pinned submodule sources and can be inspected without Git.
+Bundled Project Restoration has its matching source archive, provenance and notices
+under `resources/mm3d/project-restoration/`. Source archives preserve licenses and
+exclude private working notes. Downloaded build dependencies are identified in the
+platform workflows and scripts.

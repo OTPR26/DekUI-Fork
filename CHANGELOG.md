@@ -41,6 +41,7 @@
   - Custom textures.
 
 ### Improved
+- Reduced CPU interpolation overhead and frame-presentation stalls.
 - **Reworked Majora-themed sidebars**
   - "Select an Item" no longer uses a background.
   - "Songs" now uses a cleaner, semi-transparent background.
@@ -62,3 +63,7 @@
 ### Coming Soon
 - Further interpolation optimizations and improvements.
 - Android support.
+
+## 1.0.0-beta.1 (2026-10-02)
+
+- Initial release.

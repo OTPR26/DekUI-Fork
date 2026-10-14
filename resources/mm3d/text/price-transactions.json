@@ -1,0 +1,257 @@
+[
+  {
+    "pc": "2421bc",
+    "handling": "message_price",
+    "reason": "Uses message price or a cached copy; do not multiply twice"
+  },
+  {
+    "pc": "2424d8",
+    "handling": "message_price",
+    "reason": "Uses message price or a cached copy; do not multiply twice"
+  },
+  {
+    "pc": "24ac90",
+    "handling": "message_price",
+    "reason": "Uses message price or a cached copy; do not multiply twice"
+  },
+  {
+    "pc": "2752c4",
+    "handling": "unchanged",
+    "reason": "theft/inventory loss"
+  },
+  {
+    "pc": "280120",
+    "handling": "message_price",
+    "reason": "Uses message price or a cached copy; do not multiply twice"
+  },
+  {
+    "pc": "299568",
+    "handling": "Charge",
+    "reason": "fishing"
+  },
+  {
+    "pc": "299e60",
+    "handling": "message_price",
+    "reason": "Uses message price or a cached copy; do not multiply twice"
+  },
+  {
+    "pc": "29a41c",
+    "handling": "message_price",
+    "reason": "Uses message price or a cached copy; do not multiply twice"
+  },
+  {
+    "pc": "2b07c0",
+    "handling": "message_price",
+    "reason": "Uses message price or a cached copy; do not multiply twice"
+  },
+  {
+    "pc": "2b098c",
+    "handling": "message_price",
+    "reason": "Uses message price or a cached copy; do not multiply twice"
+  },
+  {
+    "pc": "2b108c",
+    "handling": "message_price",
+    "reason": "Uses message price or a cached copy; do not multiply twice"
+  },
+  {
+    "pc": "2b5240",
+    "handling": "Charge",
+    "reason": "Honey and Darling"
+  },
+  {
+    "pc": "2b9a50",
+    "handling": "Charge",
+    "reason": "bean salesman"
+  },
+  {
+    "pc": "2bbac8",
+    "handling": "message_price",
+    "reason": "Uses message price or a cached copy; do not multiply twice"
+  },
+  {
+    "pc": "2c8fb0",
+    "handling": "unchanged",
+    "reason": "bat-clearing reward"
+  },
+  {
+    "pc": "2cb7b4",
+    "handling": "message_price",
+    "reason": "Uses message price or a cached copy; do not multiply twice"
+  },
+  {
+    "pc": "2cbee0",
+    "handling": "unchanged",
+    "reason": "Gold Dust sale proceeds"
+  },
+  {
+    "pc": "2d8544",
+    "handling": "message_price",
+    "reason": "Uses message price or a cached copy; do not multiply twice"
+  },
+  {
+    "pc": "2d8f74",
+    "handling": "message_price",
+    "reason": "Uses message price or a cached copy; do not multiply twice"
+  },
+  {
+    "pc": "2dac90",
+    "handling": "message_price",
+    "reason": "Uses message price or a cached copy; do not multiply twice"
+  },
+  {
+    "pc": "2e4620",
+    "handling": "message_price",
+    "reason": "Uses message price or a cached copy; do not multiply twice"
+  },
+  {
+    "pc": "2f5e90",
+    "handling": "Charge",
+    "reason": "swamp gallery"
+  },
+  {
+    "pc": "30e04c",
+    "handling": "Charge",
+    "reason": "town gallery"
+  },
+  {
+    "pc": "318d0c",
+    "handling": "Charge",
+    "reason": "dog race entry (payout stake unchanged)"
+  },
+  {
+    "pc": "31b524",
+    "handling": "message_price",
+    "reason": "Uses message price or a cached copy; do not multiply twice"
+  },
+  {
+    "pc": "32f430",
+    "handling": "message_price",
+    "reason": "Uses message price or a cached copy; do not multiply twice"
+  },
+  {
+    "pc": "357f7c",
+    "handling": "unchanged",
+    "reason": "stage-help reward"
+  },
+  {
+    "pc": "39d5c0",
+    "handling": "Charge",
+    "reason": "lottery"
+  },
+  {
+    "pc": "3da0d8",
+    "handling": "unchanged",
+    "reason": "fishing wallet confiscation"
+  },
+  {
+    "pc": "3dce6c",
+    "handling": "Charge",
+    "reason": "negotiated scrub purchase (150 or 100)"
+  },
+  {
+    "pc": "3fda3c",
+    "handling": "message_price",
+    "reason": "Uses message price or a cached copy; do not multiply twice"
+  },
+  {
+    "pc": "3fdae8",
+    "handling": "message_price",
+    "reason": "Uses message price or a cached copy; do not multiply twice"
+  },
+  {
+    "pc": "40c4d8",
+    "handling": "unchanged",
+    "reason": "rupee pickup"
+  },
+  {
+    "pc": "426510",
+    "handling": "unchanged",
+    "reason": "bank deposit principal"
+  },
+  {
+    "pc": "426858",
+    "handling": "unchanged",
+    "reason": "bank withdrawal principal (fee is separate metadata)"
+  },
+  {
+    "pc": "4290bc",
+    "handling": "Charge",
+    "reason": "jumping game"
+  },
+  {
+    "pc": "42c5b8",
+    "handling": "Charge",
+    "reason": "Deku playground"
+  },
+  {
+    "pc": "447574",
+    "handling": "NetReward",
+    "reason": "jar game net reward"
+  },
+  {
+    "pc": "4475cc",
+    "handling": "Charge",
+    "reason": "jar replacement"
+  },
+  {
+    "pc": "44787c",
+    "handling": "Charge",
+    "reason": "script fees"
+  },
+  {
+    "pc": "46a848",
+    "handling": "message_price",
+    "reason": "Uses message price or a cached copy; do not multiply twice"
+  },
+  {
+    "pc": "4775cc",
+    "handling": "Charge",
+    "reason": "business scrubs"
+  },
+  {
+    "pc": "49b160",
+    "handling": "unchanged",
+    "reason": "dog race first-place payout"
+  },
+  {
+    "pc": "49b190",
+    "handling": "unchanged",
+    "reason": "dog race second-place payout"
+  },
+  {
+    "pc": "49b1ac",
+    "handling": "unchanged",
+    "reason": "dog race returned bet"
+  },
+  {
+    "pc": "52ae60",
+    "handling": "message_price",
+    "reason": "Uses message price or a cached copy; do not multiply twice"
+  },
+  {
+    "pc": "545aa8",
+    "handling": "message_price",
+    "reason": "Uses message price or a cached copy; do not multiply twice"
+  },
+  {
+    "pc": "545fe0",
+    "handling": "message_price",
+    "reason": "Uses message price or a cached copy; do not multiply twice"
+  },
+  {
+    "pc": "546c24",
+    "handling": "Charge",
+    "reason": "ghost hut first"
+  },
+  {
+    "pc": "546ea0",
+    "handling": "Charge",
+    "reason": "ghost hut repeat"
+  },
+  {
+    "pc": "548450",
+    "handling": "message_price",
+    "reason": "Uses message price or a cached copy; do not multiply twice"
+  }
+]

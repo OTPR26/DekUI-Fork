@@ -1,0 +1,95 @@
+name: Dekui Windows
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - '.github/workflows/mm3d-windows-test.yml'
+      - '.gitmodules'
+      - '.gitattributes'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - 'CMakeModules/**'
+      - 'src/**'
+      - 'externals/**'
+      - 'dist/**'
+      - 'resources/**'
+      - 'tools/mm3d/**'
+      - 'license.txt'
+  workflow_dispatch:
+concurrency:
+  group: mm3d-windows-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          submodules: recursive
+          fetch-depth: 1
+      - name: Read release version
+        id: release
+        shell: bash
+        run: |
+          release_version=$(python tools/mm3d/release_version.py)
+          echo "version=$release_version" >> "$GITHUB_OUTPUT"
+      - name: Verify build revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git log -1 --format='%H %s' | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-qt6-base
+            mingw-w64-ucrt-x86_64-qt6-multimedia
+            mingw-w64-ucrt-x86_64-qt6-tools
+            mingw-w64-ucrt-x86_64-SDL2
+            mingw-w64-ucrt-x86_64-ccache
+      - uses: actions/cache@v5
+        with:
+          path: .ccache-windows
+          key: windows-ucrt-ccache-v1-${{ github.sha }}
+          restore-keys: windows-ucrt-ccache-v1-
+      - name: Configure, build, test and package
+        run: |
+          set -o pipefail
+          bash tools/mm3d/windows/build-ci.sh 2>&1 | tee windows-build.log
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Dekui-Windows-Diagnostics-${{ github.sha }}
+          path: |
+            windows-build.log
+            build-windows/CMakeFiles/CMakeConfigureLog.yaml
+            build-windows/Testing/Temporary/LastTest.log
+            build-windows/Testing/Temporary/LastTestsFailed.log
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Dekui-${{ steps.release.outputs.version }}-Windows-x64-${{ github.sha }}
+          path: artifacts/Dekui-${{ steps.release.outputs.version }}-Windows-x64.zip
+          if-no-files-found: error
+      - name: Archive matching source
+        timeout-minutes: 15
+        run: python tools/mm3d/package_source.py artifacts/Dekui-${{ steps.release.outputs.version }}-Source.tar.gz
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Dekui-${{ steps.release.outputs.version }}-Source-${{ github.sha }}
+          path: artifacts/Dekui-${{ steps.release.outputs.version }}-Source.tar.gz
+          if-no-files-found: error

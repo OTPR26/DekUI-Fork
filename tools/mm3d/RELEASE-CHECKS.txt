@@ -1,0 +1,32 @@
+Release checks
+==============
+All desktop workflows run Python tests and CTest before packaging.
+
+When changing defaults:
+- Update the layout-migration.json contract and increment the migration version
+  when an existing installation must change. Never reuse a shipped version.
+- Define which layout groups migrate and which user preferences remain intact.
+- Add fixtures for the oldest supported release and already-upgraded settings.
+- Preserve the previous contract/defaults to support three-way migration.
+- Test failure recovery, backups, custom groups, future versions, and repeat launches.
+- Hash-pinned defaults use LF on every platform; retain .gitattributes rules.
+
+When adding generated assets:
+- Generate from the user's verified ROM, not a developer-local file.
+- Include the builder in the shared package allowlist; use stdlib-only Python.
+- Add a readiness version and an upgrade path for existing installations.
+- Load from the user directory, independent of the shell's current directory.
+- Check the actual packaged setup with package_setup_check.py.
+
+Before publishing:
+- Build Windows, Linux and macOS for the same commit; inspect workflow results.
+- Run fresh setup and upgrades using the supported owned ROM in disposable folders.
+- Compare hashes of save/control/preference files before and after upgrade.
+- Visually check Songs (border, stones, right-side prompts), file select (purple
+  background), item selection, and a customized layout on Mac/Deck.
+- Verify General > Reset menu layouts and that restarting does not migrate again.
+- Automated tests do not replace these visual checks. Record any platform not tested.
+
+Migration backups live under user/setup/resource-upgrade-backup-*.
+Explicit reset backups live under user/setup/layout-reset-backups.
+Do not delete old user data to diagnose a layout issue.

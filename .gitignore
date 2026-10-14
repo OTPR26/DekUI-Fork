@@ -1,3 +1,119 @@
+# Build directory
+[Bb]uild*/
+doc-build/
+build-*/
+
+# NSIS built executables
+src/installer/*.exe
+
+# Generated source files
+src/common/scm_rev.cpp
+.travis.descriptor.json
+
+# Docker image files
+*.dockerimage
+
+# Project/editor files
+*.swp
+*.kdev4
+.markdown-preview.html
+.idea/*
+!.idea/inspectionProfiles
+.vs/
+.vscode/
+.cache/
+.kdev4/
+.kotlin/
+cmake-build-debug/
+cmake-build-release/
+CMakeLists.txt.user*
+
+# *nix related
+# Common convention for backup or temporary files
+*~
+
+# Visual Studio CMake settings
+CMakeSettings.json
+
+# OSX global filetypes
+# Created by Finder or Spotlight in directories for various OS functionality (indexing, etc)
+.DS_Store
+.AppleDouble
+.LSOverride
+.Spotlight-V100
+.Trashes
+
+# Windows global filetypes
+Thumbs.db
+
+# Python files
+*.pyc
+
+# Flatpak generated files
+.flatpak-builder/
+repo/
+
+# GitHub Actions generated files
+.ccache/
+node_modules/
+VULKAN_SDK/
+
+# Version info files
+GIT-COMMIT
+GIT-TAG
+
+# verify-release.sh downloads
+verify/
+# MM3D local/proprietary inputs and generated runtime data
+*.3ds
+*.cci
+*.cia
+*.cxi
+*.app
+*.zcci
+*.sav
+*.state
+*.log
+*.log.*
+*.spv
+*.shbin
+*.key
+*.keys
+roms/
+saves/
+sdmc/
+nand/
+user/
+extracted/
+extracted-content/
+shader-cache/
+shader_cache/
+shaders-generated/
+logs/
+caches/
+aes_keys.txt
+seeddb.bin
+movable.sed
+boot9.bin
+boot11.bin
+mm3d-local/
+imgui.ini
+
+*.3DS
+*.CCI
+*.CIA
+*.CXI
+*.SAV
+
+# Private working notes and local generated inputs are never release source.
+/HANDOFF.md
+/DEVELOPMENT.md
+/Project
+/--visibility-depth
+/artifacts/
+/assets/
+/resources/mm3d/project-restoration/romfs/message/
+
 # Release binaries and source archives belong in release assets.
 *.zip
 *.7z

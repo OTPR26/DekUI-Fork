@@ -1,0 +1,24 @@
+Project Restoration by leoetlino and contributors
+https://github.com/leoetlino/project-restoration
+Licensed under GNU GPL version 2; see LICENSE.md and source file notices.
+
+Unmodified code.bps and exheader.bin from v110/citra in the official
+mm3d_project_restoration_plus_hd_hud_v1.5.9-5-g8bb2a7b.7z release.
+Standard aiming. The original HD HUD layouts are also bundled unchanged from
+https://zora.re/dl/mm3d_big_screen_layout_779512b.7z, linked by the official
+https://restoration.zora.re/hd-hud page. Game files remain user-provided.
+The GPL notice above covers Project Restoration source; it is not a claim
+that original Nintendo material inside the layout archives is GPL-licensed. Dekui does not claim authorship of Project Restoration.
+
+SOURCE.tar.gz includes complete tracked Restoration source and build scripts at
+8bb2a7b8ab00a609c9c0edbd979380c21d26ed23, including Eigen at
+96cd1ff7186af1fd9769ca923224a3ea1b2c6a40 with its license notices.
+See project-restoration/readme.md for build instructions. Building requires
+your own original game inputs and the documented development tools.
+A snapshot of the referenced Magikoopa build tool is also provided at
+56118dba89023bce38055609d979769e2bba0483 under build-tools/Magikoopa.
+This is a build-tool snapshot, not a claim of the historical tool version used
+by upstream to compile the released binaries. Its source/license are preserved.
+
+Dekui bundles the upstream files unchanged and applies its own setup/layout
+changes separately. No upstream endorsement is implied.

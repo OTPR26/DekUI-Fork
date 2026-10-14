@@ -1,0 +1,509 @@
+[
+  {
+    "name": "fishing",
+    "kind": "Funds",
+    "pc": "299558",
+    "word": "e1d004f0",
+    "guards": [
+      "000059df",
+      "e59f04a4",
+      "e1d004f0",
+      "e3500032",
+      "ba00000c"
+    ]
+  },
+  {
+    "name": "Honey and Darling",
+    "kind": "Funds",
+    "pc": "2b5228",
+    "word": "e1d004f0",
+    "guards": [
+      "ea000061",
+      "e59f04dc",
+      "e1d004f0",
+      "e350000a",
+      "ba00002a"
+    ]
+  },
+  {
+    "name": "bean salesman",
+    "kind": "Funds",
+    "pc": "2b99d8",
+    "word": "e1d004f0",
+    "guards": [
+      "e59f0090",
+      "e59f7090",
+      "e1d004f0",
+      "e350000a",
+      "aa000005"
+    ]
+  },
+  {
+    "name": "swamp gallery",
+    "kind": "Funds",
+    "pc": "2f5d70",
+    "word": "e1d114f0",
+    "guards": [
+      "0a000015",
+      "e59f1530",
+      "e1d114f0",
+      "e3510014",
+      "aa000040"
+    ]
+  },
+  {
+    "name": "town gallery",
+    "kind": "Funds",
+    "pc": "30dfc8",
+    "word": "e1d114f0",
+    "guards": [
+      "0a00000f",
+      "e59f13c4",
+      "e1d114f0",
+      "e3510014",
+      "aa000019"
+    ]
+  },
+  {
+    "name": "lottery",
+    "kind": "Funds",
+    "pc": "39d570",
+    "word": "e1d004f0",
+    "guards": [
+      "eafa0bdf",
+      "e59f0480",
+      "e1d004f0",
+      "e350000a",
+      "aa00000c"
+    ]
+  },
+  {
+    "name": "negotiated scrub purchase (150 or 100)",
+    "kind": "Funds",
+    "pc": "3dce08",
+    "word": "e1d004f0",
+    "guards": [
+      "e59f00a4",
+      "e1d610f8",
+      "e1d004f0",
+      "e1500001",
+      "aa00000a"
+    ]
+  },
+  {
+    "name": "jumping game",
+    "kind": "Funds",
+    "pc": "429094",
+    "word": "e1d004f0",
+    "guards": [
+      "ea0000d5",
+      "e59f0380",
+      "e1d004f0",
+      "e3500014",
+      "ba00000a"
+    ]
+  },
+  {
+    "name": "Deku playground",
+    "kind": "Funds",
+    "pc": "42c58c",
+    "word": "e1d004f0",
+    "guards": [
+      "ea000185",
+      "e59f0270",
+      "e1d004f0",
+      "e350000a",
+      "ba00000b"
+    ]
+  },
+  {
+    "name": "jar replacement",
+    "kind": "Funds",
+    "pc": "447594",
+    "word": "e1d004f0",
+    "guards": [
+      "ea000066",
+      "e59f0228",
+      "e1d004f0",
+      "e350000a",
+      "aa000005"
+    ]
+  },
+  {
+    "name": "script fees",
+    "kind": "Funds",
+    "pc": "46ee3c",
+    "word": "e1d1c4f0",
+    "guards": [
+      "e52d4004",
+      "e5920000",
+      "e1d1c4f0",
+      "e1d010b1",
+      "e1d040b3"
+    ]
+  },
+  {
+    "name": "ghost hut first",
+    "kind": "Funds",
+    "pc": "546b80",
+    "word": "e1d704f0",
+    "guards": [
+      "e1a01009",
+      "eaffffe1",
+      "e1d704f0",
+      "e1d811f0",
+      "e1500001"
+    ]
+  },
+  {
+    "name": "ghost hut repeat",
+    "kind": "Funds",
+    "pc": "546e54",
+    "word": "e1d004f0",
+    "guards": [
+      "e59f00a8",
+      "e1d611f0",
+      "e1d004f0",
+      "e1500001",
+      "aa00000a"
+    ]
+  },
+  {
+    "name": "scrub green potion first",
+    "kind": "Funds",
+    "pc": "2b2c98",
+    "word": "e1d114f0",
+    "guards": [
+      "0a000007",
+      "e59f1178",
+      "e1d114f0",
+      "e3510028",
+      "aa000008"
+    ]
+  },
+  {
+    "name": "scrub green potion repeat",
+    "kind": "Funds",
+    "pc": "2b2f2c",
+    "word": "e1d114f0",
+    "guards": [
+      "0a000007",
+      "e59f10d0",
+      "e1d114f0",
+      "e3510028",
+      "aa000008"
+    ]
+  },
+  {
+    "name": "scrub beans first",
+    "kind": "Funds",
+    "pc": "2d2e5c",
+    "word": "e1d004f0",
+    "guards": [
+      "ea00002a",
+      "e59f01f4",
+      "e1d004f0",
+      "e350000a",
+      "aa000004"
+    ]
+  },
+  {
+    "name": "scrub beans repeat",
+    "kind": "Funds",
+    "pc": "2d31d0",
+    "word": "e1d004f0",
+    "guards": [
+      "ea00002a",
+      "e59f00ec",
+      "e1d004f0",
+      "e350000a",
+      "aa000004"
+    ]
+  },
+  {
+    "name": "scrub blue potion first",
+    "kind": "Funds",
+    "pc": "2d4860",
+    "word": "e1d114f0",
+    "guards": [
+      "0a000007",
+      "e59f117c",
+      "e1d114f0",
+      "e3510064",
+      "aa000008"
+    ]
+  },
+  {
+    "name": "scrub blue potion repeat",
+    "kind": "Funds",
+    "pc": "2d4af4",
+    "word": "e1d114f0",
+    "guards": [
+      "0a000007",
+      "e59f10d0",
+      "e1d114f0",
+      "e3510064",
+      "aa000008"
+    ]
+  },
+  {
+    "name": "scrub bomb bag first",
+    "kind": "Funds",
+    "pc": "2d7d68",
+    "word": "e1d004f0",
+    "guards": [
+      "ea000006",
+      "e59f0174",
+      "e1d004f0",
+      "e35000c8",
+      "aa000004"
+    ]
+  },
+  {
+    "name": "scrub bomb bag repeat",
+    "kind": "Funds",
+    "pc": "2d8038",
+    "word": "e1d004f0",
+    "guards": [
+      "ea000020",
+      "e59f00d4",
+      "e1d004f0",
+      "e35000c8",
+      "aa000004"
+    ]
+  },
+  {
+    "name": "fishing",
+    "kind": "Charge",
+    "pc": "299568",
+    "word": "eb00a031",
+    "guards": [
+      "ba00000c",
+      "e3e00031",
+      "eb00a031",
+      "e5d404a3",
+      "eeb00a48"
+    ]
+  },
+  {
+    "name": "Honey and Darling",
+    "kind": "Charge",
+    "pc": "2b5240",
+    "word": "eb0030fb",
+    "guards": [
+      "e3e00009",
+      "e320f000",
+      "eb0030fb",
+      "e1d516f6",
+      "e1a07005"
+    ]
+  },
+  {
+    "name": "bean salesman",
+    "kind": "Charge",
+    "pc": "2b9a50",
+    "word": "eb001ef7",
+    "guards": [
+      "e3e00009",
+      "e320f000",
+      "eb001ef7",
+      "e5846764",
+      "e8bd81f0"
+    ]
+  },
+  {
+    "name": "swamp gallery",
+    "kind": "Charge",
+    "pc": "2f5e90",
+    "word": "ebff2de7",
+    "guards": [
+      "e3e00013",
+      "e320f000",
+      "ebff2de7",
+      "e1d40cfa",
+      "e3a01002"
+    ]
+  },
+  {
+    "name": "town gallery",
+    "kind": "Charge",
+    "pc": "30e04c",
+    "word": "ebfecd78",
+    "guards": [
+      "e3e00013",
+      "e320f000",
+      "ebfecd78",
+      "e5d7028f",
+      "e20000fd"
+    ]
+  },
+  {
+    "name": "lottery",
+    "kind": "Charge",
+    "pc": "39d5c0",
+    "word": "ebfc901b",
+    "guards": [
+      "e3e00009",
+      "e320f000",
+      "ebfc901b",
+      "e1a02006",
+      "e59f642c"
+    ]
+  },
+  {
+    "name": "negotiated scrub purchase (150 or 100)",
+    "kind": "Charge",
+    "pc": "3dce6c",
+    "word": "ebfb91f0",
+    "guards": [
+      "e2600000",
+      "e6bf0070",
+      "ebfb91f0",
+      "e59f0040",
+      "e320f000"
+    ]
+  },
+  {
+    "name": "jumping game",
+    "kind": "Charge",
+    "pc": "4290bc",
+    "word": "ebfa615c",
+    "guards": [
+      "e3e00013",
+      "e1c67bb0",
+      "ebfa615c",
+      "e320f000",
+      "e320f000"
+    ]
+  },
+  {
+    "name": "Deku playground",
+    "kind": "Charge",
+    "pc": "42c5b8",
+    "word": "ebfa541d",
+    "guards": [
+      "e3e00009",
+      "e1c470b4",
+      "ebfa541d",
+      "e320f000",
+      "e320f000"
+    ]
+  },
+  {
+    "name": "jar replacement",
+    "kind": "Charge",
+    "pc": "4475cc",
+    "word": "ebf9e818",
+    "guards": [
+      "e3e00009",
+      "e320f000",
+      "ebf9e818",
+      "e320f000",
+      "e320f000"
+    ]
+  },
+  {
+    "name": "script fees",
+    "kind": "Charge",
+    "pc": "44787c",
+    "word": "ebf9e76c",
+    "guards": [
+      "e6bf0fb0",
+      "e6bf0070",
+      "ebf9e76c",
+      "e3a00000",
+      "e8bd8010"
+    ]
+  },
+  {
+    "name": "business scrubs",
+    "kind": "Charge",
+    "pc": "4775cc",
+    "word": "ebf92818",
+    "guards": [
+      "e5846128",
+      "e19000f4",
+      "ebf92818",
+      "e1d50dbc",
+      "e3c00040"
+    ]
+  },
+  {
+    "name": "ghost hut first",
+    "kind": "Charge",
+    "pc": "546c24",
+    "word": "ebf5ea82",
+    "guards": [
+      "e2600000",
+      "e6bf0070",
+      "ebf5ea82",
+      "e320f000",
+      "e320f000"
+    ]
+  },
+  {
+    "name": "ghost hut repeat",
+    "kind": "Charge",
+    "pc": "546ea0",
+    "word": "ebf5e9e3",
+    "guards": [
+      "e2600000",
+      "e6bf0070",
+      "ebf5e9e3",
+      "e320f000",
+      "e320f000"
+    ]
+  },
+  {
+    "name": "jar game net reward",
+    "kind": "NetReward",
+    "pc": "447574",
+    "word": "ebf9e82e",
+    "guards": [
+      "ea00006e",
+      "e3a0005a",
+      "ebf9e82e",
+      "e59f123c",
+      "e1a00005"
+    ]
+  },
+  {
+    "name": "Gorman race missing price",
+    "kind": "Fallback",
+    "pc": "46a7f8",
+    "word": "03a0700a",
+    "guards": [
+      "e25000ff",
+      "13770001",
+      "03a0700a",
+      "ebf56a73",
+      "e590002c"
+    ]
+  },
+  {
+    "name": "dog race entry (payout stake unchanged)",
+    "kind": "Funds",
+    "pc": "318c4c",
+    "word": "e1d114f0",
+    "guards": [
+      "e1c4cfb0",
+      "ea000022",
+      "e1d114f0",
+      "e5950d58",
+      "e1510000"
+    ]
+  },
+  {
+    "name": "dog race entry (payout stake unchanged)",
+    "kind": "Charge",
+    "pc": "318d0c",
+    "word": "ebfea248",
+    "guards": [
+      "e2600000",
+      "e6bf0070",
+      "ebfea248",
+      "e3a02007",
+      "e3a01000"
+    ]
+  }
+]

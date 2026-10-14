@@ -1,0 +1,105 @@
+{
+  "language": 8,
+  "edits": [
+    {
+      "id": "003e",
+      "start": "Toca el icono",
+      "text": "SELECT abre el inventario.\nUsa {L}/{R} para elegir Mapa."
+    },
+    {
+      "id": "003e",
+      "start": "Toca",
+      "text": "{Color:11}Mueve el cursor con {Dpad}.\nOprime {B} para volver."
+    },
+    {
+      "id": "003e",
+      "start": "Puedes cambiar",
+      "text": "Elige una planta en\nla lista de plantas."
+    },
+    {
+      "id": "0043",
+      "start": "Toca ",
+      "text": "Oprime ZL para mirar.\nOprime {A} para tomar\nuna luminografía."
+    },
+    {
+      "id": "0078",
+      "start": "Toca ",
+      "text": "SELECT abre el inventario.\nUsa {L}/{R} para elegir\nla pestaña Máscaras."
+    },
+    {
+      "id": "0078",
+      "start": "Para ponerte",
+      "text": "Oprime Abajo en la cruz\npara ponerte la máscara.\nOprímelo de nuevo para\nvolver a la normalidad."
+    },
+    {
+      "id": "00ff",
+      "start": "Selecciona un objeto",
+      "text": "Elige un objeto con {A}.\nOprime {B} para cancelar.{Color:11}"
+    },
+    {
+      "id": "026b",
+      "start": "Toca ",
+      "text": "SELECT abre el inventario.\nUsa {L}/{R} para elegir\nla pestaña Inventario."
+    },
+    {
+      "id": "026b",
+      "start": "Selecciona un objeto",
+      "text": "Elige un objeto con {Stick}\ny asígnalo a {X} o {Y}."
+    },
+    {
+      "id": "026b",
+      "start": "También puedes",
+      "text": "Para las casillas I y II,\nmantén ZR y oprime {X} o {Y}\npara asignar un objeto."
+    },
+    {
+      "id": "026b",
+      "start": "Una vez que hayas",
+      "text": "Usa el mismo botón o\ncombinación para utilizar\nel objeto. ¡Es fácil!"
+    },
+    {
+      "id": "0270",
+      "start": "Toca ",
+      "text": "SELECT: inventario.\n{L}/{R}: Equipo."
+    },
+    {
+      "id": "033f",
+      "start": "En la ",
+      "text": "En la {Color:1}lista de eventos{Color:11} verás\nlos eventos que has añadido\nal cuaderno."
+    },
+    {
+      "id": "033f",
+      "start": "En la pantalla táctil",
+      "text": "Elige un evento para\nconsultar sus detalles."
+    },
+    {
+      "id": "0e9b",
+      "start": "Se han guardado",
+      "text": "Se han guardado los datos.{Color:11}"
+    },
+    {
+      "id": "1bae",
+      "start": "tiempo. Los ",
+      "text": "tiempo. Los rubíes que llevas\ny algunos objetos {Color:1}se perderán{Color:11}."
+    },
+    {
+      "id": "1d18",
+      "start": "Toque",
+      "text": "{Color:11}El minimapa está abajo\na la derecha. ZR + SELECT\nlo muestra o lo oculta."
+    },
+    {
+      "id": "1d18",
+      "start": "Y si toca ",
+      "text": "SELECT abre el inventario.\n{L}/{R}: pestaña Mapa."
+    },
+    {
+      "id": "2056",
+      "start": "Si quieres",
+      "text": "Para volver a tu última partida\nguardada, cierra y reinicia\nel juego y carga tu archivo."
+    },
+    {
+      "id": "575b",
+      "start": "Toca la pantalla",
+      "text": "Escribe tu nombre."
+    }
+  ]
+}

@@ -8,7 +8,7 @@ Project Restoration and the required HUD layouts are included. Optional custom t
 
 ## Windows
 
-1. Extract `Dekui-1.0.0-beta.1-Windows-x64.zip` into a writable location and open the `dekui` folder.
+1. Extract `Dekui-1.0.0-beta.2-Windows-x64.zip` into a writable location and open the `dekui` folder.
 2. Keep `Dekui.exe`, its DLLs, and the `plugins`, `tools`, `resources`, and `runtime` folders together.
 3. Put your game beside `Dekui.exe`, then open it.
 
@@ -16,7 +16,7 @@ Windows 10/11 x64 and a Vulkan-capable graphics driver are required. Python is b
 
 ## Linux
 
-1. Extract `Dekui-1.0.0-beta.1-Linux-x86_64.tar.gz` and open the `dekui` folder. If downloading a build artifact from Actions, extract its outer ZIP first.
+1. Extract `Dekui-1.0.0-beta.2-Linux-x86_64.tar.gz` and open the `dekui` folder. If downloading a build artifact from Actions, extract its outer ZIP first.
 2. Put the extracted folder somewhere writable under your home directory. Keep `Dekui.AppImage`, `tools`, and `resources` together.
 3. Put your game beside `Dekui.AppImage` and make the AppImage executable if needed.
 4. Launch `Dekui.AppImage`.
@@ -29,6 +29,17 @@ If FUSE is unavailable, launch from a terminal with:
 APPIMAGE_EXTRACT_AND_RUN=1 ./Dekui.AppImage
 ```
 
+## macOS (Apple Silicon)
+
+1. Extract `Dekui-1.0.0-beta.2-macOS-arm64.zip`. If downloading a build artifact from Actions, extract its outer ZIP first.
+2. Move the entire `dekui` folder with Finder to a writable location, such as Documents. Keep `Dekui.app`, `tools`, and `resources` together; do not move only the app.
+3. Put your game beside `Dekui.app`, then open it.
+4. If macOS blocks the app because the developer cannot be verified, open **System Settings → Privacy & Security → Open Anyway**, then confirm **Open**.
+
+An Apple Silicon Mac (M1 or newer) running macOS 13.4 or newer is required. This package does not support Intel Macs. Python and app dependencies are bundled; Homebrew and developer tools are not required. The app is ad-hoc signed and is not Apple-notarized.
+
+If the app cannot find its adjacent files after downloading, quit it, move the entire extracted folder with Finder, and reopen it.
+
 ## First launch and later launches
 
 First launch silently checks the game and builds the required mod files in `user/` before opening the game. Allow extra time on first launch. There are no file-selection forms or preparation progress windows; an error is shown if setup cannot finish.
@@ -37,7 +48,9 @@ The game stays in place; setup does not move or duplicate it. Later launches use
 
 ## Settings
 
-Press **F1** for Graphics, HUD, Difficulty, Audio, Controls, and About. Game touchscreen input is disabled. Controller and keyboard mappings can be changed under Controls.
+Press **F1** (or **Fn–F1** on a Mac using media keys) for General, Graphics, HUD, Difficulty, Restoration, QOL, Audio, Controls, and About. Game touchscreen input is disabled. Controller and keyboard mappings can be changed under Controls.
+
+Fullscreen defaults to **F11** on Windows/Linux and **Control–Command–F** on macOS. Change the shortcut under **Controls → Fullscreen shortcut**. **Esc** leaves fullscreen. New profiles start fullscreen; your chosen windowed/fullscreen mode is remembered for later launches.
 
 Hold **ZR** and press **SELECT** during gameplay to hide or show the minimap. The full map remains available from the inventory Map tab.
 
