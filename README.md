@@ -57,13 +57,6 @@ A custom fork of Azahar is used as the backing engine.
   </tr>
 </table>
 
-## Planned features
-
-- Android support
-- Graphical enhancements (depth of field, ambient occlusion)
-- Further improvements to 60fps interpolation (the aim is perfection)
-- Further UI polishing/redesign and bug fixing
-
 ## Getting started
 
 1. Download the latest release corresponding to your platform
