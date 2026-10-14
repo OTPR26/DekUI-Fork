@@ -22,7 +22,6 @@ A custom fork of Azahar is used as the backing engine.
 - Redesigned HUD elements (smaller and wider textboxes, thicker magic bar) meant to emulate a console-like experience
 - HUD scaling, positioning, spacing, and visibility controls
 - Difficulty options (damage multiplier, adjustable red potion, blue potion, and bottled fairy healing, no heart, rupee, fairy, or magic drops, disabled ammo pickups, rupee loss or moon crash on death, and 2×/3× purchase prices)
-- A 60 Hz display and 1× draw distances are recommended for interpolation
 - Widescreen, increased FOV, and slider to adjust camera distance
 - References in text to the bottom screen and other 3DS specific features have been replaced with any new controls for a more console-like experience
 - Correct rupee sounds for HLE audio (for the first time through a 3DS emulator!)
