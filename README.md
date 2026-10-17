@@ -103,9 +103,17 @@ Try the following:
 ```json
 "interpolation_60fps": false
 ```
+
 4. Save file and boot up game
 
 The game will run at 30fps, however. I am currently investigating what causes freezing for some users with interpolation on.
+
+### The I and II buttons seem to have text behind them
+
+There's actually no way around this as MM3D has two bubble textures, and both have A and B baked into them.
+That means for the new I and II buttons, I and II have to be overlaid onto the B button. If this bothers you,
+please use a texture pack that removes the letter B from the B button texture. This is the one Project Restoration
+uses: https://zora.re/dl/tex1_512x256_E2CEBCB19DA2608F_13.png
 
 ## Reporting issues
 
