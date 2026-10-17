@@ -68,7 +68,7 @@ struct GlareInterpolation {
             }
             midpoint.reset();
             if(compatible) {
-                midpoint=sample;midpoint->alpha=(current.alpha+sample.alpha)*.5f;
+                midpoint.emplace(sample);midpoint->alpha=(current.alpha+sample.alpha)*.5f;
                 for(unsigned i=0;i<sample.vertices.size();++i) {
                     auto& v=midpoint->vertices[i];const auto& old=current.vertices[i];
                     for(unsigned c=0;c<2;++c)v.position[c]=(v.position[c]+old.position[c])*.5f;

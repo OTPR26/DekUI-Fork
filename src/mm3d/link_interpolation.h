@@ -191,6 +191,38 @@ inline std::optional<std::vector<unsigned>> DodongoBones(
     }
     return bones;
 }
+// Goht's active skin palettes, verified against the local model and three
+// captures. Reconstructed binds differ by up to .05735 units / 1.009e-5.
+// Match the complete mesh palette and preserve its native bind correction.
+inline std::optional<std::span<const unsigned>> GohtSkinBones(
+        const Palette& palette,const LinkPoseCapture::LivePose& pose,unsigned vertices) {
+    if(pose.signature!=0x496431680f850b7full || pose.pose.bones.size()!=29 ||
+       pose.bind.size()!=29 || pose.words.size()!=29)return {};
+    struct Mesh {unsigned vertices,count;std::array<unsigned,10> bones;};
+    static constexpr Mesh meshes[]{
+        {129,2,{1,3}}, {756,3,{1,3,12}}, {1878,7,{1,5,9,23,3,12,27}},
+        {150,2,{3,12}}, {2100,7,{7,6,11,10,5,3,9}},
+        {2496,10,{19,1,25,22,21,26,28,27,23,20}}, {219,3,{1,3,12}},
+        {348,3,{12,14,3}}, {606,2,{12,14}}, {96,2,{12,14}}, {750,3,{1,15,3}}};
+    for(const auto& mesh:meshes) {
+        if(mesh.vertices!=vertices)continue;
+        for(unsigned slot=0;slot<mesh.count;++slot) {
+            const auto bone=mesh.bones[slot];
+            const auto skin=Multiply(Expand(pose.pose.bones[bone]),Expand(pose.bind[bone]));
+            // Bone 15 is deliberately collapsed in these captures. Validate
+            // its zero basis, but do not revive that hidden geometry.
+            bool collapsed=bone==15;
+            for(unsigned r=0;r<3;++r)for(unsigned c=0;c<3;++c)
+                collapsed &= skin[r][c]==0 && palette[slot][r][c]==0;
+            if(!collapsed && (!Inverse(skin) || !Inverse(palette[slot])))return {};
+            for(unsigned r=0;r<3;++r)for(unsigned c=0;c<4;++c)
+                if(!std::isfinite(palette[slot][r][c]) || !std::isfinite(skin[r][c]) ||
+                   std::abs(palette[slot][r][c]-skin[r][c])>(c==3?.06:.000012))return {};
+        }
+        return std::span<const unsigned>(mesh.bones.data(),mesh.count);
+    }
+    return {};
+}
 // These two verified NPC meshes start with coincident skin bones, so the
 // generic slot-zero owner check cannot choose a bone. The asset's entire active
 // palette establishes identity without relaxing any matrix tolerance.
@@ -578,6 +610,16 @@ public:
                 result[slot]=Multiply(Multiply(Multiply(view,half[bone]),bind),correction);
             }
         }
+        if(const auto bones=GohtSkinBones(palette,*pose,vertices)) {
+            for(unsigned slot=0;slot<bones->size();++slot) {
+                const auto bone=(*bones)[slot];
+                const auto bind=Expand(pose->bind[bone]);
+                const auto inverse=Inverse(Multiply(Expand(pose->pose.bones[bone]),bind));
+                if(!inverse) {result[slot].reset();continue;}
+                const auto correction=Multiply(*inverse,palette[slot]);
+                result[slot]=Multiply(Multiply(Multiply(view,half[bone]),bind),correction);
+            }
+        }
         if(const auto bones=NpcSkinBones(palette,*pose,vertices)) {
             for(unsigned slot=0;slot<bones->size();++slot) {
                 const auto bone=(*bones)[slot];
@@ -699,6 +741,13 @@ public:
             whip_owner=&pose;
         }
         if(whip_owner)return ApplyKnown(frame,now,camera,palette,*whip_owner,allow,false,false,vertices);
+        const LinkPoseCapture::LivePose* goht_owner=nullptr;
+        for(const auto& pose:poses) {
+            if(!GohtSkinBones(palette,pose,vertices))continue;
+            if(goht_owner)return {};
+            goht_owner=&pose;
+        }
+        if(goht_owner)return ApplyKnown(frame,now,camera,palette,*goht_owner,allow,false,false,vertices);
         const LinkPoseCapture::LivePose* npc_owner=nullptr;
         if(vertices==30 || vertices==144)for(const auto& pose:poses) {
             if(!NpcSkinBones(palette,pose,vertices))continue;
@@ -972,7 +1021,10 @@ public:
         if(!found)for(const auto& pose:poses) {
             // Verified effects, pickups, Bomber and intro trees have equivalent bones.
             // ResolvePalette still rejects them if their midpoint poses diverge.
-            const unsigned count=(pose.signature==0x71a6a9af29d2e93full &&
+            const unsigned count=(pose.signature==0x496431680f850b7full &&
+                (vertices==12 || vertices==129 || vertices==150 || vertices==219 ||
+                 vertices==750 || vertices==756 || vertices==1878)) ? 29 : // Goht shared body/limb bones
+                (pose.signature==0x71a6a9af29d2e93full &&
                 (vertices==24 || vertices==276)) ? 20 : // Snowhead flag (ht_hata)
                 (pose.signature==0x2839c49538bf9e2aull &&
                 (vertices==12 || vertices==24)) ? 3 : // Blue Bubble flame (torch4_soul)

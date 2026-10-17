@@ -46,7 +46,7 @@ int main() {
         for(unsigned kind=0;kind<std::size(E::Patterns);++kind) {
             const auto& pattern=E::Patterns[kind];E::Sample a{},b{};
             a.model=Identity();for(unsigned r=0;r<3;++r)a.model[r][r]=.01;
-            if(kind>=2)a.model[2][2]*=-1;
+            if(E::Mirrored(kind))a.model[2][2]*=-1;
             for(unsigned r=0;r<E::Rows(kind);++r){a.uv[r][r%2]=pattern.basis[r];a.uv[r][3]=-.5f;}
             b=a;b.model[0][3]=2;
             for(unsigned r=0;r<E::Rows(kind);++r)b.uv[r][3]+=pattern.step[r];
@@ -58,7 +58,7 @@ int main() {
             auto half=h.Apply(2,key,b);
             Check(half&&std::abs(half->model[0][3]-1)<1e-6,"moving flame/wake origin interpolates");
             Check(half&&half->model[2][2]==a.model[2][2],"wake reflection is preserved");
-            if(kind>=2){
+            if(E::Mirrored(kind)){
                 auto spin=b;spin.model=Camera(120,2);
                 for(unsigned r=0;r<3;++r)for(unsigned c=0;c<3;++c)spin.model[r][c]*=.0095;
                 for(unsigned r=0;r<3;++r)spin.model[r][2]*=-1;
@@ -72,6 +72,20 @@ int main() {
             Check(!E::Midpoint(kind,a,jump),"unknown UV speed rejected");
             if(kind<2){jump=b;jump.uv[3][3]+=2;if(kind==0)jump.uv[5][3]+=1;
                 Check(E::Midpoint(kind,a,jump).has_value(),"flame layers wrap in their shared phase");}
+            if(E::AnimatedColors(kind)) {
+                a.colors[0]={.2f,.4f,.6f,.8f};b.colors[0]={.4f,.6f,.8f,1.f};
+                const auto pulse=E::Midpoint(kind,a,b);
+                Check(pulse&&std::abs(pulse->colors[0][0]-.3f)<1e-6&&
+                      std::abs(pulse->colors[0][3]-.9f)<1e-6,"alien glow colors and opacity interpolate");
+                auto invalid=b;invalid.colors[0][0]=std::numeric_limits<float>::quiet_NaN();
+                Check(!E::Midpoint(kind,a,invalid),"invalid glow colors rejected");
+                auto colored=pattern.material;colored[0][3]=123;
+                Check(E::Identify(pattern.vertices,pattern.mask,a.uv,colored)==kind,"alien animated color retains material identity");
+                if(kind==4) {
+                    auto wrap=b;wrap.uv[0][3]+=1;wrap.uv[2][3]+=2;
+                    Check(E::Midpoint(kind,a,wrap).has_value(),"alien scrolling layers interpolate across their wrap periods");
+                }
+            }
             h.Reset();h.Apply(1,key,a);auto other=a;other.model[0][3]=4;h.Apply(1,key,other);
             Check(!h.Apply(2,key,b),"equidistant effect instances remain native");
         }
@@ -2582,6 +2596,80 @@ int main() {
             Check(!h.Apply(2,33,Identity(),b,{fish},true,732)[0],"divergent equivalent fish bones rejected");
             h.Reset();a=set(0,732);h.Apply(1,0,Identity(),a,{fish},true,733);set(1,732);
             Check(!h.Apply(2,33,Identity(),b,{fish},true,733)[0],"unknown fish mesh excluded from equivalent-bone fallback");
+        }
+        {
+            namespace L=MM3D::LinkInterpolation;
+            auto goht=pose(29,440,0x496431680f850b7full);
+            const auto set=[&](double t,const std::vector<unsigned>& bones) {
+                for(unsigned i=0;i<29;++i)goht.pose.bones[i]=Flatten(Camera(0,i*20+t*4));
+                L::Palette p;p.fill(Camera(0,99999));
+                for(unsigned slot=0;slot<bones.size();++slot) {
+                    p[slot]=Expand(goht.pose.bones[bones[slot]]);
+                    p[slot][1][3]+=.05; // Captured bind reconstruction error exceeds generic matching.
+                }
+                return p;
+            };
+            for(const auto& [vertices,bones]:std::vector<std::pair<unsigned,std::vector<unsigned>>>{
+                {348,{12,14,3}},{606,{12,14}},{96,{12,14}},{2100,{7,6,11,10,5,3,9}}}) {
+                L::History h;const auto a=set(0,bones);
+                Check(L::GohtSkinBones(a,goht,vertices).has_value(),"Goht complete head/body skin palette recognized");
+                Check(!L::Identify(a[0],goht),"captured Goht bind error exceeds generic tolerance");
+                Check(!h.Apply(1,0,Identity(),a,{goht},true,vertices)[0],"Goht skin first frame stays native");
+                const auto b=set(1,bones);const auto half=h.Apply(2,33,Identity(),b,{goht},true,vertices);
+                for(unsigned slot=0;slot<bones.size();++slot) {
+                    auto expected=b[slot];expected[0][3]-=2;
+                    Check(half[slot]&&Near(*half[slot],expected,1e-5),"Goht head/body midpoint preserves native bind correction");
+                }
+                auto wrong=b;wrong[1][0][3]+=.1;
+                Check(!L::GohtSkinBones(wrong,goht,vertices),"Goht matching requires every active slot");
+                wrong=b;wrong[0][0][0]+=.00002;
+                Check(!L::GohtSkinBones(wrong,goht,vertices),"Goht rejects unrelated basis transforms");
+                Check(!L::GohtSkinBones(b,goht,vertices+1),"Goht rejects unknown mesh sizes");
+                auto other=goht;other.signature++;
+                Check(!L::GohtSkinBones(b,other,vertices),"Goht bounds do not apply to another model");
+                auto duplicate=goht;duplicate.pose.instance++;
+                Check(!h.Apply(3,66,Identity(),b,{goht,duplicate},true,vertices)[0],"Goht skin actor ownership remains unique");
+                Check(!h.Apply(4,99,Identity(),b,{goht},true,vertices)[0],"Goht skin frame gaps stay native");
+            }
+            L::History h;
+            const auto collapsed=[&](double t) {
+                auto p=set(t,{1,15,3});auto hidden=Expand(goht.pose.bones[15]);
+                for(unsigned r=0;r<3;++r)for(unsigned c=0;c<3;++c)hidden[r][c]=0;
+                goht.pose.bones[15]=Flatten(hidden);p[1]=hidden;return p;
+            };
+            auto a=collapsed(0);h.Apply(1,0,Identity(),a,{goht},true,750);
+            auto b=collapsed(1);const auto half=h.Apply(2,33,Identity(),b,{goht},true,750);
+            Check(half[0]&&!half[1]&&half[2],"Goht hidden bone stays collapsed while visible slots interpolate");
+        }
+        {
+            namespace L=MM3D::LinkInterpolation;
+            auto goht=pose(29,439,0x496431680f850b7full);
+            const auto set=[&](double t) {
+                for(unsigned i=0;i<29;++i)goht.pose.bones[i]=Flatten(Camera(0,i*20+t*4));
+                for(unsigned i:{2u,18u,24u})goht.pose.bones[i]=goht.pose.bones[1];
+                L::Palette p;p.fill(Camera(0,99999));
+                p[0]=Expand(goht.pose.bones[1]);p[1]=Expand(goht.pose.bones[5]);return p;
+            };
+            for(unsigned vertices:{12u,129u,150u,219u,750u,756u,1878u}) {
+                L::History h;const auto a=set(0);
+                Check(!L::Identify(a[0],goht),"Goht shared body bones are ambiguous to generic identification");
+                Check(!h.Apply(1,0,Identity(),a,{goht},true,vertices)[0],"Goht first frame seeds history");
+                const auto b=set(1);const auto mid=h.Apply(2,33,Identity(),b,{goht},true,vertices);
+                Check(mid[0]&&Near(*mid[0],Camera(0,22),1e-5),"Goht shared body bones interpolate by consensus");
+                Check(mid[1]&&Near(*mid[1],Camera(0,102),1e-5),"Goht remaining palette bones share the midpoint");
+                Check(!h.Apply(2,33,Identity(),b,{goht},false,vertices)[0],"disabled Goht interpolation remains native");
+                auto duplicate=goht;duplicate.pose.instance++;
+                Check(!h.Apply(3,66,Identity(),b,{goht,duplicate},true,vertices)[0],"coincident Goht actors cannot borrow histories");
+                Check(!h.Apply(4,99,Identity(),b,{goht},true,vertices)[0],"Goht rejected frame forces reacquisition");
+            }
+            L::History h;auto a=set(0);goht.pose.bones[24]=Flatten(Camera(0,19));
+            h.Apply(1,0,Identity(),a,{goht},true,1878);
+            auto b=set(1);
+            Check(!h.Apply(2,33,Identity(),b,{goht},true,1878)[0],"divergent Goht midpoint bones remain rejected");
+            h.Reset();a=set(0);h.Apply(1,0,Identity(),a,{goht},true,1879);b=set(1);
+            Check(!h.Apply(2,33,Identity(),b,{goht},true,1879)[0],"unverified Goht meshes excluded");
+            h.Reset();goht.signature=123;a=set(0);h.Apply(1,0,Identity(),a,{goht},true,1878);b=set(1);
+            Check(!h.Apply(2,33,Identity(),b,{goht},true,1878)[0],"other 29-bone actors excluded");
         }
         {
             namespace L=MM3D::LinkInterpolation;
