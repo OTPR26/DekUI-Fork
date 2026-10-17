@@ -2,17 +2,11 @@
 
 ## Unreleased
 
-### Added
-
-- Optional “Fast time” difficulty setting, disabled by default. Uses the first-cycle clock rate (50% faster than normal) and speeds up time under Inverted Song of Time while keeping NPC schedules synchronized. Song of Double Time is unchanged.
-
-- Optional “Dying moves time forward 6 hours” difficulty setting, disabled by default. Continuing after death advances the clock and updates the day when crossing dawn; reaching or passing the final dawn triggers the world ending. Fairy revivals, pit falls and deaths on the Moon are unaffected.
-
 ### Changed
 
 - Expanded interpolation coverage for actor attachments, held items, particles, water effects, textboxes, inventory screens, file select, map zoom, and HUD animations. Coverage remains incomplete; some effects still animate at 30fps.
 - Select Item retains its native timing with interpolated opening and closing animations.
-- Improved notebook scrollbars and overlays, mask selection layout, and dawn/dusk sounds when advancing time after death.
+- Improved notebook scrollbars and overlays, mask selection layout.
 
 ## 1.0.0-beta.2
 

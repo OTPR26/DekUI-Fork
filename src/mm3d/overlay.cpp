@@ -40,7 +40,6 @@
 #include "mm3d/actor_draw_distance.h"
 #include "mm3d/prop_draw_distance.h"
 #include "mm3d/death_penalties.h"
-#include "mm3d/fast_time.h"
 #include "mm3d/prices.h"
 #include "mm3d/single_screen_text.h"
 #include "mm3d/notebook.h"
@@ -138,8 +137,6 @@ void ApplyPresentationSettings(const Settings& settings) {
     Difficulty::disable_ammo_pickups.store(settings.disable_ammo_pickups);
     DeathPenalties::lose_rupees.store(settings.lose_rupees_on_death);
     DeathPenalties::world_ends.store(settings.world_ends_on_death);
-    DeathPenalties::advance_six_hours.store(settings.advance_six_hours_on_death);
-    FastTime::enabled.store(settings.fast_time);
     InventoryMenu::Apply(settings.inventory_menu);
     NativeNotebook::Apply(settings.notebook_live);
     NativeFileSelect::Apply(settings.file_select);
@@ -952,17 +949,13 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
             help_text("Removes loose arrows, bombs, Deku sticks and Deku nuts.");
             changed|=ImGui::Checkbox("Lose rupees on death",&state.settings.lose_rupees_on_death);
             help_text("Lose all carried rupees when you die. Bank savings are unaffected.");
-            changed|=ImGui::Checkbox("Dying moves time forward 6 hours",&state.settings.advance_six_hours_on_death);
-            help_text("Advances time by six hours when you continue after dying. Reaching or passing the end of the final day ends the world. Fairy revivals, pit falls and deaths on the Moon are unaffected. World ends on death takes priority if both are enabled.");
-            changed|=ImGui::Checkbox("Fast time",&state.settings.fast_time);
-            help_text("Uses the first-cycle clock speed (50% faster than normal), including faster time with Inverted Song of Time. Song of Double Time is unchanged.");
             changed|=ImGui::Checkbox("World ends on death",&state.settings.world_ends_on_death);
             changed|=ImGui::Checkbox("Increase purchase prices and fees",&state.settings.double_prices);
             ImGui::BeginDisabled(!state.settings.double_prices);
             changed|=ImGui::SliderInt("Price multiplier",&state.settings.price_multiplier,2,3,"%dx",ImGuiSliderFlags_AlwaysClamp);
             help_text("Multiplies purchase prices and fees. All-Night Mask, Biggest Bomb Bag upgrade and Chateau Romani cost at most 500 rupees. Restart Dekui after changing these settings.");
             ImGui::EndDisabled();
-            if(ImGui::Button("Reset difficulty")){multiplier=1;state.settings.weaker_enhanced_defense=false;state.settings.red_potion_hearts=20;state.settings.blue_potion_hearts=20;state.settings.bottled_fairy_hearts=10;state.settings.disable_heart_drops=false;state.settings.disable_rupee_drops=false;state.settings.disable_fairy_drops=false;state.settings.disable_magic_drops=false;state.settings.disable_ammo_pickups=false;state.settings.double_prices=false;state.settings.price_multiplier=2;state.settings.lose_rupees_on_death=false;state.settings.world_ends_on_death=false;state.settings.advance_six_hours_on_death=false;state.settings.fast_time=false;changed=true;}
+            if(ImGui::Button("Reset difficulty")){multiplier=1;state.settings.weaker_enhanced_defense=false;state.settings.red_potion_hearts=20;state.settings.blue_potion_hearts=20;state.settings.bottled_fairy_hearts=10;state.settings.disable_heart_drops=false;state.settings.disable_rupee_drops=false;state.settings.disable_fairy_drops=false;state.settings.disable_magic_drops=false;state.settings.disable_ammo_pickups=false;state.settings.double_prices=false;state.settings.price_multiplier=2;state.settings.lose_rupees_on_death=false;state.settings.world_ends_on_death=false;changed=true;}
             if(changed){state.settings.damage_multiplier=multiplier;Difficulty::damage_multiplier.store(multiplier);
                 Difficulty::weaker_enhanced_defense.store(state.settings.weaker_enhanced_defense);
                 BottleHealing::red_hearts.store(state.settings.red_potion_hearts);
@@ -975,8 +968,6 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 Difficulty::disable_ammo_pickups.store(state.settings.disable_ammo_pickups);
                 DeathPenalties::lose_rupees.store(state.settings.lose_rupees_on_death);
                 DeathPenalties::world_ends.store(state.settings.world_ends_on_death);
-                DeathPenalties::advance_six_hours.store(state.settings.advance_six_hours_on_death);
-                FastTime::enabled.store(state.settings.fast_time);
                 state.status=state.settings.Save(state.directory+"presentation.json")?"Difficulty saved":"Difficulty save FAILED";}
         };
         const auto cheats_controls=[&] {

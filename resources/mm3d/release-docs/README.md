@@ -19,7 +19,7 @@ A custom fork of Azahar is used as the backing engine.
   - Classic Saving allows saving at owl statues, but not feather statues. Saving returns to the title screen only when a save from a Song of Time reset already exists.
 - Redesigned HUD elements (smaller and wider textboxes, thicker magic bar) meant to emulate a console-like experience
 - HUD scaling, positioning, spacing, and visibility controls
-- Difficulty options (damage multiplier, adjustable red potion, blue potion, and bottled fairy healing, no heart, rupee, fairy, or magic drops, disabled ammo pickups, rupee loss, a six-hour time advance, or moon crash on death, fast first-cycle time, and 2×/3× purchase prices). The optional six-hour death penalty ends the world if it reaches or passes the final dawn.
+- Difficulty options (damage multiplier, adjustable red potion, blue potion, and bottled fairy healing, no heart, rupee, fairy, or magic drops, disabled ammo pickups, rupee loss or moon crash on death, and 2×/3× purchase prices)
 - A 60 Hz display and 1× draw distances are recommended for interpolation
 - Widescreen, increased FOV, and slider to adjust camera distance
 - References in text to the bottom screen and other 3DS specific features have been replaced with any new controls for a more console-like experience

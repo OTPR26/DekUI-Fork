@@ -10,7 +10,6 @@
 #include "mm3d/notebook_inspector.h"
 #include "mm3d/camera_instruction_probe.h"
 #include "mm3d/form_camera.h"
-#include "mm3d/fast_time.h"
 #include "mm3d/camera_live.h"
 #include "mm3d/camera_midpoint.h"
 #include "mm3d/link_pose_capture.h"
@@ -159,7 +158,6 @@ public:
     MM3D::NativeStartup::LoadingIconHook loading_icon_hook;
     MM3D::ItemPreview::Hook item_preview_hook;
     MM3D::ClassicSaving::Hook classic_save_hook;
-    MM3D::DeathPenalties::RespawnSound death_respawn_sound;
     MM3D::ClassicSaving::OwlDraw classic_owl_draw;
     MM3D::ClassicSaving::FileMarker classic_file_marker;
     // Bounded observation for the unresolved sword-activation movement hold.
@@ -259,12 +257,6 @@ public:
             const auto process=parent.system.Kernel().GetCurrentProcess();
             if(process&&process->codeset&&process->codeset->program_id==0x0004000000125500ULL&&MM3D::Difficulty::CodeMatches(code,vaddr))
                 return MM3D::Difficulty::Instruction(vaddr,*instruction);
-        }
-        if(instruction&&MM3D::FastTime::Instruction(vaddr,*instruction)!=*instruction) {
-            struct CodeMemory {Memory::MemorySystem& memory;std::optional<u32> Read(u32 at){return memory.Read32OrNullopt(at);}} code{memory};
-            const auto process=parent.system.Kernel().GetCurrentProcess();
-            if(process&&process->codeset&&process->codeset->program_id==0x0004000000125500ULL&&MM3D::FastTime::CodeMatches(code))
-                return MM3D::FastTime::Instruction(vaddr,*instruction);
         }
         if(instruction&&MM3D::NativeStartup::Instruction(vaddr,*instruction)!=*instruction) {
             struct CodeMemory {Memory::MemorySystem& memory;std::optional<u32> Read(u32 at){return memory.Read32OrNullopt(at);}} code{memory};
@@ -688,25 +680,14 @@ public:
                 MM3D::BottleHealing::fairy_hearts.load());
             return;
         }
-        if(swi==MM3D::DeathPenalties::FirstSVC||swi==MM3D::DeathPenalties::FirstSVC+1||
-           swi==MM3D::DeathPenalties::SceneSoundSVC) {
+        if(swi==MM3D::DeathPenalties::FirstSVC||swi==MM3D::DeathPenalties::FirstSVC+1) {
             struct GuestMemory {Memory::MemorySystem& memory;
                 std::optional<u32> Read(u32 at){return memory.Read32OrNullopt(at);}
                 void Write(u32 at,u32 value){memory.Write32(at,value);}} guest{memory};
             if(swi==MM3D::DeathPenalties::FirstSVC)
                 MM3D::DeathPenalties::Death(guest,parent.jit->Regs(),MM3D::DeathPenalties::lose_rupees.load());
-            else if(swi==MM3D::DeathPenalties::FirstSVC+1)
-                MM3D::DeathPenalties::Continue(guest,parent.jit->Regs(),MM3D::DeathPenalties::world_ends.load(),
-                    MM3D::DeathPenalties::advance_six_hours.load(),&death_respawn_sound);
             else
-                death_respawn_sound.SceneInit(guest,parent.jit->Regs());
-            return;
-        }
-        if(swi>=MM3D::FastTime::FirstSVC&&swi<MM3D::FastTime::FirstSVC+MM3D::FastTime::Hooks.size()) {
-            struct Guest {Memory::MemorySystem& memory;
-                std::optional<u32> Read(u32 at){return memory.Read32OrNullopt(at);}
-                void Write(u32 at,u32 value){memory.Write32(at,value);}} guest{memory};
-            MM3D::FastTime::Update(guest,parent.jit->Regs(),swi,MM3D::FastTime::enabled.load());
+                MM3D::DeathPenalties::Continue(guest,parent.jit->Regs(),MM3D::DeathPenalties::world_ends.load());
             return;
         }
         if(swi==MM3D::Difficulty::SpawnSVC) {

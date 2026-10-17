@@ -55,8 +55,6 @@ struct Settings {
     bool disable_magic_drops = false, disable_ammo_pickups = false;
     bool lose_rupees_on_death = false;
     bool world_ends_on_death = false;
-    bool advance_six_hours_on_death = false;
-    bool fast_time = false;
     bool double_prices = false;
     int price_multiplier = 2;
     bool accurate_hle_audio = true;
