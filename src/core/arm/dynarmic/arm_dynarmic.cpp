@@ -1162,7 +1162,8 @@ public:
                 const bool present_description=item_present_hook.IsDescription(pose,layout);
                 if(present_description){select_help_hook.source.description=layout;
                     select_help_hook.source.description_panel=item_present_hook.panel;}
-                const auto& setting=MM3D::NativeItemPresent::poses[MM3D::NativeItemPresent::Description];
+                const auto& setting=(item_present_hook.mask_menu?MM3D::NativeItemPresent::mask_poses:
+                    MM3D::NativeItemPresent::poses)[MM3D::NativeItemPresent::Description];
                 const MM3D::GearMenu::Pose description_pose{setting.x.load(),setting.y.load(),setting.scale.load()};
                 const bool map_description=dungeon_map_hook.IsDescription(pose,layout);
                 const auto& map_setting=MM3D::DungeonMap::poses[MM3D::DungeonMap::Description];
@@ -1173,8 +1174,10 @@ public:
                 const bool options_description=options_hook.IsDescription(pose,layout);
                 dialogue_hook.Begin(pose,layout,description,description&&item_preview_hook.gear,
                     options_description?&options_hook.frame.description:reset_description?&reset_pose:map_description?&map_pose:present_description?&description_pose:nullptr);
+                item_present_hook.BeginPromptPose(pose,layout);
                 parent.jit->Regs()[0]=layout+8; // displaced ADD r0,r4,#8
             } else {
+                item_present_hook.EndPromptPose(pose);
                 dialogue_hook.End(pose,layout);
                 parent.jit->Regs()[13]+=8; // displaced ADD sp,sp,#8
             }

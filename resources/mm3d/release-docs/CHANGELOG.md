@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Added independent Select Mask controls, smoother panel shadows, and corrected notebook scrollbars and portrait flashes.
+- Added a cutscene FOV slider and a cheats-only window. Corrected file-select panel layering.
+- Updated fullscreen fade overrides and the Select Mask release layout.
+
 ## 1.0.0-beta.2
 
 ### Added

@@ -42,6 +42,7 @@ struct Settings {
     NativeInventory::ButtonPose world_map_zoom_prompt{0,0,.8f},world_map_native_zoom;
     NativeFileSelect::Options file_select;
     NativeItemPresent::Options item_present;
+    NativeItemPresent::Options mask_present;
     NativeStartup::Options startup;
     float actor_draw_distance = 1.f;
     float prop_draw_distance = 1.f;
@@ -78,6 +79,7 @@ struct Settings {
     bool widescreen = false;
     float camera_zoom_out = 1.f;
     float game_camera_fov = 65.f;
+    float cutscene_camera_fov = 49.f;
     float restoration_hud_scale = 1.f;
     MagicBorder::Options magic_border;
     MinigameHud::Options minigame_hud;

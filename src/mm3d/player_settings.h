@@ -9,6 +9,7 @@ inline std::atomic<int> hardware_shaders{0}, set_hardware_shaders{-1};
 inline std::atomic<int> async_shaders{0}, set_async_shaders{-1};
 inline std::atomic<int> textures{0}, set_textures{-1};
 inline std::atomic<bool> open_textures{false};
+inline std::atomic<bool> open_cheats{false};
 // Frontend signals after the shader/loading screen has faded away.
 inline std::atomic<bool> startup_hint_requested{false};
 // Native CFG language IDs; requests are applied on the emulation thread.

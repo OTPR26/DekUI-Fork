@@ -155,6 +155,7 @@ void ApplyPresentationSettings(const Settings& settings) {
     WorldMapPrompt::Apply(settings.world_map_zoom_prompt);
     WorldMapPrompt::ApplyNative(settings.world_map_native_zoom);
     NativeItemPresent::Apply(settings.item_present);
+    NativeItemPresent::ApplyMask(settings.mask_present);
     NativeStartup::Apply(settings.startup);
     DialogueScale::scale.store(settings.dialogue_scale);
     DialogueScale::y_offset.store(settings.dialogue_y);
@@ -162,6 +163,7 @@ void ApplyPresentationSettings(const Settings& settings) {
     DialogueScale::indicator_x.store(settings.dialogue_indicator_x);
     DialogueScale::indicator_y.store(settings.dialogue_indicator_y);
     CameraLive::SetFov(settings.game_camera_fov);
+    CameraLive::SetCutsceneFov(settings.cutscene_camera_fov);
     Minimap::enabled.store(settings.minimap);
     Minimap::scale.store(settings.minimap_scale);
     Minimap::opacity.store(settings.minimap_opacity);
@@ -763,6 +765,17 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
             if(ImGui::Button("Reset camera zoom")){state.settings.game_camera_fov=65.f;changed=true;}
             if(changed){apply_camera_zoom();
                 state.status=state.settings.Save(state.directory+"presentation.json")?"Camera zoom saved":"Camera zoom save FAILED";}
+            bool cutscene_changed=ImGui::SliderFloat("Cutscene camera (FOV)",&state.settings.cutscene_camera_fov,
+                45.f,70.f,"%.1f deg",ImGuiSliderFlags_AlwaysClamp);
+            hover_help("45 degrees is the original game's FOV. Default: 49 degrees.\n\n"
+                "NOTE: Higher values than default may reveal missing geometry and NPC's on standby");
+            ImGui::SameLine();
+            if(ImGui::Button("Reset cutscene camera")){state.settings.cutscene_camera_fov=49.f;cutscene_changed=true;}
+            if(cutscene_changed) {
+                CameraLive::SetCutsceneFov(state.settings.cutscene_camera_fov);
+                state.status=state.settings.Save(state.directory+"presentation.json")?
+                    "Cutscene camera saved":"Cutscene camera save FAILED";
+            }
         };
         const auto hud_controls=[&]() {
             auto& hud=state.settings.player_hud;
@@ -958,6 +971,11 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 state.status=state.settings.Save(state.directory+"presentation.json")?"Difficulty saved":"Difficulty save FAILED";}
         };
         const auto cheats_controls=[&] {
+#ifndef __ANDROID__
+            ImGui::TextWrapped("NOTE: Some cheats may not work with DekUI");
+            if(ImGui::Button("Open Azahar cheats"))PlayerSettings::open_cheats.store(true);
+            ImGui::Separator();
+#endif
             using namespace SimpleCheats;
             const bool available=ready.load();
             ImGui::TextWrapped("Buttons apply once. Infinite cheats last for this session. Changes to your inventory can be saved with the game.");
@@ -1087,6 +1105,11 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
             if(ImGui::BeginTabItem("Restoration")){restoration_controls();ImGui::EndTabItem();}
             if(ImGui::BeginTabItem("QOL")){qol_controls();ImGui::EndTabItem();}
 #ifndef __ANDROID__
+            if(ImGui::BeginTabItem("Cheats")) {
+                ImGui::TextWrapped("NOTE: Some cheats may not work with DekUI");
+                if(ImGui::Button("Open cheats"))open_cheats.store(true);
+                ImGui::EndTabItem();
+            }
             // Opt-in support tools for packaged builds. Never persist this flag in
             // presentation.json or expose the editor's game-modifying controls.
             static const bool diagnostics_enabled =
@@ -1450,10 +1473,11 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 state.status=state.settings.Save(state.directory+"presentation.json")?"Background settings saved":"Background settings save FAILED";
             }
         }
-        if(ImGui::CollapsingHeader("Give an item")) {
-            auto& o=state.settings.item_present;
-            bool changed=ImGui::Checkbox("Give an item on top screen",&o.enabled);
-            if(ImGui::TreeNode("Select Item button prompts")) {
+        for(bool masks:{false,true})if(ImGui::CollapsingHeader(masks?"Select Mask":"Give an item")) {
+            ImGui::PushID(masks?"select_mask":"give_item");
+            auto& o=masks?state.settings.mask_present:state.settings.item_present;
+            bool changed=ImGui::Checkbox(masks?"Select Mask on top screen":"Give an item on top screen",&o.enabled);
+            if(ImGui::TreeNode("Button prompts")) {
                 changed|=ImGui::SliderFloat("Group X",&o.help_pose.x,-512,512,"%.1f",ImGuiSliderFlags_AlwaysClamp);
                 changed|=ImGui::SliderFloat("Group Y",&o.help_pose.y,-512,512,"%.1f",ImGuiSliderFlags_AlwaysClamp);
                 changed|=ImGui::SliderFloat("Group scale",&o.help_pose.scale,.1f,2,"%.2fx",ImGuiSliderFlags_AlwaysClamp);
@@ -1461,9 +1485,9 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 if(ImGui::Button("Reset prompts")){o.help_pose=NativeItemPresent::Options{}.help_pose;o.help_spacing=6;changed=true;}
                 ImGui::TreePop();
             }
-            constexpr std::array<const char*,NativeItemPresent::Count> names{"Background","Item panel and icons","Right panel","Select Item prompt","Return button","Confirm button","Description textbox"};
+            const std::array<const char*,NativeItemPresent::Count> names{"Background",masks?"Mask panel and icons":"Item panel and icons","Right panel",masks?"Select Mask prompt":"Select Item prompt","Return button","Confirm button","Description box"};
             for(unsigned i=0;i<NativeItemPresent::Count;++i) {
-                if(i==NativeItemPresent::Background)continue;
+                if(i==NativeItemPresent::Background||(masks&&i==NativeItemPresent::Right))continue;
                 ImGui::PushID(int(i)+1500);
                 if(ImGui::TreeNode(names[i])) {
                     auto& p=o.poses[i];
@@ -1478,8 +1502,14 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 }
                 ImGui::PopID();
             }
-            if(changed){NativeItemPresent::Apply(o);state.status=state.settings.Save(state.directory+"presentation.json")?"Give an item settings saved":"Give an item settings save FAILED";}
-            ImGui::TextWrapped("Position and scale each part independently. Selection highlights follow their panel.");
+            if(changed){
+                if(masks)NativeItemPresent::ApplyMask(o);else NativeItemPresent::Apply(o);
+                const bool saved=state.settings.Save(state.directory+"presentation.json");
+                state.status=saved?(masks?"Select Mask settings saved":"Give an item settings saved"):
+                    (masks?"Select Mask settings save FAILED":"Give an item settings save FAILED");
+            }
+            ImGui::TextWrapped("Position and scale each part independently. Selection highlights and shadows follow their panel.");
+            ImGui::PopID();
         }
         if(ImGui::CollapsingHeader("Location and day/night banners")) {
             constexpr const char* names[]{"New location banner","Day / night banner"};
