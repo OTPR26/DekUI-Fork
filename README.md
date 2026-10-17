@@ -90,7 +90,7 @@ Dragging it into the terminal will give the full path of it. It should work from
 
 ### I get an error saying the main partition is encrypted despite having the right version of the game
 
-Please use another legally acquired file of the same USA Version 1.1 .cci or .3ds. Some don't work for some reason
+Please use another legally acquired file of the same USA Version 1.1 .cci or .3ds. Some don't work for some reason.
 
 ### The game freezes right after starting up
 
