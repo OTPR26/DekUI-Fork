@@ -904,3 +904,47 @@ pairs. Unmatched particles retain their native geometry. Tests cover reorder,
 compaction, size changes, new particles, ambiguous matches, frame gaps, reset,
 generation isolation, repeated draws and material/UV/tint rejection. This path
 is for CPU interpolation; final appearance requires an in-game check.
+
+### Coastal water and Snowhead interpolation follow-up
+
+Great Bay coast/temple vortex and beaver-race water now identify 27 captured
+mesh/material combinations using active UV bases and full combiner state.
+Scrolling histories ignore inactive texture bindings, reject discontinuities,
+and accept only measured per-frame velocities (including the two verified
+speeds of a shared waterfall mesh). Offline replay produces midpoint UVs for
+all sampled consecutive pairs of those layers.
+
+The beaver wake and Blue Bubble flame additionally track individual moving
+models. The wake retains its mirrored basis while interpolating its fast spin;
+the flame keeps its two scrolling layers synchronized through wraps. Matching
+is bounded by world motion, basis changes, material and scroll speed, with
+ambiguous/reused instances left native. Both paths run before CPU/GPU replay.
+The captured wake and flame layers produce intermediate transforms on every
+sampled consecutive pair; first frames and capture gaps remain native.
+
+Snowhead's shutter uses its verified direct root despite its tiny bind offset.
+The red flag and Blue Bubble flame permit equivalent bones only for their
+verified skeletons/meshes, and require agreement of intermediate poses. Broken
+snow-boulder halves select their verified model instead of being rejected when
+a shadow actor shares the transform. Coincident instances remain rejected.
+
+Boss-warp stars now use their upward movement and captured lifetime fades to
+avoid confusing vertically stacked neighbors. Replay matches 6,217 of 6,324
+particles, with no cross-particle mismatches against the captured continuity;
+107 remain native (102 new births and five ambiguous candidates).
+Cut-grass fragments accept their captured animated size range: both texture
+variants now decode all 95 sampled strips. Chest-reveal sparkles accept the
+larger squares measured in Snowhead, avoiding rejection of an entire strip
+because one sparkle exceeds the former size bound. Births and ambiguous
+particle matches still remain native.
+
+The submitted LapTimeSong layout now activates the existing menu-interpolation
+path, including retained CPU inputs. The ownership ends when it leaves the
+submitted queues and does not activate world-map interpolation. It covers
+compatible Double Time menu geometry; visual confirmation of every transition
+is still required. Tests cover material rejection, wraps, mirrored rotation,
+frame gaps, duplicates, actor ambiguity, particle sizes and layout ownership.
+
+### Double Time white-background cutscene clipping range
+
+The cutscene can retain a scene-dependent shorter far plane (depth term 1.00043–1.00051, near term about 5.00250149). Recognize this separately from the existing time-song projection families, preserving skew, lens-step, camera-cut and frame-gap guards. Replaying the sampled capture accepts all 30 consecutive cutscene pairs previously rejected for lens changes; the 15 acquisition frames after capture sampling gaps remain rejected. Native white background clearing is unchanged.

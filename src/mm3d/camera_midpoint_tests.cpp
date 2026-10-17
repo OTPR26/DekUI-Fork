@@ -30,6 +30,7 @@
 #include "mm3d/camera_midpoint.h"
 #include "mm3d/world_map_interpolation.h"
 #include "mm3d/water_model_interpolation.h"
+#include "mm3d/moving_effect_interpolation.h"
 #include "mm3d/banner_interpolation.h"
 using namespace MM3D::CameraMidpoint;
 void Check(bool value,const char* message) { if(!value)throw std::runtime_error(message); }
@@ -40,6 +41,98 @@ Matrix Camera(double degrees,double x=0) {
 }
 int main() {
  try {
+    {
+        namespace E=MM3D::MovingEffectInterpolation;
+        for(unsigned kind=0;kind<std::size(E::Patterns);++kind) {
+            const auto& pattern=E::Patterns[kind];E::Sample a{},b{};
+            a.model=Identity();for(unsigned r=0;r<3;++r)a.model[r][r]=.01;
+            if(kind>=2)a.model[2][2]*=-1;
+            for(unsigned r=0;r<E::Rows(kind);++r){a.uv[r][r%2]=pattern.basis[r];a.uv[r][3]=-.5f;}
+            b=a;b.model[0][3]=2;
+            for(unsigned r=0;r<E::Rows(kind);++r)b.uv[r][3]+=pattern.step[r];
+            Check(E::Identify(pattern.vertices,pattern.mask,a.uv,pattern.material)==kind,"moving effect material recognized");
+            auto wrong=pattern.material;wrong[0][2]^=1;
+            Check(!E::Identify(pattern.vertices,pattern.mask,a.uv,wrong),"unrelated effect material rejected");
+            E::History h;E::History::Key key{1,2,3,4,kind};
+            Check(!h.Apply(1,key,a),"moving effect seeds its instance");
+            auto half=h.Apply(2,key,b);
+            Check(half&&std::abs(half->model[0][3]-1)<1e-6,"moving flame/wake origin interpolates");
+            Check(half&&half->model[2][2]==a.model[2][2],"wake reflection is preserved");
+            if(kind>=2){
+                auto spin=b;spin.model=Camera(120,2);
+                for(unsigned r=0;r<3;++r)for(unsigned c=0;c<3;++c)spin.model[r][c]*=.0095;
+                for(unsigned r=0;r<3;++r)spin.model[r][2]*=-1;
+                Check(E::Midpoint(kind,a,spin).has_value(),"fast mirrored wake spin uses quaternion midpoint");
+            }
+            Check(h.Apply(2,key,b).has_value(),"repeated effect draw keeps immutable midpoint");
+            Check(!h.Apply(4,key,b),"moving effect frame gap reseeds");
+            auto jump=b;jump.model[0][3]=1000;
+            Check(!E::Midpoint(kind,a,jump),"effect teleport rejected");
+            jump=b;jump.uv[3][3]+=.25;
+            Check(!E::Midpoint(kind,a,jump),"unknown UV speed rejected");
+            if(kind<2){jump=b;jump.uv[3][3]+=2;if(kind==0)jump.uv[5][3]+=1;
+                Check(E::Midpoint(kind,a,jump).has_value(),"flame layers wrap in their shared phase");}
+            h.Reset();h.Apply(1,key,a);auto other=a;other.model[0][3]=4;h.Apply(1,key,other);
+            Check(!h.Apply(2,key,b),"equidistant effect instances remain native");
+        }
+    }
+    {
+        namespace C=MM3D::CoastalWaterInterpolation;
+        namespace S=MM3D::SongEffectInterpolation;
+        for(unsigned kind=0;kind<std::size(C::Patterns);++kind) {
+            const auto& p=C::Patterns[kind];C::Values a{},b{};
+            for(unsigned r=0;r<C::Rows(kind);++r) {
+                for(unsigned c=0;c<3;++c)a[r][c]=p.basis[r][c];
+                a[r][3]=-3;
+            }
+            b=a;
+            for(unsigned r=0;r<C::Rows(kind);++r)b[r][3]+=p.step[r];
+            Check(C::MatchesMaterial(kind,6,p.destination,false,p.material),"coastal water material recognized");
+            auto wrong=p.material;wrong[0][2]^=1;
+            Check(!C::MatchesMaterial(kind,6,p.destination,false,wrong),"different combiner rejected");
+            Check(!C::MatchesMaterial(kind,6,p.destination,true,p.material),"opaque geometry excluded");
+            S::History h;S::Key key{1,2,3,4,p.destination|(p.mask<<8),p.vertices,0};
+            Check(!h.Apply(1,key,a,true,p.mask,kind),"coastal water seeds history");
+            const auto mid=h.Apply(2,key,b,true,p.mask,kind);
+            Check(mid.has_value(),"vortex and waterfall scroll at midpoint");
+            for(unsigned r=0;r<C::Rows(kind);++r)
+                Check(std::abs((*mid)[r][3]-(a[r][3]+b[r][3])*.5f)<1e-6,"every active layer is halfway");
+            if(p.mask!=7) {
+                b[5]={9,8,7,99};
+                const auto repeat=h.Apply(2,key,b,true,p.mask,kind);
+                Check(repeat && (*repeat)[5]==b[5],"inactive UV rows remain native");
+            }
+            Check(!h.Apply(2,key,b,false,p.mask,kind),"disabled interpolation remains native");
+            Check(!h.Apply(4,key,b,true,p.mask,kind),"coastal frame gap reseeds");
+            if(p.alternate_step!=std::array<float,6>{}) {
+                auto alternate=a;for(unsigned r=0;r<C::Rows(kind);++r)alternate[r][3]+=p.alternate_step[r];
+                Check(C::Midpoint(kind,a,alternate).has_value(),"shared water mesh accepts both measured speeds");
+            }
+            b[0][3]+=1;
+            Check(!h.Apply(5,key,b,true,p.mask,kind),"coastal phase reset does not streak");
+        }
+    }
+    {
+        namespace F=MM3D::ForestParticleInterpolation;
+        const auto star=[](float x,float y,float alpha) {
+            F::Quad q{};
+            for(unsigned i=0;i<4;++i) {
+                q.vertices[i][0]={x+float(i/2)*2,y+float(i%2)*2,0,1};
+                q.vertices[i][1]={55.f/255,55.f/255,0,alpha};
+                q.vertices[i][2]={float(i/2)*2,float(1-i%2)*2,0,1};
+            }
+            return q;
+        };
+        const std::vector<F::Quad> old{star(0,0,1),star(1,4,1)};
+        const std::vector<F::Quad> now{star(0,5,200.f/255),star(1,9,1)};
+        Check(F::BossMatch(now[0],old,true)==0,"vertical neighbors preserve boss particle identity");
+        F::History h;h.Apply(1,1,1,old);
+        const auto half=h.Apply(2,1,1,now);
+        Check(half && std::abs(F::Center((*half)[0])[1]-3.5f)<1e-6,"first large lifetime fade now interpolates");
+        Check(!F::BossMatch(star(0,-5,1),old,true),"new boss star at base cannot borrow older star");
+        Check(!F::BossMatch(star(0,5,1),{star(0,0,.5f)},true),"respawn brightness reset rejected");
+        Check(!F::BossMatch(star(0,5,1),{old[0],old[0]},true),"ambiguous coincident stars stay native");
+    }
     {
         namespace B=MM3D::GreatBayWaterInterpolation;
         namespace S=MM3D::SongEffectInterpolation;
@@ -275,6 +368,8 @@ int main() {
         const std::vector<std::uint32_t> order{0,1,2,3,3,4};
         auto a = C::Decode(make(0, 2), order), b = C::Decode(make(2, 20), order);
         Check(a && b, "chest particle size range decodes");
+        Check(C::Decode(make(0,24.25f),order).has_value(),"large Snowhead chest sparkle is recognized");
+        Check(!C::Decode(make(0,30),order),"unrelated oversized sparkle rejected");
         Check(!C::Decode(make(0, 0), order), "collapsed chest particle stays native");
         auto wrong = make(0, 2); wrong[0][2][0] = .5f;
         Check(!C::Decode(wrong, order), "chest requires square UVs");
@@ -1608,7 +1703,7 @@ int main() {
             }
             return v;
         };
-        for(float size:{4.f,6.f}) {
+        for(float size:{2.97f,4.f,6.f,8.4375f}) {
             const auto first=L::Decode(grass(0,size),order),second=L::Decode(grass(7,size),order);
             Check(first && second && first->front().grass,"cut grass rectangle variants recognized");
             history.Reset();history.Apply(1,key,*first);
@@ -1733,6 +1828,38 @@ int main() {
         Check(!cut.Observe(2,33,Camera(0,300),b),"Inverted Time camera cuts stay native");
         History gap;gap.Observe(1,0,Identity(),a);
         Check(!gap.Observe(3,66,Identity(),b),"Inverted Time missing frames stay native");
+    }
+    {
+        // Double Time's white-background cutscene, captured consecutive frames.
+        Matrix a{{{0,.9797046184539795,1.3080077678750968e-6,0},
+                  {-.5434868931770325,0,-1.7155532987089828e-5,0},
+                  {0,0,1.0004703998565674,5.002501487731934},{0,0,-1,0}}};
+        Matrix b{{{0,.9560847878456116,6.291206773312297e-6,0},
+                  {-.5738077759742737,0,-1.4719977116328664e-5,0},
+                  {0,0,1.0004734992980957,5.002501487731934},{0,0,-1,0}}};
+        Check(!SameLens(a,b) && !GradualLensScale(a,b) && !GradualWorldWobble(a,b),
+              "white Double Time cutscene needs distortion interpolation");
+        Check(GradualTimeSkipDistortion(a,b),"shorter-range Double Time distortion recognized");
+        History h;h.Observe(1,0,Identity(),a);
+        const auto mid=h.Observe(2,33,Identity(),b);
+        auto expected=b;
+        for(unsigned r=0;r<2;++r)for(unsigned c=0;c<4;++c)expected[r][c]=(a[r][c]+b[r][c])*.5;
+        Check(mid && Near(*mid,expected,1e-9),"white Double Time cutscene produces midpoint lens");
+        Check(mid && (*mid)[2]==b[2],"white Double Time cutscene preserves depth clipping");
+        auto wrong=b;wrong[2]={0,0,1.0002080202102661,5.001250267028809};
+        Check(!GradualTimeSkipDistortion(a,wrong),"Double Time clipping families stay isolated");
+        wrong=b;wrong[2][2]=1.0006;
+        Check(!GradualTimeSkipDistortion(a,wrong),"uncaptured cutscene depth range rejected");
+        wrong=b;wrong[0][0]=.01;
+        Check(!GradualTimeSkipDistortion(a,wrong),"white cutscene does not admit arbitrary shear");
+        wrong=b;wrong[0][2]=.001;
+        Check(!GradualTimeSkipDistortion(a,wrong),"white cutscene rejects large projection offsets");
+        wrong=b;wrong[0][1]*=2;
+        Check(!GradualTimeSkipDistortion(a,wrong),"white cutscene rejects abrupt lens changes");
+        History cut;cut.Observe(1,0,Identity(),a);
+        Check(!cut.Observe(2,33,Camera(0,300),b),"white cutscene retains camera cut guard");
+        History gap;gap.Observe(1,0,Identity(),a);
+        Check(!gap.Observe(3,66,Identity(),b),"white cutscene retains missing frame guard");
     }
     {
         using namespace MM3D::WaterParticleInterpolation;
@@ -2458,6 +2585,31 @@ int main() {
         }
         {
             namespace L=MM3D::LinkInterpolation;
+            for(const auto [signature,bones,vertices]:std::array{
+                std::array<std::uint64_t,3>{0x71a6a9af29d2e93full,20,276},
+                std::array<std::uint64_t,3>{0x2839c49538bf9e2aull,3,12}}) {
+                auto actor=pose(unsigned(bones),438,signature);
+                actor.pose.bones.assign(bones,Flatten(Camera(0,20)));
+                L::Palette a;a.fill(Camera(0,99999));a[0]=Camera(0,20);
+                L::History history;history.Apply(1,0,Identity(),a,{actor},true,unsigned(vertices));
+                actor.pose.bones.assign(bones,Flatten(Camera(0,24)));a[0]=Camera(0,24);
+                const auto mid=history.Apply(2,33,Identity(),a,{actor},true,unsigned(vertices));
+                Check(mid[0]&&Near(*mid[0],Camera(0,22),1e-5),"flag/flame equivalent bones agree on midpoint");
+                auto duplicate=actor;duplicate.pose.instance++;
+                Check(!history.Apply(3,66,Identity(),a,{actor,duplicate},true,unsigned(vertices))[0],
+                      "coincident flag/flame actors remain ambiguous");
+            }
+            {
+                auto rock=pose(1,436,0xd67c27ec27487acbull),shadow=pose(1,437,0xc16cd06a278b5f00ull);
+                L::Palette p;p.fill(Camera(0,99999));p[0]=Camera(0,20);
+                rock.pose.bones[0]=shadow.pose.bones[0]=Flatten(p[0]);L::History history;
+                history.Apply(1,0,Identity(),p,{rock,shadow},true,210);
+                p[0]=Camera(0,26);rock.pose.bones[0]=shadow.pose.bones[0]=Flatten(p[0]);
+                const auto mid=history.Apply(2,33,Identity(),p,{rock,shadow},true,210);
+                Check(mid[0]&&Near(*mid[0],Camera(0,23),1e-5),"snow boulder half cannot be blocked by its shadow");
+                auto duplicate=rock;duplicate.pose.instance+=10;
+                Check(!history.Apply(3,66,Identity(),p,{rock,duplicate},true,210)[0],"coincident boulder halves rejected");
+            }
             auto door=pose(1,439,0x57306c6ee1db06efull);
             auto binding=Identity();binding[2][3]=-.0006294240010902286;
             door.bind[0]=Flatten(binding);
@@ -2477,6 +2629,10 @@ int main() {
             Check(!h.Apply(5,132,Identity(),b,{door},true,36)[0],"shutter gap reseeds");
             h.Reset();a=set(20);h.Apply(1,0,Identity(),a,{door},true,37);b=set(28);
             Check(!h.Apply(2,33,Identity(),b,{door},true,37)[0],"other shutter meshes excluded");
+            door.signature=0x0425b0994521dcd5ull;
+            h.Reset();a=set(20);h.Apply(1,0,Identity(),a,{door},true,36);b=set(28);
+            const auto snowhead=h.Apply(2,33,Identity(),b,{door},true,36);
+            Check(snowhead[0] && Near(*snowhead[0],Camera(0,24),.00001),"Snowhead shutter uses its direct bone");
             door.signature++;h.Reset();a=set(20);h.Apply(1,0,Identity(),a,{door},true,36);b=set(28);
             Check(!h.Apply(2,33,Identity(),b,{door},true,36)[0],"other one-bone models retain ambiguity guard");
         }

@@ -128,14 +128,24 @@ inline bool GyorgWaterBone(const Palette& palette,const LinkPoseCapture::LivePos
         pose.words==std::vector<std::uint32_t>{0xffff0000,1} &&
         PaletteNear(palette[0],Expand(pose.pose.bones[1]));
 }
-// m2_KON_shuter1_ uses direct bone 0. Its tiny bind translation makes the
+// Great Bay m2_KON_shuter1_ and Snowhead i2_H_shutter1 use direct bone 0.
+// Their tiny bind translation makes the
 // generic direct/skin lookup ambiguous; preserve the native direct transform.
-inline bool GreatBayShutterBone(const Palette& palette,const LinkPoseCapture::LivePose& pose,unsigned vertices) {
+inline bool DungeonShutterBone(const Palette& palette,const LinkPoseCapture::LivePose& pose,unsigned vertices) {
     auto bind=Identity();bind[2][3]=-.0006294240010902286;
-    return vertices==36 && pose.signature==0x57306c6ee1db06efull &&
+    return vertices==36 && (pose.signature==0x57306c6ee1db06efull || pose.signature==0x0425b0994521dcd5ull) &&
         pose.pose.bones.size()==1 && pose.bind.size()==1 &&
         pose.words==std::vector<std::uint32_t>{0xffff0000} &&
         Near(Expand(pose.bind[0]),bind,1e-7) &&
+        PaletteNear(palette[0],Expand(pose.pose.bones[0]));
+}
+// Snowhead's broken snow-boulder halves can share their transform with a
+// shadow actor. The 210-vertex snow half belongs to this verified root model.
+inline bool SnowBoulderBone(const Palette& palette,const LinkPoseCapture::LivePose& pose,unsigned vertices) {
+    return vertices==210 && pose.signature==0xd67c27ec27487acbull &&
+        pose.pose.bones.size()==1 && pose.bind.size()==1 &&
+        pose.words==std::vector<std::uint32_t>{0xffff0000} &&
+        Near(Expand(pose.bind[0]),Identity(),1e-5) &&
         PaletteNear(palette[0],Expand(pose.pose.bones[0]));
 }
 // The captured wing_warp model's long bone chains accumulate small differences
@@ -537,7 +547,7 @@ public:
         for(unsigned slot=0;slot<10;++slot)
             result[slot]=ResolvePalette(palette[slot],*pose,half,view);
         if(GyorgWaterBone(palette,*pose,vertices))result[0]=Multiply(view,half[1]);
-        if(GreatBayShutterBone(palette,*pose,vertices))result[0]=Multiply(view,half[0]);
+        if(DungeonShutterBone(palette,*pose,vertices))result[0]=Multiply(view,half[0]);
         if(const auto wing=SoaringWingBones(palette,*pose,vertices)) {
             for(unsigned slot=0;slot<wing->size();++slot) {
                 const auto bone=(*wing)[slot];
@@ -662,8 +672,8 @@ public:
             std::erase_if(actor_attachments,expired);cleanup_frame=frame;
         }
         const LinkPoseCapture::LivePose* direct_owner=nullptr;
-        if(vertices==528 || vertices==36)for(const auto& pose:poses) {
-            if(!GyorgWaterBone(palette,pose,vertices) && !GreatBayShutterBone(palette,pose,vertices))continue;
+        if(vertices==528 || vertices==36 || vertices==210)for(const auto& pose:poses) {
+            if(!GyorgWaterBone(palette,pose,vertices) && !DungeonShutterBone(palette,pose,vertices) && !SnowBoulderBone(palette,pose,vertices))continue;
             if(direct_owner)return {};
             direct_owner=&pose;
         }
@@ -962,7 +972,11 @@ public:
         if(!found)for(const auto& pose:poses) {
             // Verified effects, pickups, Bomber and intro trees have equivalent bones.
             // ResolvePalette still rejects them if their midpoint poses diverge.
-            const unsigned count=(pose.signature==0x3f33b43a6cf98ad4ull &&
+            const unsigned count=(pose.signature==0x71a6a9af29d2e93full &&
+                (vertices==24 || vertices==276)) ? 20 : // Snowhead flag (ht_hata)
+                (pose.signature==0x2839c49538bf9e2aull &&
+                (vertices==12 || vertices==24)) ? 3 : // Blue Bubble flame (torch4_soul)
+                (pose.signature==0x3f33b43a6cf98ad4ull &&
                 (vertices==732 || vertices==108)) ? 8 : // Gyorg small fish (minibus_b)
                 (pose.signature==0x6a038b2b40fd9fbfull &&
                  (vertices==138 || vertices==96 || vertices==72)) ? 4 : // Great Bay wheel water

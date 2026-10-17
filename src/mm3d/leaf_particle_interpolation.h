@@ -55,7 +55,8 @@ inline std::optional<std::vector<Quad>> Decode(std::span<const Vertex> inputs,
         if(q.grass) {
             // Cut grass uses full-texture rectangles with a 7:5 aspect ratio.
             // Both captured variants have normals scaled to short_edge / 20.
-            if(aa<9 || aa>64 || std::abs(bb-aa*1.96f)>.05f || std::abs(nn*400-aa)>.05f)return {};
+            // Their animated squared short edges span 8.81--71.20 in Snowhead.
+            if(aa<8.7f || aa>71.3f || std::abs(bb-aa*1.96f)>.05f || std::abs(nn*400-aa)>.05f)return {};
         } else {
             // Brown leaves and Majora's falling fragments use 6--16 unit
             // squares. f24 rounding puts nominal six-unit edges just below 36.
