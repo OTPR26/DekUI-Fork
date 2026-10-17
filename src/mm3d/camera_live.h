@@ -26,6 +26,7 @@ inline std::atomic<bool> enabled{false}, needs_service{false}, capture_requested
 inline std::mutex mutex;
 inline Snapshot published;
 inline std::atomic<float> desired_fov{45.f};
+inline std::atomic<float> desired_cutscene_fov{49.f};
 // Translation-only replacement of the two verified primary projection loads.
 // This does not patch the ROM or guest code/data memory.
 constexpr U32 ProjectionSVC=0x00fffffe;
@@ -76,7 +77,7 @@ template<class M> float ConfiguredFov(M& m,U32 projection) {
     if(m.Read(CameraPointer)==std::optional<U32>(projection)&&
        m.Read(projection+4)==std::optional<U32>(0)&&m.Read(projection+8)==std::optional<U32>(400)&&
        m.Read(projection+12)==std::optional<U32>(0)&&m.Read(projection+16)==std::optional<U32>(240)) {
-        if(ScriptedCamera(m))return 49.f;
+        if(ScriptedCamera(m))return desired_cutscene_fov.load();
     }
     return desired_fov.load();
 }
@@ -116,7 +117,12 @@ inline void SetFov(float degrees) {
     desired_fov.store(std::isfinite(degrees) ? std::clamp(degrees,45.f,70.f) : 45.f);
     needs_service.store(true);
 }
-inline void Stop() { SetFov(45.f); }
+inline void SetCutsceneFov(float degrees) {
+    std::scoped_lock lock{mutex};
+    desired_cutscene_fov.store(std::isfinite(degrees) ? std::clamp(degrees,45.f,70.f) : 49.f);
+    needs_service.store(true);
+}
+inline void Stop() { SetFov(45.f); SetCutsceneFov(45.f); }
 
 // CPU-thread state. The adapter reads/writes guest virtual RAM, never host UI state.
 class Engine {
@@ -132,7 +138,11 @@ class Engine {
         auto left=m.Read(s.base+4),right=m.Read(s.base+8),top=m.Read(s.base+12),bottom=m.Read(s.base+16);
         if(!left||!right||!top||!bottom || *left!=0 || *right!=400 || *top!=0 || *bottom!=240) return false;
         if(!f(0x18,s.fov)||!f(0x4c,s.auxiliary_fov)||!f(0x1c,s.near_plane)||!f(0x20,s.far_plane)) return false;
-        if(s.fov<10 || s.fov>120 || s.auxiliary_fov<10 || s.auxiliary_fov>120 ||
+        // Scripted cameras can use nearly the full perspective range. The Song
+        // of Time fall reaches about 175 degrees; a gameplay-only 120-degree
+        // ceiling invalidated its snapshot and disabled midpoint rendering.
+        // This validates native camera data, not the user's configurable FOV.
+        if(s.fov<=0 || s.fov>=180 || s.auxiliary_fov<=0 || s.auxiliary_fov>=180 ||
            s.near_plane<=0 || s.far_plane<=s.near_plane) return false;
         for(unsigned i=0;i<3;++i)
             if(!f(0x28+4*i,s.eye[i])||!f(0x34+4*i,s.target[i]) ||

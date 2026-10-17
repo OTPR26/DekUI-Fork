@@ -27,7 +27,8 @@ class LayoutMigrationTests(unittest.TestCase):
         new,held=self.apply(old);self.assertEqual(held,[])
         prefixes=tuple(p for group in migration.GROUPS.values() for p in group)
         for k,v in old.items():
-            self.assertEqual(new[k],self.policy['current'][k] if k.startswith(prefixes) and k in self.policy['current'] else v,k)
+            shipped_fades = k == 'fullscreen_draws' and v == self.policy.get('previous_fullscreen_draws')
+            self.assertEqual(new[k],self.policy['current'][k] if shipped_fades or (k.startswith(prefixes) and k in self.policy['current']) else v,k)
         again,held=self.apply(new);self.assertEqual(again,new)
 
     def test_custom_group_is_not_partially_repositioned(self):
@@ -66,7 +67,28 @@ class LayoutMigrationTests(unittest.TestCase):
         prefixes=tuple(p for group in migration.GROUPS.values() for p in group)
         for k,v in self.policy['previous'].items():
             if self.policy['current'].get(k)!=v:
-                self.assertTrue(k.startswith(prefixes) or k in self.policy['preserve_existing'],k)
+                self.assertTrue(k.startswith(prefixes) or k in self.policy['preserve_existing'] or (k == 'fullscreen_draws' and v == self.policy.get('previous_fullscreen_draws')),k)
+
+    def test_shipped_fades_upgrade_but_custom_fades_remain(self):
+        previous = self.policy['previous_fullscreen_draws']
+        old = dict(self.policy['current'], fullscreen_draws=previous)
+        new, _ = self.apply(old)
+        self.assertEqual(new['fullscreen_draws'], self.policy['current']['fullscreen_draws'])
+        self.assertGreater(len(new['fullscreen_draws']), len(previous))
+        for custom in ([], previous[:-1], previous + [dict(previous[0], vertices=123)]):
+            old['fullscreen_draws'] = custom
+            new, _ = self.apply(old)
+            self.assertEqual(new['fullscreen_draws'], custom)
+
+    def test_mask_defaults_preserve_user_placement_and_gameplay(self):
+        old = dict(self.policy['previous'], damage_multiplier=4, actor_draw_distance=2,
+                   mask_present_1_x=123, mask_present_help_scale=.9)
+        new, _ = self.apply(old)
+        for key in ('damage_multiplier', 'actor_draw_distance', 'mask_present_1_x', 'mask_present_help_scale'):
+            self.assertEqual(new[key], old[key])
+        self.assertEqual(new['mask_present_3_x'], self.policy['current']['mask_present_3_x'])
+        self.assertEqual(self.policy['current']['damage_multiplier'], 1)
+        self.assertEqual(self.policy['current']['actor_draw_distance'], 1)
 
     def test_retired_profiles_are_explicitly_allowlisted(self):
         from upgrade_game_resources import RETIRED

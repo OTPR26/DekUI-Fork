@@ -5,12 +5,12 @@
 
 namespace MM3D::GearMenu {
 
-enum Part : unsigned { Panel, Right, Background, Buttons, Model, Description, Count };
+enum Part : unsigned { Panel, Right, Background, Buttons, Model, Description, Photo, Count };
 struct Pose { float x=0,y=0,scale=1; };
 struct Options {
     bool enabled=true;
     bool horizontal=true;
-    std::array<Pose,Count> poses{{{0,32,.65f},{-90,32,.65f},{0,0,1},{0,0,1},{0,0,1},{0,0,1}}};
+    std::array<Pose,Count> poses{{{0,32,.65f},{-90,32,.65f},{0,0,1},{0,0,1},{0,0,1},{0,0,1},{0,0,1}}};
 };
 struct AtomicPose { std::atomic<float> x{0},y{0},scale{1}; };
 inline std::atomic<bool> enabled{true};

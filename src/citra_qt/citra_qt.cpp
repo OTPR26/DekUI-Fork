@@ -6,6 +6,7 @@
 #ifdef ENABLE_MM3D_PRESENTATION
 #include "mm3d/player_settings.h"
 #include "mm3d/player_settings_bridge.h"
+#include "citra_qt/configuration/configure_cheats.h"
 #include "citra_qt/configuration/configure_input.h"
 #include <QScopedValueRollback>
 #include <QDialogButtonBox>
@@ -1304,6 +1305,17 @@ void GMainWindow::ConnectWidgetEvents() {
             if(!QDir().mkpath(path) || !QDesktopServices::openUrl(QUrl::fromLocalFile(path)))
                 QMessageBox::warning(this,tr("Texture folder"),
                     tr("Could not open the texture folder. You can find it at:\n%1").arg(path));
+        }
+        if(open_cheats.exchange(false)) {
+            u64 title_id{};
+            if(system.IsPoweredOn() &&
+               system.GetAppLoader().ReadProgramId(title_id)==Loader::ResultStatus::Success && title_id) {
+                DekuiCheatsDialog dialog(system.CheatEngine(),title_id,this);
+                dialog.exec();
+                render_window->setFocus();
+            } else {
+                QMessageBox::information(this,tr("Cheats"),tr("Start the game before opening cheats."));
+            }
         }
         if(controls.exchange(false)) {
             const auto old_profiles=Settings::values.input_profiles;

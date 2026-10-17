@@ -19,7 +19,9 @@ public:
                bool reset_depth = false);
     void End(bool prepare_sampling = true);
     void PrepareForSampling();
-    void NextFrame() { visible = false; }
+    void NextFrame(std::array<float,4> background = {0,0,0,1}) {
+        visible = false; clear_color = background;
+    }
     bool Visible() const { return visible; }
     Profiles::Profile profile;
     vk::ImageView View() const { return view; }
@@ -47,6 +49,7 @@ private:
     bool with_depth{};
     unsigned width{}, height{};
     bool visible{};
+    std::array<float,4> clear_color{0,0,0,1};
     bool pending_sample_barrier{};
 };
 }

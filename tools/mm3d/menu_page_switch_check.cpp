@@ -48,6 +48,18 @@ int main(int argc,char** argv) {
         const auto before=m.words;h.Tick(m,C);assert(m.words==before);
         m.Write(G+0x34,route.button^0x300);h.Tick(m,C);assert(m.Read(C+12)==route.from);
     }
+    // Gear's saved photo can still be converting when the user returns to
+    // Masks. A separately retained scene makes both wait states safe to leave.
+    for(bool retained:{false,true})for(unsigned state:{0u,1u,2u,3u}) {
+        auto m=Fixture(Routes[1]);Hook h;m.Byte(Q+0x194,state);
+        m.Write(G+0x11018,0);h.Tick(m,C,retained);
+        const bool accepted=state==2||(retained&&state<2);
+        assert(h.PairPending(m,C)==accepted);
+        if(accepted) {
+            assert(m.Read(C+12)==K&&h.preserve_capture==retained);
+            assert(h.KeepCapture(m,G+0x11010)==retained);
+        }
+    }
     // Selecting an item/mask still allows the native shoulder action; route
     // both outer edges, but leave equip/drag/open/close states untouched.
     for(auto route:{Routes[0],Routes[2]})for(unsigned state=0;state<=11;++state) {
