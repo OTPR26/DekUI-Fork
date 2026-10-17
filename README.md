@@ -78,7 +78,7 @@ If the upgrade fails or is interrupted, the game will not open; relaunch to retr
 
 ## Troubleshooting
 
-### On Mac, it doesn't detect my .3ds or .cci file even though they're beside the app
+#### On Mac, it doesn't detect my .3ds or .cci file even though they're beside the app
 Try this:
 
 1. Close DekUI and open Terminal.
@@ -88,11 +88,11 @@ Try this:
 
 Dragging it into the terminal will give the full path of it. It should work from there on out.
 
-### I get an error saying the main partition is encrypted despite having the right version of the game
+#### I get an error saying the main partition is encrypted despite having the right version of the game
 
 Please use another legally acquired file of the same USA Version 1.1 .cci or .3ds. Some don't work for some reason.
 
-### The game freezes right after starting up
+#### The game freezes right after starting up
 
 Try the following:
 
@@ -108,7 +108,7 @@ Try the following:
 
 The game will run at 30fps, however. I am currently investigating what causes freezing for some users with interpolation on.
 
-### The I and II buttons seem to have text behind them
+#### The I and II buttons seem to have text behind them
 
 There's actually no way around this as MM3D has two bubble textures, and both have A and B baked into them.
 That means for the new I and II buttons, I and II have to be overlaid onto the B button. If this bothers you,
