@@ -730,7 +730,6 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
         };
         const auto interpolation_control=[&]() {
             ImGui::TextUnformatted("Frame rate");
-            ImGui::TextWrapped("Interpolation is still a work in progress, expect artifacts and some textures/models running at 30fps");
             int method = !state.settings.interpolation_60fps ? 0 :
                 state.settings.interpolation_cpu_vertices ? 1 : 2;
             bool changed = ImGui::RadioButton("Original", &method, 0);
@@ -1127,11 +1126,6 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
             if(ImGui::BeginTabItem("Restoration")){restoration_controls();ImGui::EndTabItem();}
             if(ImGui::BeginTabItem("QOL")){qol_controls();ImGui::EndTabItem();}
 #ifndef __ANDROID__
-            if(ImGui::BeginTabItem("Cheats")) {
-                ImGui::TextWrapped("NOTE: Some cheats may not work with DekUI");
-                if(ImGui::Button("Open cheats"))open_cheats.store(true);
-                ImGui::EndTabItem();
-            }
             // Opt-in support tools for packaged builds. Never persist this flag in
             // presentation.json or expose the editor's game-modifying controls.
             static const bool diagnostics_enabled =
