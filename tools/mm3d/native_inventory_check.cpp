@@ -2645,7 +2645,31 @@ void CutsceneFovChecks() {
     m.words[game+0xa78]=4<<16;assert(C::ConfiguredFov(m,projection)==65);
     C::desired_fov=45;
 }
+void GearPhotoPoseChecks() {
+    Memory m;Hook h;const auto page=m.Alloc(0x200),photo=m.Layout("GearPhoto");
+    const auto left=m.Widget("picture_left_pane",120,80),right=m.Widget("picture_right_pane",120,80);
+    const auto border=m.Widget("frame",116,76),corner=m.Widget("frame_corner",284,164);
+    m.Children(photo+8,{left,right,border});m.Children(border,{corner});
+    m.words[0x656b0c]=page;m.words[0x72f5bc+8]=page;
+    m.words[page]=0x63a270;m.words[page+0x10]=photo;
+    MM3D::GearMenu::Options options;options.poses[MM3D::GearMenu::Photo]={100,15,.5f};
+    MM3D::GearMenu::Apply(options);const auto before=m.words;
+    h.Begin(m,photo);
+    for(auto node:{left,right,border,corner}) {
+        const float x=std::bit_cast<float>(before.at(node+0xec));
+        const float y=std::bit_cast<float>(before.at(node+0xfc));
+        assert(std::abs(std::bit_cast<float>(*m.Read(node+0xec))-(100+200+.5f*(x-200)))<.001f);
+        assert(std::abs(std::bit_cast<float>(*m.Read(node+0xfc))-(15+120+.5f*(y-120)))<.001f);
+    }
+    h.End(m);assert(m.words==before);
+    // The shared photo layout must retain native placement outside Gear.
+    m.words[0x72f5bc+8]=0;const auto outside=m.words;
+    h.Begin(m,photo);h.End(m);assert(m.words==outside);
+    MM3D::GearMenu::Apply(MM3D::GearMenu::Options{});
+}
+
 int main(int argc,char** argv) {
+    GearPhotoPoseChecks();
     if(argc>1){
         namespace H=MM3D::HudButtons;
         std::ifstream f(argv[1],std::ios::binary);Memory code;
@@ -2805,6 +2829,28 @@ int main(int argc,char** argv) {
             if(first==std::max(0,count-7))assert(std::abs(end-351.f)<.001f);
             for(auto i=writes.rbegin();i!=writes.rend();++i)m.Write(i->address,i->before);
             assert(m.words==before);
+        }
+        // Recycling a New badge at the bottom of the expanded seven-row list
+        // can leave its world matrix at its old/uninitialized origin. Badge
+        // validation must never drop the footer/clock/scrollbar adjustments.
+        for(int failure:{0,1,2,3}) {
+            const auto original=m.words;
+            const auto icon=m.words[owner+0x4d8+7*4],badge=m.words[owner+0x550+7*4];
+            m.words[icon+0xfc]=std::bit_cast<U32>(299.f);
+            if(failure==1)m.words[owner+0x550+7*4]=0;
+            if(failure==2)m.words[badge+8+0xfc]=std::bit_cast<U32>(std::numeric_limits<float>::quiet_NaN());
+            if(failure==3)m.Children(badge+8,{badge+8}); // failure after staging some writes
+            before=m.words;writes.clear();
+            assert(h.Expand(m,up,helper,writes));
+            assert(m.words==before); // preparation is read-only
+            for(auto w:writes)m.Write(w.address,w.after);
+            assert(std::bit_cast<float>(m.words[footer+0xfc])==120.f);
+            assert(std::abs(std::bit_cast<float>(m.words[ruler+0xf4])-297.f/177.f)<.0001f);
+            if(failure==0)assert(std::bit_cast<float>(m.words[badge+8+0xfc])==299.f);
+            else for(unsigned off=0xe0;off<0x100;off+=4)assert(m.words[badge+8+off]==before[badge+8+off]);
+            for(auto i=writes.rbegin();i!=writes.rend();++i)m.Write(i->address,i->before);
+            assert(m.words==before);
+            m.words=original;
         }
         h.total=28;h.first=21;
         // Schedule exit: all seven visible slots, including the untracked

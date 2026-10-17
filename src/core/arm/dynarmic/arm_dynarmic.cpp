@@ -944,6 +944,8 @@ public:
             case 1: case 2: menu_backdrop.Pause(guest,r[5],r[4],r[1],r[0]);break;
             case 3: menu_backdrop.Release(guest);r[5]=r[0];break;
             case 4: menu_backdrop.CloseMap(guest,r,menu_page_switch.KeepCapture(guest,MM3D::MenuBackdrop::Hook::Game(guest,r[1])+0x11010));break;
+            case 5: menu_backdrop.GearImageImport(guest,r);break;
+            case 6: menu_backdrop.FinishGearPhoto(guest,r);break;
             }
             return;
         }
@@ -973,7 +975,7 @@ public:
                 menu_sound_context=r[0];
                 menu_backdrop.Tick(guest);
                 if(MM3D::MenuMemory::CodeMatches(guest))menu_memory.Tick(guest,r[0]);
-                menu_page_switch.Tick(guest,r[0]);r[4]=r[0];break;
+                menu_page_switch.Tick(guest,r[0],menu_backdrop.HasRetainedCapture()&&menu_backdrop.Active(guest));r[4]=r[0];break;
             case 1:
                 r[14]=MM3D::MenuPageSwitch::PCs[1]+4;
                 if(menu_page_switch.PairPending(guest,r[1]))r[0]=1;
@@ -984,7 +986,10 @@ public:
                 r[4]=r[0];break;
             case 6: parent.jit->ExtRegs()[1]=MM3D::MenuBackdrop::CodeMatches(guest)&&menu_backdrop.Active(guest)?0:MM3D::MenuPageSwitch::GearBackdropAlpha();break;
             case 7: menu_page_switch.MapCloseSound(guest,r);break;
-            default: menu_page_switch.CaptureCall(guest,r,swi-MM3D::MenuPageSwitch::FirstSVC);break;
+            default:
+                if(swi==MM3D::MenuPageSwitch::FirstSVC+5&&
+                   menu_backdrop.CloseGearPhoto(guest,r,menu_page_switch.KeepCapture(guest,r[0])))break;
+                menu_page_switch.CaptureCall(guest,r,swi-MM3D::MenuPageSwitch::FirstSVC);break;
             }
             return;
         }
@@ -1020,9 +1025,9 @@ public:
             struct ReadMemory {Memory::MemorySystem& memory;std::optional<u32> Read(u32 at){return memory.Read32OrNullopt(at);}} guest{memory};
             auto& regs=parent.jit->Regs();
             switch(swi-MM3D::PauseCapture::FirstSVC) {
-            case 0: pause_capture_hook.Convert(guest,regs[7],regs[8],regs[4],regs[5]);regs[0]=regs[7]+(regs[8]<<2);break;
-            case 1: pause_capture_hook.Bind(guest,regs[3],regs[2]);regs[12]=regs[0]+0x1c;break;
-            case 2: pause_capture_hook.Reset();regs[4]=regs[0];break;
+            case 0: if(!menu_backdrop.HasRetainedCapture())pause_capture_hook.Convert(guest,regs[7],regs[8],regs[4],regs[5]);regs[0]=regs[7]+(regs[8]<<2);break;
+            case 1: if(!menu_backdrop.HasRetainedCapture())pause_capture_hook.Bind(guest,regs[3],regs[2]);regs[12]=regs[0]+0x1c;break;
+            case 2: if(!menu_backdrop.HasRetainedCapture())pause_capture_hook.Reset();regs[4]=regs[0];break;
             }
             return;
         }

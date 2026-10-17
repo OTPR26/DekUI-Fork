@@ -63,6 +63,7 @@ struct Settings {
     bool disable_tatl_reminders = false;
     bool single_screen_text = true;
     bool fix_bloom = true;
+    bool disable_fog = false;
     bool interpolation_60fps = true;
     bool interpolation_cpu_vertices = true;
     bool classic_saving = false;

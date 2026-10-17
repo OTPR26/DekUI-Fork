@@ -280,6 +280,8 @@ int main(int argc, char** argv) {
         }
         Require(!MM3D::CameraWriter::active.load(), "CPU writer stops at bounded hit count");
         MM3D::Settings settings;
+        Require(!settings.disable_fog,"distance fog is enabled by default");
+        settings.disable_fog=true;
         Require(settings.interpolation_60fps,"interpolation is enabled for new installations");
         Require(settings.interpolation_cpu_vertices,"CPU interpolation is the default method");
         settings.interpolation_60fps=true;
@@ -332,11 +334,15 @@ int main(int argc, char** argv) {
         settings.mask_present.help_pose={15,210,.7f};settings.mask_present.help_spacing=9;
         settings.fullscreen_draws={MM3D::WidescreenProbe::Draw{
             0x89b1ab98da3d9241ULL,0xfedcba9876543210ULL,4,480,400,0,65536,4294967295u}};
+        settings.inventory_menu.gear.poses[MM3D::GearMenu::Photo]={100,15,.5f};
         Require(settings.Save(path), "initial atomic save");
         settings.scale = 1.75;
         Require(settings.Save(path), "atomic replacement");
         MM3D::Settings loaded;
         Require(loaded.Load(path) && loaded.scale == 1.75, "settings roundtrip");
+        Require(loaded.disable_fog,"disable fog persists");
+        const auto photo=loaded.inventory_menu.gear.poses[MM3D::GearMenu::Photo];
+        Require(photo.x==100&&photo.y==15&&photo.scale==.5f,"photo placement persists");
         Require(loaded.item_present.poses[MM3D::NativeItemPresent::Panel].x==10&&
             loaded.mask_present.poses[MM3D::NativeItemPresent::Panel].x==35&&
             loaded.mask_present.poses[MM3D::NativeItemPresent::Panel].y==40&&
@@ -387,6 +393,7 @@ int main(int argc, char** argv) {
         Require(corrupt.open(QIODevice::WriteOnly), "open bounds fixture");
         corrupt.write("{\"version\":1,\"scale\":999,\"opacity\":-1}"); corrupt.close();
         Require(loaded.Load(path) && loaded.scale == 2 && loaded.opacity == .2f, "bound settings");
+        Require(!loaded.disable_fog,"legacy settings retain distance fog");
         Require(loaded.song_list.panel_color_opacity==0.f,"legacy song panel color defaults off");
         Require(loaded.prop_draw_distance==1.f,"legacy bush distance defaults native");
         Require(loaded.actor_draw_distance==1.f,"legacy actor draw distance defaults native");

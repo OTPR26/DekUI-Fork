@@ -48,6 +48,7 @@
 #include "mm3d/texture_picker.h"
 #include "mm3d/overlay.h"
 #include "mm3d/bloom_sampling.h"
+#include "mm3d/fog.h"
 #include "mm3d/bottle_healing.h"
 #include "mm3d/player_settings.h"
 #include "mm3d/settings.h"
@@ -117,6 +118,7 @@ void ApplyPresentationSettings(const Settings& settings) {
     TatlReminders::disabled.store(settings.disable_tatl_reminders);
     SingleScreenText::enabled.store(settings.single_screen_text);
     BloomSampling::enabled.store(settings.fix_bloom);
+    Fog::disabled.store(settings.disable_fog);
     ClassicSaving::enabled.store(settings.classic_saving);
     ClassicDoubleTime::enabled.store(settings.classic_double_time);
     OwlSword::enabled.store(settings.sword_activate_owls);
@@ -549,6 +551,7 @@ Overlay::Overlay(const Vulkan::Instance& instance, vk::Format format, unsigned i
     if (state.startup_trace) Trace::Start();
 }
 Overlay::~Overlay() {
+    Fog::disabled.store(false);
     WidescreenProbe::Stop();
     Widescreen::enabled.store(false);
     Widescreen::supported_layout.store(false);
@@ -740,6 +743,15 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 state.status = state.settings.Save(state.directory + "presentation.json")
                     ? "Frame rate saved" : "Frame rate save FAILED";
             }
+        };
+        const auto fog_control = [&]() {
+            if (ImGui::Checkbox("Disable fog", &state.settings.disable_fog)) {
+                Fog::disabled.store(state.settings.disable_fog);
+                state.status = state.settings.Save(state.directory + "presentation.json") ?
+                    "Graphics settings saved" : "Graphics settings save FAILED";
+                if (inspection_paused.load()) step_requested.store(true);
+            }
+            hover_help("Removes distance fog. As fog is used for atmospheric effect, it is not recommended to disable it.");
         };
         const auto bloom_control = [&]() {
             if (ImGui::Checkbox("Fix bloom", &state.settings.fix_bloom)) {
@@ -1070,6 +1082,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 int factor=resolution.load();
                 if(ImGui::SliderInt("Internal resolution",&factor,1,9,"%dx"))set_resolution.store(factor);
                 bloom_control();
+                fog_control();
                 bool sync=vsync.load()!=0;
                 if(ImGui::Checkbox("VSync",&sync))set_vsync.store(sync);
                 bool disk=cache.load()!=0;
@@ -1181,7 +1194,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
         else {
         if(ImGui::BeginTabBar("Editor settings")) {
         if(ImGui::BeginTabItem("General")){general_controls();ImGui::EndTabItem();}
-        if(ImGui::BeginTabItem("Graphics")){interpolation_control();actor_distance_control();ImGui::EndTabItem();}
+        if(ImGui::BeginTabItem("Graphics")){interpolation_control();actor_distance_control();fog_control();ImGui::EndTabItem();}
         if(ImGui::BeginTabItem("Camera")) {
         if(ImGui::CollapsingHeader("Live game camera")) {
             bool inspect=CameraLive::enabled.load();
@@ -1856,7 +1869,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
             auto& options=state.settings.inventory_menu.gear;
             bool changed=ImGui::Checkbox("Gear panels on top screen",&options.enabled);
             constexpr std::array<const char*,GearMenu::Count> labels{
-                "Main panel and gear", "Right-hand strip", "Brown background", "Buttons", "Rotating model", "Description"};
+                "Main panel and gear", "Right-hand strip", "Brown background", "Buttons", "Rotating model", "Description", "Photo and border"};
             for(unsigned i=0;i<GearMenu::Count;++i) {
                 if(i==GearMenu::Background||i==GearMenu::Model||i==GearMenu::Description)continue;
                 ImGui::PushID(int(i)+700);

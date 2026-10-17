@@ -838,8 +838,33 @@ struct Hook {
         constexpr float factor=16.f/15.f;
         return Transform(m,layout+8,writes,seen,{factor,0,0,1,200.f*(1.f-factor),0});
     }
+    template<class M> bool GearPhoto(M& m,U32 layout) const {
+        // The photo layout is shared with other screens. Only transform the
+        // instance owned by the currently open Gear page, never the pause BG.
+        if(!GearMenu::enabled.load()||!Pointer(layout,0x148))return false;
+        const auto page=m.Read(0x656b0c);
+        return page&&Pointer(*page,0x198)&&m.Read(*page)==0x63a270&&
+            m.Read(0x72f5bc+8)==page&&m.Read(*page+0x10)==layout;
+    }
+    template<class M> bool PrepareGearPhoto(M& m,U32 layout,std::vector<Write>& writes) {
+        auto p=GearMenu::Get(GearMenu::Photo);
+        if(!std::isfinite(p.x)||!std::isfinite(p.y)||!std::isfinite(p.scale))return false;
+        p.x=std::clamp(p.x,-320.f,320.f);p.y=std::clamp(p.y,-240.f,240.f);
+        p.scale=std::clamp(p.scale,.25f,2.f);
+        std::vector<U32> seen;
+        // Transform the complete photo layout, including both eyes and frame
+        // artwork, around the native top-screen center. Restore after drawing.
+        return Transform(m,layout+8,writes,seen,{p.scale,0,0,p.scale,
+            p.x+200.f*(1-p.scale),p.y+120.f*(1-p.scale)});
+    }
     template<class Memory> void Begin(Memory& m,U32 layout,bool widescreen=false) {
         frames.emplace_back();
+        if(GearPhoto(m,layout)) {
+            std::vector<Write> writes;
+            if(!PrepareGearPhoto(m,layout,writes))return;
+            for(const auto& w:writes)m.Write(w.address,w.after);
+            frames.back()=std::move(writes);return;
+        }
         if(widescreen&&pass==0&&LayoutNamed(m,layout,"UpCommonBG")) {
             std::vector<Write> writes;
             if(!PrepareMenuBackdrop(m,layout,writes)) return;
