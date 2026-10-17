@@ -21,6 +21,15 @@ inline void Apply(const Options& o) {
     ItemsMapPrompt::opacity=o.opacity;
     horizontal=o.horizontal;spacing=o.spacing;button_gap=o.button_gap;button_scale=o.button_scale;text_scale=o.text_scale;
 }
+// Match Gear's native A handler (0x5a58f4): slot 4 and the saved-picture
+// flag. Owning the box alone does not make an empty photo viewer selectable.
+template<class M> bool GearChooseAvailable(M& m,U32 layout) {
+    const auto page=m.Read(0x656b0c);
+    if(!page||!Pointer(*page,0x198)||m.Read(*page)!=0x63a270||
+       m.Read(*page+0x14)!=layout||m.Read(0x72f5bc+8)!=*page)return false;
+    const auto state=m.Read(*page+0x194),flags=m.Read(0x7751d8+0x1f8);
+    return state&&(*state&0xffff)==0x0402&&flags&&(*flags&0x02000000u);
+}
 struct Hook {
     ItemsMapPrompt::Hook source;
     NotebookPrompt::Hook scratch;
@@ -99,10 +108,11 @@ struct Hook {
             for(unsigned j=0;j<3;++j)f(at+0x128+j*4,shadow?0:1);f(at+0x134,row_alpha*(shadow?.8f:1.f));
             put(0x140+4*children++,base+at);
         };
+        const bool gear_choose=gear&&GearChooseAvailable(m,layout);
         float cursor_x=x,cursor_y=y;
         for(unsigned row=0;row<(present?2u:5u);++row) {
-            // Gear has no Choose/equip action; keep navigation and Return full.
-            row_alpha=a*((gear&&(row==1||row>=3))?.5f:1.f);
+            // Only the selectable pictograph has a Gear Choose action.
+            row_alpha=a*((gear&&((row==1&&!gear_choose)||row>=3))?.5f:1.f);
             const float s=scale,py=cursor_y;float px=cursor_x;
             const auto icon=[&](unsigned u)->bool {
                 const U32 at=next;next+=0x380;if(next>Size)return false;

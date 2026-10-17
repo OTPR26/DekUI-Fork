@@ -945,6 +945,30 @@ void NotebookPromptChecks() {
                 help.scratch.End(m);assert(m.words==before);
             }
             MM3D::ItemsMapPrompt::opacity=1;
+            if(std::string_view(name)=="MenuCollect") {
+                const auto page=m.Alloc(0x198);
+                m.words[0x656b0c]=page;m.words[page]=0x63a270;
+                m.words[page+0x14]=panel;m.words[0x72f5bc+8]=page;
+                for(unsigned slot:{4u,5u})for(bool photo:{false,true})
+                for(unsigned state:{1u,2u,3u})for(bool active:{false,true}) {
+                    m.words[page+0x194]=(slot<<8)|state;
+                    m.words[0x7751d8+0x1f8]=photo?0x02000000:0;
+                    m.words[0x72f5bc+8]=active?page:0;
+                    const auto saved=m.words;
+                    auto root=help.Root(m,inventory,panel,stack,panel+8);
+                    assert(root==stack-0x8000);
+                    auto children=m.words[root+0x14];
+                    const bool available=slot==4&&photo&&state==2&&active;
+                    for(unsigned i=0;i<28;++i) {
+                        auto n=m.words[children+i*4];
+                        const float factor=available&&i>=8&&i<12?1.f:dim(i);
+                        assert(std::abs(std::bit_cast<float>(m.words[n+0x134])-
+                            .6f*factor*(i%2?.8f:1.f))<.0001f);
+                    }
+                    assert(help.scratch.End(m)==stack&&m.words==saved);
+                }
+                m.words=before;
+            }
             for(bool across:{false,true}) {
                 H::Options settings;settings.horizontal=across;settings.spacing=13;settings.button_gap=7;
                 settings.button_scale=1.5f;settings.text_scale=.75f;settings.pose={20,35,.5f};H::Apply(settings);
