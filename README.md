@@ -88,6 +88,25 @@ Try this:
 
 Dragging it into the terminal will give the full path of it. It should work from there on out.
 
+### I get an error saying the main partition is encrypted despite having the right version of the game
+
+Please use another legally acquired file of the same USA Version 1.1 .cci or .3ds. Some don't work for some reason.
+
+### The game freezes right after starting up
+
+Try the following:
+
+1. Open the user folder beside Dekui.exe
+2. Open config/mm3d-local/presentation.json in a text editor.
+3. Find "interpolation_60fps": true and change it to:
+
+```json
+"interpolation_60fps": false
+```
+4. Save file and boot up game
+
+The game will run at 30fps, however. I am currently investigating what causes freezing for some users with interpolation on.
+
 ## Reporting issues
 
 Found a bug or crash? Please report it at:
