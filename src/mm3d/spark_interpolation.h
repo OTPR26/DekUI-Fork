@@ -1,6 +1,7 @@
 // Copyright 2026 MM3D presentation contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
+#include <algorithm>
 #include "mm3d/water_particle_interpolation.h"
 
 namespace MM3D::SparkInterpolation {
