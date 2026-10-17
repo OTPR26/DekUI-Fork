@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Optional “Fast time” difficulty setting, disabled by default. Uses the first-cycle clock rate (50% faster than normal) and speeds up time under Inverted Song of Time while keeping NPC schedules synchronized. Song of Double Time is unchanged.
+
+- Optional “Dying moves time forward 6 hours” difficulty setting, disabled by default. Continuing after death advances the clock and updates the day when crossing dawn; reaching or passing the final dawn triggers the world ending. Fairy revivals, pit falls and deaths on the Moon are unaffected.
+
+### Fixed
+
+- Advancing time after death only plays the dawn or dusk sound when crossing the corresponding boundary.
+
 ## 1.0.0-beta.2
 
 ### Added
