@@ -6,6 +6,9 @@
 
 - Expanded interpolation coverage for actor attachments, held items, particles, water effects, textboxes, inventory screens, file select, map zoom, and HUD animations. Coverage remains incomplete; some effects still animate at 30fps.
 - Select Item retains its native timing with interpolated opening and closing animations.
+- Added independent Select Mask controls, smoother panel shadows, and corrected notebook scrollbars and portrait flashes.
+- Added a cutscene FOV slider and a cheats-only window. Corrected file-select panel layering.
+- Updated fullscreen fade overrides and the Select Mask release layout.
 
 ### Added
 

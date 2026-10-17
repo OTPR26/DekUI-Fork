@@ -18,6 +18,7 @@
 #include "video_core/shader/generator/spv_fs_shader_gen.h"
 #ifdef ENABLE_MM3D_PRESENTATION
 #include "mm3d/atlas_render.h"
+#include "mm3d/fog.h"
 #endif
 
 #define MALFORMED_DISK_CACHE                                                                       \
@@ -152,7 +153,16 @@ std::optional<std::pair<u64, Shader* const>> ShaderDiskCache::UseProgrammableVer
 std::optional<std::pair<u64, Shader* const>> ShaderDiskCache::UseFragmentShader(
     const Pica::RegsInternal& regs, const Pica::Shader::UserConfig& user, bool atlas) {
 
-    const FSConfig fs_config{regs};
+    FSConfig fs_config{regs};
+#ifdef ENABLE_MM3D_PRESENTATION
+    // Restrict this presentation option to DekUI's supported MM3D title.
+    // Apply before hashing so both shader generators and the disk cache use
+    // the actual no-fog configuration, without modifying guest registers.
+    if (title_id == 0x0004000000125500ULL && MM3D::Fog::disabled.load() &&
+        fs_config.texture.fog_mode == Pica::TexturingRegs::FogMode::Fog) {
+        fs_config.texture.fog_mode.Assign(Pica::TexturingRegs::FogMode::None);
+    }
+#endif
     const auto fs_config_hash = atlas ? Common::HashCombine(fs_config.Hash(),u64{0x4d4d334441544c06}) : fs_config.Hash();
     const auto [it, new_shader] = fragment_shaders.try_emplace(fs_config_hash, parent.instance);
     auto& shader = it->second;

@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <span>
+#include <QDialog>
 #include <QWidget>
 #include "common/common_types.h"
 
@@ -30,6 +31,7 @@ public:
                              QWidget* parent = nullptr);
     ~ConfigureCheats();
     bool ApplyConfiguration();
+    bool ConfirmClose();
 
 private:
     /**
@@ -65,4 +67,15 @@ private:
     bool edited = false, newly_created = false;
     int last_row = -1, last_col = -1;
     u64 title_id;
+};
+
+// The player-facing Dekui entry exposes only the existing cheat editor.
+class DekuiCheatsDialog final : public QDialog {
+public:
+    explicit DekuiCheatsDialog(Cheats::CheatEngine& cheat_engine, u64 title_id,
+                               QWidget* parent = nullptr);
+    void reject() override;
+
+private:
+    ConfigureCheats* cheats;
 };

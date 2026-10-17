@@ -74,6 +74,37 @@ int main() {
         scripted.Float(base+0xd0,-.04366129637f);
         Check(!engine.Tick(scripted,45.f).valid,"wide-angle camera still requires positive projection");
     }
+    {
+        Memory cutscene;
+        constexpr U32 context=0x08010000,game=0x08020000,projection=0x08001000;
+        cutscene.words[0x72f5c0]=context;cutscene.words[context+0x16c]=game;
+        cutscene.words[game+0x13c]=4<<8;cutscene.words[game+0xa78]=0;
+        cutscene.words[game+0x408+0xa0]=game;
+        cutscene.words[game+0x408+0x154]=9<<16;
+        SetFov(65.f);SetCutsceneFov(49.f);
+        Check(ConfiguredFov(cutscene,projection)==49.f,"existing cutscene default preserved");
+        for(float fov:{45.f,60.f,70.f}) {
+            SetCutsceneFov(fov);
+            Check(ConfiguredFov(cutscene,projection)==fov,"scripted camera uses independent slider");
+            Check(desired_fov.load()==65.f,"cutscene slider leaves gameplay setting alone");
+            cutscene.words[game+0x408+0x154]=10<<16;
+            Check(ConfiguredFov(cutscene,projection)==fov,"FREE0 camera uses cutscene slider too");
+            cutscene.words[game+0x408+0x154]=0;
+            Check(ConfiguredFov(cutscene,projection)==65.f,"gameplay keeps its configured FOV");
+            cutscene.words[game+0x408+0x154]=9<<16;
+        }
+        SetCutsceneFov(45.f);
+        const auto bits=std::bit_cast<U32>(40.f);
+        Check(ProjectionValue(bits,ConfiguredFov(cutscene,projection))==bits,
+              "45-degree cutscene setting preserves native animated lens exactly");
+        Check(ConfiguredFov(cutscene,projection+4)==65.f,"other projections keep existing selection");
+        SetCutsceneFov(100.f);Check(desired_cutscene_fov.load()==70.f,"cutscene FOV upper bound");
+        SetCutsceneFov(0.f);Check(desired_cutscene_fov.load()==45.f,"cutscene FOV lower bound");
+        SetCutsceneFov(std::numeric_limits<float>::quiet_NaN());
+        Check(desired_cutscene_fov.load()==49.f,"invalid cutscene setting restores default");
+        Check(cutscene.writes==0,"cutscene selection never changes guest camera data");
+        SetFov(45.f);
+    }
     m.words[CameraPointer]=0;
     Check(engine.Tick(m,55.f).active,"projection hook does not wait for published camera");
     m.words[0x18d414]=0;

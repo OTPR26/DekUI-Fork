@@ -346,7 +346,7 @@ struct Hook {
         route_status="draw queues";
         auto bottom=m.Read(manager+28),top=m.Read(manager+20),detail=m.Read(manager+16);
         NativeInventory::Hook::Buckets from,to,up;
-        if(!bottom||!top||!detail||*bottom==*top||!helper.ReadQueue(m,*bottom,from)||
+        if(!bottom||!top||!detail||*bottom==*top||*detail==*top||*detail==*bottom||!helper.ReadQueue(m,*bottom,from)||
            !helper.ReadQueue(m,*top,to)||!helper.ReadQueue(m,*detail,up))return;
         route_status="file panel missing or duplicate";
         unsigned priority=0;
@@ -354,41 +354,53 @@ struct Hook {
             if(panel)return;panel=entry;priority=i;
         }
         if(!panel)return;
-        route_status="top queue capacity";if(to[priority].size()>=32)return;
         route_status="panel already on top";
         for(const auto& bucket:to)if(std::find(bucket.begin(),bucket.end(),panel)!=bucket.end())return;
         route_status="duplicate summary";
         for(const auto& bucket:up)for(auto entry:bucket)if(LayoutNamed(m,entry,"UpPlateDetail")) {
             if(summary)return;summary=entry;
         }
+        if(summary)for(const auto& bucket:to)
+            if(std::find(bucket.begin(),bucket.end(),summary)!=bucket.end())return;
+        const unsigned added=summary?2:1;
+        route_status="top queue capacity";if(to[priority].size()+added>32)return;
         route_status="duplicate popup";
         for(const auto& bucket:from)for(auto entry:bucket)if(LayoutNamed(m,entry,"PopupWindow")) {
             if(popup)return;popup=entry;
         }
         route_status="popup queue";
         if(popup) {
-            if(to[15].size()+(priority==15?1:0)>=32)return;
+            if(to[15].size()+(priority==15?added:0)>=32)return;
             for(const auto& bucket:to)if(std::find(bucket.begin(),bucket.end(),popup)!=bucket.end())return;
         }
         ReadPresentation(m);
         visibility=NativeStartup::BottomVisibility(m);
         std::vector<Write> preview;
         if(!Prepare(m,panel,3,preview))return;
-        if(summary&&!Prepare(m,summary,2,preview))return;
+        if(summary&&!Prepare(m,summary,3,preview))return;
         if(popup&&!Prepare(m,popup,3,preview))return;
         route_status="queue destination";
-        const U32 popup_at=*top+4+15*0x80+U32(to[15].size()+(priority==15?1:0))*4;
-        if(popup&&!m.Read(popup_at))return;
-        // Keep bottom instances for Back and native input; hide the popup there during drawing.
-        const U32 at=*top+4+priority*0x80+U32(to[priority].size())*4;
-        if(!m.Read(at))return;
-        m.Write(at,panel);m.Write(*top+0x804+priority*4,U32(to[priority].size()+1));
-        auto total=m.Read(*top+0x844);m.Write(*top+0x844,*total+1);
-        if(popup) {
-            m.Write(popup_at,popup);
-            m.Write(*top+0x804+15*4,U32(to[15].size()+(priority==15?1:0)+1));
-            m.Write(*top+0x844,*total+2);
+        // Draw the summary after the stones so it covers them throughout the
+        // selection transition. Keep bottom instances for Back/native input.
+        to[priority].push_back(panel);
+        if(summary) {
+            to[priority].push_back(summary);
+            for(auto& bucket:up)std::erase(bucket,summary);
         }
+        if(popup)to[15].push_back(popup);
+        std::vector<Write> queue_writes;
+        const auto stage_queue=[&](U32 queue,const NativeInventory::Hook::Buckets& buckets) {
+            U32 total=0;
+            for(unsigned p=0;p<16;++p) {
+                const auto& bucket=buckets[p];total+=U32(bucket.size());
+                for(unsigned i=0;i<bucket.size();++i)
+                    if(!helper.Stage(m,queue_writes,queue+4+p*0x80+i*4,bucket[i]))return false;
+                if(!helper.Stage(m,queue_writes,queue+0x804+p*4,U32(bucket.size())))return false;
+            }
+            return helper.Stage(m,queue_writes,queue+0x844,total);
+        };
+        if(!stage_queue(*top,to)||(summary&&!stage_queue(*detail,up)))return;
+        for(const auto& w:queue_writes)m.Write(w.address,w.after);
         active=true;route_status="active";
     }
     template<class Memory> void Begin(Memory& m,U32 layout,bool widescreen=false) {
