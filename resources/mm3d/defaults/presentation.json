@@ -662,5 +662,8 @@
   "mask_present_help_x": -5.699999809265137,
   "mask_present_help_y": 210.60000610351562,
   "mask_present_native": true,
-  "cutscene_camera_fov": 49
+  "cutscene_camera_fov": 49,
+  "gear_6_x": 78.69999694824219,
+  "gear_6_y": -20.600000381469727,
+  "gear_6_scale": 0.8799999952316284
 }

@@ -40,7 +40,7 @@ class LayoutMigrationTests(unittest.TestCase):
         self.assertEqual(new['file_select_0_y'],self.policy['current']['file_select_0_y'])
 
     def test_current_customizations_not_reset(self):
-        old=dict(self.policy['current'],song_panel_left_x=-50,file_select_1_x=123,item_present_1_x=77)
+        old=dict(self.policy['current'],song_panel_left_x=-50,file_select_1_x=123,item_present_1_x=77,gear_6_x=42)
         new,held=self.apply(old);self.assertEqual(new,old)
         self.assertEqual(set(held),set(migration.GROUPS))
 
@@ -89,6 +89,17 @@ class LayoutMigrationTests(unittest.TestCase):
         self.assertEqual(new['mask_present_3_x'], self.policy['current']['mask_present_3_x'])
         self.assertEqual(self.policy['current']['damage_multiplier'], 1)
         self.assertEqual(self.policy['current']['actor_draw_distance'], 1)
+
+    def test_photo_default_upgrade_preserves_custom_placement(self):
+        old = dict(self.policy['current'], gear_6_x=0, gear_6_y=0, gear_6_scale=1)
+        new, held = self.apply(old)
+        for key in ('gear_6_x', 'gear_6_y', 'gear_6_scale'):
+            self.assertEqual(new[key], self.policy['current'][key])
+        self.assertNotIn('gear_photo', held)
+        old['gear_6_x'] = 42
+        new, held = self.apply(old)
+        self.assertEqual(new, old)
+        self.assertIn('gear_photo', held)
 
     def test_retired_profiles_are_explicitly_allowlisted(self):
         from upgrade_game_resources import RETIRED
