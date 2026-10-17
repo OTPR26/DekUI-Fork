@@ -11,7 +11,7 @@
 namespace MM3D::Atlas {
 constexpr unsigned Limit = 64;
 struct alignas(16) Uniforms {
-    std::array<int,4> info{}; // count, inverse (keep unselected), reserved
+    std::array<int,4> info{}; // count, inverse (keep unselected), normalized scene copy, reserved
     std::array<std::array<float,4>,Limit> regions{};
     std::array<int,4> pause{}; // xyz: pause bindings; w: reserved
 };
@@ -63,6 +63,15 @@ inline std::string Shader(std::string source) {
         if(unit==0&&source.find("uniform sampler2D tex0;")==std::string::npos)continue;
         const std::string name="vec4 sampleTexUnit"+std::to_string(unit)+"() {";
         const auto at=source.find(name);if(at==std::string::npos)continue;
+        if(unit==0) {
+            // The native shrink mesh samples 478x399 pixels of a 480x400
+            // scene. At normalized scale this resamples/shifts only native
+            // frames, while midpoint replay preserves the original pixels.
+            // Expand to the full copied rectangle for this verified draw only.
+            source.insert(at+name.size(),
+                "\nif (mm3d_atlas_info.z != 0) return textureLod(tex0, "
+                "texcoord0 * vec2(240.0/239.0, 400.0/399.0), 0.0);\n");
+        }
         const auto index=std::to_string(unit);
         std::string coord="texcoord"+index;
         if(unit==2&&source.find("textureLod(tex2, texcoord1")!=std::string::npos)coord="texcoord1";

@@ -153,7 +153,7 @@ std::optional<std::pair<u64, Shader* const>> ShaderDiskCache::UseFragmentShader(
     const Pica::RegsInternal& regs, const Pica::Shader::UserConfig& user, bool atlas) {
 
     const FSConfig fs_config{regs};
-    const auto fs_config_hash = atlas ? Common::HashCombine(fs_config.Hash(),u64{0x4d4d334441544c05}) : fs_config.Hash();
+    const auto fs_config_hash = atlas ? Common::HashCombine(fs_config.Hash(),u64{0x4d4d334441544c06}) : fs_config.Hash();
     const auto [it, new_shader] = fragment_shaders.try_emplace(fs_config_hash, parent.instance);
     auto& shader = it->second;
 

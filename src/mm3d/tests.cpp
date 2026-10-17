@@ -120,6 +120,12 @@ int main(int argc, char** argv) {
         Require(MM3D::ToggleOverlay() && MM3D::overlay_visible, "F1 opens");
         Require(MM3D::ToggleOverlay() && !MM3D::overlay_visible, "F1 closes");
         Require(MM3D::guest_frames == 30, "UI cannot advance guest frames");
+        MM3D::OnGuestFrame(1033333);
+        Require(MM3D::guest_frames == 31 && MM3D::guest_frame_time_us == 1033333,
+                "completed guest frame retains emulated submission time");
+        MM3D::ResetGuestFrames();
+        Require(MM3D::guest_frames == 0 && MM3D::guest_frame_time_us == -1,
+                "reset cannot retain another session's cadence timestamp");
         QTemporaryDir directory;
         Require(directory.isValid(), "temporary directory");
         const auto path = directory.filePath("settings.json");
@@ -289,11 +295,14 @@ int main(int argc, char** argv) {
                 !settings.sword_activate_owls&&!settings.disable_bomber_approach,"Restoration defaults all off");
         Require(settings.damage_multiplier==1&&!settings.disable_heart_drops&&!settings.disable_rupee_drops&&
                 !settings.disable_fairy_drops&&!settings.disable_magic_drops&&!settings.disable_ammo_pickups&&
-                !settings.lose_rupees_on_death&&!settings.world_ends_on_death,"difficulty modifiers default off");
+                !settings.lose_rupees_on_death&&!settings.world_ends_on_death&&!settings.advance_six_hours_on_death,"difficulty modifiers default off");
+        Require(!settings.fast_time,"fast time defaults off");
         Require(settings.player_hud.banner_y==0,"location banner uses editor position by default");
         settings.player_hud.banner_y=24;
         Require(!settings.double_prices&&settings.price_multiplier==2,"price difficulty defaults off with 2x selected");
         settings.double_prices=true;settings.price_multiplier=3;
+        settings.advance_six_hours_on_death=true;
+        settings.fast_time=true;
         Require(!settings.weaker_enhanced_defense,"enhanced defense defaults native");
         settings.weaker_enhanced_defense=true;
         Require(settings.actor_draw_distance==1.f,"actor draw distance defaults native");
@@ -320,17 +329,39 @@ int main(int argc, char** argv) {
         settings.widescreen = true;
         settings.camera_zoom_out = 1.25f;
         settings.game_camera_fov = 55.f;
+        settings.cutscene_camera_fov = 60.f;
         settings.show_performance = true;
         Require(settings.show_startup_settings_hint,"startup hint enabled by default");
         settings.show_startup_settings_hint=false;
+        settings.item_present.poses[MM3D::NativeItemPresent::Panel]={10,20,.5f};
+        settings.mask_present.enabled=false;
+        settings.mask_present.poses[MM3D::NativeItemPresent::Panel]={35,40,.75f};
+        settings.mask_present.poses[MM3D::NativeItemPresent::Prompt]={-20,-80,.6f};
+        settings.mask_present.poses[MM3D::NativeItemPresent::Description]={45,-30,.8f};
+        settings.mask_present.help_pose={15,210,.7f};settings.mask_present.help_spacing=9;
         settings.fullscreen_draws={MM3D::WidescreenProbe::Draw{
             0x89b1ab98da3d9241ULL,0xfedcba9876543210ULL,4,480,400,0,65536,4294967295u}};
+        settings.file_select.entrance_ease=2.75f;
         Require(settings.Save(path), "initial atomic save");
         settings.scale = 1.75;
         Require(settings.Save(path), "atomic replacement");
         MM3D::Settings loaded;
         Require(loaded.Load(path) && loaded.scale == 1.75, "settings roundtrip");
+        Require(loaded.file_select.entrance_ease==2.75f,"file entrance ease persists");
+        Require(loaded.item_present.poses[MM3D::NativeItemPresent::Panel].x==10&&
+            loaded.mask_present.poses[MM3D::NativeItemPresent::Panel].x==35&&
+            loaded.mask_present.poses[MM3D::NativeItemPresent::Panel].y==40&&
+            loaded.mask_present.poses[MM3D::NativeItemPresent::Panel].scale==.75f,"independent item and mask panels persist");
+        Require(!loaded.mask_present.enabled&&loaded.item_present.enabled&&
+            loaded.mask_present.poses[MM3D::NativeItemPresent::Prompt].x==-20&&
+            loaded.mask_present.poses[MM3D::NativeItemPresent::Description].x==45&&
+            loaded.mask_present.poses[MM3D::NativeItemPresent::Description].y==-30&&
+            loaded.mask_present.poses[MM3D::NativeItemPresent::Description].scale==.8f&&
+            loaded.mask_present.help_pose.x==15&&loaded.mask_present.help_pose.y==210&&
+            loaded.mask_present.help_pose.scale==.7f&&loaded.mask_present.help_spacing==9,"mask title, description and prompts persist independently");
         Require(loaded.double_prices&&loaded.price_multiplier==3,"3x purchase prices persist");
+        Require(loaded.advance_six_hours_on_death,"six-hour death penalty persists");
+        Require(loaded.fast_time,"fast time persists");
         Require(loaded.classic_double_time,"classic Double Time persists");
         Require(loaded.song_list.panel_color==settings.song_list.panel_color&&loaded.song_list.panel_color_opacity==.75f,"song panel color persists");
         Require(loaded.prop_draw_distance==3.f,"bush distance persists");
@@ -350,8 +381,19 @@ int main(int argc, char** argv) {
         Require(!loaded.show_startup_settings_hint,"startup hint opt-out persists");
         Require(loaded.camera_zoom_out == 1.25f, "camera zoom persists");
         Require(loaded.game_camera_fov == 55.f, "game FOV persists");
+        Require(loaded.cutscene_camera_fov == 60.f, "cutscene FOV persists independently");
         Require(loaded.fullscreen_draws==settings.fullscreen_draws,"full draw signature persists without hash precision loss");
         QFile corrupt(path);
+        Require(corrupt.open(QIODevice::WriteOnly), "open legacy shared mask controls fixture");
+        corrupt.write("{\"version\":1,\"item_present_1_x\":27,\"item_present_1_y\":55,\"item_present_1_scale\":0.6,\"item_present_help_x\":19,\"dialogue_y\":-25,\"dialogue_scale\":0.7}");corrupt.close();
+        MM3D::Settings legacy_masks;Require(legacy_masks.Load(path),"load legacy shared mask controls");
+        Require(legacy_masks.mask_present.poses[MM3D::NativeItemPresent::Panel].x==27&&
+            legacy_masks.mask_present.poses[MM3D::NativeItemPresent::Panel].y==55&&
+            legacy_masks.mask_present.poses[MM3D::NativeItemPresent::Panel].scale==.6f&&
+            legacy_masks.mask_present.help_pose.x==19&&
+            legacy_masks.mask_present.poses[MM3D::NativeItemPresent::Description].x==0&&
+            legacy_masks.mask_present.poses[MM3D::NativeItemPresent::Description].y==-25&&
+            legacy_masks.mask_present.poses[MM3D::NativeItemPresent::Description].scale==.7f,"legacy mask placement is preserved");
         Require(corrupt.open(QIODevice::WriteOnly), "open malformed fixture");
         corrupt.write("{truncated"); corrupt.close();
         Require(!loaded.Load(path) && loaded.scale == 1.75, "invalid input preserves settings");
@@ -371,6 +413,7 @@ int main(int argc, char** argv) {
         Require(loaded.interpolation_60fps,"settings without a saved frame rate default to interpolation");
         Require(loaded.interpolation_cpu_vertices,"settings without a saved method default to CPU interpolation");
         Require(loaded.game_camera_fov == 65.f, "legacy settings default to user-facing game FOV");
+        Require(loaded.cutscene_camera_fov == 49.f, "legacy settings preserve previous cutscene FOV");
         Require(!loaded.mute_music, "legacy settings keep music audible");
         Require(!loaded.disable_low_health_beep, "legacy settings keep low heart alarm audible");
         Require(!loaded.disable_tatl_reminders, "legacy settings retain Tatl reminders");

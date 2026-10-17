@@ -1,0 +1,102 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+#pragma once
+#include "mm3d/message_interpolation.h"
+#include "mm3d/native_inventory.h"
+
+namespace MM3D::MessageLayout {
+using namespace NativeInventory;
+using MessageInterpolation::Panel;
+// Capture after native layout calculation and all host placement adjustments,
+// immediately before Widget rendering. No animation clock or guest data changes.
+template<class M> std::vector<Panel> Read(M& m,U32 layout) {
+    std::vector<Panel> panels;
+    if(!LayoutNamed(m,layout,"MessageWindow"))return panels;
+    DialogueScale::Hook finder;std::array<U32,64> searched{};unsigned used=0;
+    const U32 plate=finder.Find(m,layout+8,"plate",searched,used);
+    const auto message=m.Read(layout+0x3f4);
+    if(!plate||!message)return panels;
+    std::vector<U32> seen;
+    const auto number=[&](U32 at)->std::optional<float> {
+        const auto bits=m.Read(at);if(!bits)return {};
+        const float f=std::bit_cast<float>(*bits);
+        return std::isfinite(f)?std::optional<float>{f}:std::nullopt;
+    };
+    const auto visit=[&](auto&& self,U32 node,unsigned depth)->bool {
+        if(!Pointer(node,0x140)||depth>32||seen.size()>=64||
+           std::find(seen.begin(),seen.end(),node)!=seen.end())return false;
+        seen.push_back(node);
+        const auto flags=m.Read(node+0xd4);const auto alpha=number(node+0x134);
+        if(!flags||!alpha)return false;
+        if(!(*flags&1)||*alpha<=0)return true;
+        const auto geometry=m.Read(node+0x28);if(!geometry)return false;
+        if(*geometry) {
+            const auto kind=m.Read(*geometry+4);if(!kind)return false;
+            // Textured pane's shared base geometry. This includes the plate,
+            // waitIcon and branchArrow; glyphs use another type and remain
+            // native so text reveal timing is unchanged.
+            if((*kind&65535)==6) {
+                Panel p;p.source={layout,node,*geometry,*message};
+                std::array<float,5> box{};
+                for(unsigned i=0;i<5;++i) {
+                    auto v=number(*geometry+0x14+4*i);if(!v)return false;box[i]=*v;
+                }
+                if(box[3]<=0||box[4]<=0||box[3]>2048||box[4]>2048)return false;
+                // Native pane renderer multiplies its world matrix by its
+                // rectangle. PICA uploads each row in reversed component order.
+                for(unsigned r=0;r<3;++r) {
+                    std::array<float,4> row{};
+                    for(unsigned c=0;c<4;++c) {
+                        auto v=number(node+0xe0+16*r+4*c);if(!v)return false;row[c]=*v;
+                    }
+                    p.transform[r]={row[3]+row[0]*box[0]+row[1]*box[1]+row[2]*box[2],
+                        row[2],row[1]*box[4],row[0]*box[3]};
+                }
+                std::array<float,4> cell{};
+                for(unsigned i=0;i<4;++i) {
+                    auto v=number(*geometry+0x28+4*i);if(!v)return false;cell[i]=*v;
+                }
+                for(unsigned r=0;r<2;++r) {
+                    std::array<float,3> row{};
+                    for(unsigned c=0;c<3;++c) {
+                        auto v=number(node+0x110+12*r+4*c);if(!v)return false;row[c]=*v;
+                    }
+                    p.uv[r]={0,row[0]*cell[0]+row[1]*cell[1]+row[2],row[1]*cell[3],row[0]*cell[2]};
+                }
+                for(const auto& r:p.transform)for(float v:r)if(!std::isfinite(v))return false;
+                for(const auto& r:p.uv)for(float v:r)if(!std::isfinite(v))return false;
+                if(panels.size()==16)return false;
+                panels.push_back(p);
+            }
+        }
+        const auto embedded=m.Read(node+0x20),group=m.Read(node+0x24);
+        if(!embedded||!group)return false;
+        if(*embedded)return Pointer(*embedded,0x148)&&self(self,*embedded+8,depth+1);
+        // Indirect layout groups follow the same branch as the native renderer.
+        if((*group&65535)!=65535) {
+            const auto owner=m.Read(node+4);if(!owner||!Pointer(*owner,0x14c))return false;
+            const auto count=m.Read(*owner+0x148),list=m.Read(*owner+0x144);
+            if(!count||*count>1024||(*group&65535)>=*count||!list||!Pointer(*list,*count*4))return false;
+            const auto target=m.Read(*list+(*group&65535)*4);
+            return target&&(!*target||(Pointer(*target,0x144)&&self(self,*target+4,depth+1)));
+        }
+        const auto count=m.Read(node+0x18),list=m.Read(node+0x14);
+        if(!count||*count>64||!list||(*count&&!Pointer(*list,*count*4)))return false;
+        for(unsigned i=0;i<*count;++i) {
+            const auto child=m.Read(*list+4*i);
+            if(!child||(*child&&!self(self,*child,depth+1)))return false;
+        }
+        return true;
+    };
+    if(!visit(visit,plate,0))return {};
+    // The advance indicator and choice arrow live outside the plate branch.
+    // Keep glyphs and other front-layer decorations out of the ownership pool.
+    for(const char* name:{"waitIcon","branchArrow"}) {
+        searched.fill(0);used=0;
+        const U32 icon=finder.Find(m,layout+8,name,searched,used);
+        if(!icon||std::find(seen.begin(),seen.end(),icon)!=seen.end())continue;
+        const auto count=panels.size();
+        if(!visit(visit,icon,0))panels.resize(count);
+    }
+    return panels;
+}
+}

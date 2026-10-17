@@ -85,7 +85,7 @@ public:
     void EndSwap();
     void BeginSystemFrame();
     void EndSystemFrame();
-    void EndGameFrame();
+    void EndGameFrame(s64 guest_time_us);
 
     Results GetAndResetStats(std::chrono::microseconds current_system_time_us);
 
