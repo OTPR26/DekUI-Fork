@@ -29,7 +29,7 @@ int main() {
     assert(std::abs(std::bit_cast<float>(m.words[branches[6]+0xfc])-o.poses[F::Actions].y)<.0001f);
     for(auto card:cards){assert(m.words[card+0xec]==native.at(card+0xec));assert(m.words[card+0xfc]==native.at(card+0xfc));}
     h.End(m);assert(m.words==routed);
-    h.Pass(m,manager,3);h.Begin(m,summary);
+    h.Pass(m,manager,2);h.Begin(m,summary);
     assert(m.words[summary+8+0xec]==std::bit_cast<U32>(o.poses[F::Summary].x));
     assert(m.words[summary+8+0xe0]==std::bit_cast<U32>(o.poses[F::Summary].scale));
     h.End(m);assert(m.words==routed);

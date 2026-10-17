@@ -188,7 +188,7 @@ struct Hook {
         // seven-character range. Stage all modifications for exact draw restoration.
         auto bar=m.Read(owner+0x5c0);if(!bar||!LayoutNamed(m,*bar,"ScrollBar"))return false;
         const float fraction=total>Visible?float(first)/float(total-Visible):0.f;
-        const float coverage=total>Visible?float(Visible)/float(total):1.f;
+        const float coverage=float(std::min(Visible,total))/float(std::max(1,total));
         return NotebookScrollbar::Resize(m,*bar,helper,writes,base+356.f*scale,fraction,coverage);
     }
 };

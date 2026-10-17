@@ -3,10 +3,8 @@
 // Refer to the license.txt file included.
 
 #include <QCheckBox>
-#include <QDialogButtonBox>
 #include <QMessageBox>
 #include <QTableWidgetItem>
-#include <QVBoxLayout>
 #include <QtGlobal>
 #include "configure_cheats.h"
 #include "core/cheats/cheat_base.h"
@@ -43,30 +41,6 @@ ConfigureCheats::ConfigureCheats(Cheats::CheatEngine& cheat_engine_, u64 title_i
 }
 
 ConfigureCheats::~ConfigureCheats() = default;
-
-bool ConfigureCheats::ConfirmClose() {
-    return !edited || CheckSaveCheat();
-}
-
-DekuiCheatsDialog::DekuiCheatsDialog(Cheats::CheatEngine& cheat_engine, u64 title_id,
-                                   QWidget* parent)
-    : QDialog(parent) {
-    setWindowTitle(tr("Dekui cheats"));
-    auto* layout = new QVBoxLayout(this);
-    cheats = new ConfigureCheats(cheat_engine, title_id, this);
-    layout->addWidget(cheats);
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
-    layout->addWidget(buttons);
-    connect(buttons, &QDialogButtonBox::rejected, this, &DekuiCheatsDialog::reject);
-}
-
-void DekuiCheatsDialog::reject() {
-    // Close button, Escape and the window's close control all preserve the
-    // cheat editor's save/discard/cancel behavior, including failed validation.
-    if (cheats->ConfirmClose()) {
-        QDialog::reject();
-    }
-}
 
 void ConfigureCheats::LoadCheats() {
     cheats = cheat_engine.GetCheats();

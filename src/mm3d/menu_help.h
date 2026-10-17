@@ -28,8 +28,8 @@ struct Hook {
         scratch.frames.emplace_back();auto& frame=scratch.frames.back();
         const bool gear=LayoutNamed(m,layout,"MenuCollect");
         if(present) {
-            if(!present->Enabled()||present->pass!=3||layout!=present->panel||
-               !NativeItemPresent::PresentLayout(m,layout)||
+            if(!NativeItemPresent::enabled||present->pass!=3||layout!=present->panel||
+               !LayoutNamed(m,layout,"MenuItemPresen")||
                std::find(present->routed.begin(),present->routed.end(),layout)==present->routed.end())return content;
         } else {
         if(HudAdjustments::hide_menu_prompts||!enabled||!(gear?GearMenu::enabled.load():NativeInventory::enabled.load())||
@@ -48,12 +48,12 @@ struct Hook {
         auto all=scratch.Child(m,layout+8,"all");auto alpha=m.Read((all?all:layout+8)+0x134);
         auto ig=m.Read(prompt.icon+0x28),tg=m.Read(prompt.text+0x28);
         if(!alpha||!ig||!tg)return content;auto font=m.Read(*tg+0x28);if(!font)return content;
-        const auto& group=present?(present->mask_menu?NativeItemPresent::mask_help_pose:NativeItemPresent::help_pose):pose;
+        const auto& group=present?NativeItemPresent::help_pose:pose;
         const float a=std::bit_cast<float>(*alpha)*ItemsMapPrompt::Opacity(),scale=group.scale.load(),
             x=group.x.load()+(present?present->transition_x:0),y=group.y.load();
         if(!std::isfinite(a)||a<=0||a>1||!std::isfinite(scale)||scale<.1f||scale>2||!std::isfinite(x)||!std::isfinite(y))return content;
         const bool across=!present&&horizontal.load();
-        float gap=present?(present->mask_menu?NativeItemPresent::mask_help_spacing.load():NativeItemPresent::help_spacing.load()):spacing.load(),
+        float gap=present?NativeItemPresent::help_spacing.load():spacing.load(),
             inner=present?4:button_gap.load(),bs=present?1:button_scale.load(),ts=present?1:text_scale.load();
         if(!std::isfinite(gap)||gap<0||gap>100||!std::isfinite(inner)||inner<0||inner>40||
            !std::isfinite(bs)||bs<.25f||bs>3||!std::isfinite(ts)||ts<.25f||ts>3)return content;

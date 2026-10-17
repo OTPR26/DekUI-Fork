@@ -848,18 +848,6 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
                 (unsigned(merger.alpha_blending.blend_equation_rgb.Value())<<8)|
                 (unsigned(merger.alphablend_enable)<<16),u32(merger.depth_color_mask)},
             {int(scissor.left),int(scissor.top),int(scissor.right),int(scissor.bottom)});
-        if(wide_bypass) {
-            const auto row=[&](unsigned r) {
-                std::array<float,4> result{};
-                for(unsigned c=0;c<4;++c)result[c]=pica.vs_setup.uniforms.f[r][c].ToFloat32();
-                return result;
-            };
-            if(MM3D::WidescreenProbe::LocalLayoutPane(pica.vs_setup.GetProgramCodeHash(),
-                pica.vs_setup.GetSwizzleDataHash(),u32(regs.pipeline.num_vertices),
-                unsigned(textures.texture0_enable)|(unsigned(textures.texture1_enable)<<1)|
-                    (unsigned(textures.texture2_enable)<<2),row(10),row(11),row(12)))
-                wide_bypass=false;
-        }
     }
     // All three lens passes must cover the same full viewport. Compressing
     // only the stencil masks leaves visible-state strips beside the purple cover.

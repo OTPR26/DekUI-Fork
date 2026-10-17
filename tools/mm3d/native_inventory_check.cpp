@@ -867,19 +867,17 @@ void NotebookPromptChecks() {
             assert(item.Root(m,inventory,panel,sp,content,false)==content);
             assert(!item.prompt.End(m)&&m.words==hidden);
         }
-        // Both giving menus slide their legends using independent editor poses.
-        for(const char* name:{"MenuItemPresen","MenuMaskPresen"}) {
+        // Select Item has its own two-row legend and independent editor pose.
+        {
             MM3D::MenuHelp::Hook help;Hook inventory;MM3D::NativeItemPresent::Hook present;
-            auto panel=m.Layout(name),all=m.Widget("all"),desc=m.Layout("MessageWindow");
+            auto panel=m.Layout("MenuItemPresen"),all=m.Widget("all"),desc=m.Layout("MessageWindow");
             m.Children(panel+8,{all});m.Children(all,{oi});m.Children(desc+8,{ot});
             m.words[all+0x134]=std::bit_cast<U32>(.6f);
             present.panel=panel;present.pass=3;present.routed={panel};present.transition_x=-7;
-            present.mask_menu=std::string_view(name)=="MenuMaskPresen";
             help.source.description=desc;help.source.description_panel=panel;
             const U32 stack=(m.Alloc(0x12000)+0x12000)&~7u;const auto before=m.words;
             for(float scale:{.5f,1.f,2.f})for(float gap:{0.f,13.f}) {
-                MM3D::NativeItemPresent::Options o;o.help_pose={32,45,scale};o.help_spacing=gap;
-                if(present.mask_menu)MM3D::NativeItemPresent::ApplyMask(o);else MM3D::NativeItemPresent::Apply(o);
+                MM3D::NativeItemPresent::Options o;o.help_pose={32,45,scale};o.help_spacing=gap;MM3D::NativeItemPresent::Apply(o);
                 const auto root=help.Root(m,inventory,panel,stack,panel+8,&present);
                 assert(root==stack-0x8000&&m.words[root+0x18]==9);
                 const auto children=m.words[root+0x14];
@@ -902,7 +900,7 @@ void NotebookPromptChecks() {
                 assert(help.scratch.End(m)==stack&&m.words==before);
             }
             present.pass=5;assert(help.Root(m,inventory,panel,stack,panel+8,&present)==panel+8);
-            help.scratch.End(m);assert(m.words==before);MM3D::NativeItemPresent::Apply({});MM3D::NativeItemPresent::ApplyMask({});
+            help.scratch.End(m);assert(m.words==before);MM3D::NativeItemPresent::Apply({});
         }
         // Shared button legend: textured menu panes, separate description font.
         for(const char* name:{"MenuItem","MenuMask","MenuCollect"}) {
@@ -1402,7 +1400,7 @@ void ItemPresentChecks() {
             tm.words[anim+8]=tm.String(opening?"in_item_presen_anim":"out_item_presen_anim");
             tm.words[player+0x10]=std::bit_cast<U32>(f);th.ReadTransition(tm);
             assert(th.transitioning);
-            const float expected=-368*(opening?1-f/6:f/6);
+            const float expected=opening?-368*(1-f/6):-368*f/6;
             assert(std::abs(th.transition_x-expected)<.001f);
             std::vector<P::Hook::Write> writes;std::vector<U32> seen;
             assert(th.Move(tm,node,P::Panel,writes,seen));
@@ -1426,32 +1424,6 @@ void ItemPresentChecks() {
     const auto slots=m.Widget("item_set_pos_g"),grid=m.Widget("item_panel_g",100,60),right=m.Widget("right_base_g",280,20);
     const auto prompt=m.Widget("disp_item_name",160,224),back=m.Widget("btn_return_l"),confirm=m.Widget("btn_decide_g");
     m.Children(panel+8,{all});m.Children(all,{group,prompt,back,confirm});m.Children(group,{slots,grid,right});
-    {
-        P::Hook pose_hook;
-        const auto unrelated=m.Layout("MessageWindow");
-        const auto native=m.words;
-        for(float alpha:{0.f,.5f,1.f}) {
-            m.words[prompt+0x98]=std::bit_cast<U32>(.8f+.2f*alpha);
-            m.words[prompt+0x9c]=std::bit_cast<U32>(.8f+.2f*alpha);
-            m.words[prompt+0xd0]=std::bit_cast<U32>(alpha);
-            const auto before=m.words;
-            pose_hook.BeginPromptPose(m,panel);
-            auto expected=before;
-            for(U32 off:{0x98u,0x9cu,0xd0u})expected[prompt+off]=std::bit_cast<U32>(1.f);
-            expected[prompt+0xd4]|=0x04001800;expected[prompt+0xd8]|=0x04001800;
-            assert(m.words==expected); // Translation, colors, other groups and clocks untouched.
-            pose_hook.BeginPromptPose(m,unrelated);pose_hook.EndPromptPose(m);
-            assert(m.words==expected); // Nested layout must not restore the parent early.
-            pose_hook.EndPromptPose(m);assert(m.words==before);
-        }
-        P::enabled=false;auto before=m.words;
-        pose_hook.BeginPromptPose(m,panel);pose_hook.EndPromptPose(m);
-        assert(m.words==before);P::enabled=true;
-        m.words.erase(prompt+0xd8);before=m.words;
-        pose_hook.BeginPromptPose(m,panel);pose_hook.EndPromptPose(m);
-        assert(m.words==before); // Incomplete input must not partially change the pose.
-        m.words=native;
-    }
     m.words[owner+0x28]=panel;
     std::vector<U32> entries{panel},nodes;
     for(unsigned i=0;i<20;++i) {
@@ -1505,92 +1477,6 @@ void ItemPresentChecks() {
     m.words=original;m.words[all+0x18]=3;h.Pass(m,manager,4);auto before=m.words;h.Pass(m,manager,5);assert(m.words==before);
     m.words=original;m.words[owner+0x28]=0;h.Pass(m,manager,4);h.Pass(m,manager,5);assert(m.words[q5+0x844]==22);
     P::Apply(P::Options{});
-}
-void MaskPresentChecks() {
-    namespace P=MM3D::NativeItemPresent;
-    Memory m;P::Hook h;P::Options options;
-    options.horizontal=true; // Mask column six must stay in the grid.
-    options.poses[P::Panel]={10,20,.5f};options.poses[P::Prompt]={30,9,1.2f};
-    options.poses[P::Right]={-20,8,.75f};P::ApplyMask(options);
-    P::Options item_options;item_options.poses[P::Panel]={100,200,1.5f};P::Apply(item_options);
-    const auto owner=m.Alloc(0x300),panel=m.Layout("MenuMaskPresen"),all=m.Widget("all");
-    const auto group=m.Widget("presen_mask"),slots=m.Widget("mask_set_pos_g"),grid=m.Widget("mask_panel_g",100,60);
-    const auto prompt=m.Widget("disp_mask_name",160,224),label=m.Widget("e_mask_presen_g");
-    const auto back=m.Widget("btn_return_l"),confirm=m.Widget("btn_decide_g");
-    m.Children(panel+8,{all});m.Children(all,{group,prompt,back,confirm});m.Children(group,{slots,grid});
-    m.Children(prompt,{label,m.Widget("bb_mask_name")});m.words[label+0xd4]&=~1u;
-    m.words[prompt+0x98]=m.words[prompt+0x9c]=std::bit_cast<U32>(.8f);
-    m.words[prompt+0xd0]=std::bit_cast<U32>(.5f);
-    m.words[owner+0x28]=panel;m.words[owner+0x18]=0x12340305;
-    std::vector<U32> entries{panel},nodes;
-    for(unsigned i=0;i<24;++i) {
-        const auto icon=m.Layout("ItemIconButton",32+48*(i%6),29+47*(i/6)),node=m.Widget("slot");
-        m.words[owner+0x50+4*i]=icon;m.words[icon+0x184]=owner+0x24;
-        m.words[node+0x20]=icon;entries.push_back(icon);nodes.push_back(node);
-    }
-    m.Children(slots,nodes);
-    const auto cursor=m.Layout("CursorItemCollect",272,170),touch=m.Layout("CursorItemCollect",272,170);
-    const auto bg=m.Layout("CommonBottomBg"),other=m.Layout("Unrelated"),message=m.Layout("MessageWindow",0,0,0x450);
-    m.words[message+0x3f4]=0x174c;
-    m.words[owner+4]=bg;m.words[owner+8]=cursor;m.words[owner+0xc]=touch;
-    entries.push_back(cursor);entries.push_back(touch);entries.push_back(other);
-    const auto manager=m.Alloc(32),q1=m.Alloc(0x848),q3=m.Alloc(0x848),q4=m.Alloc(0x848),q5=m.Alloc(0x848);
-    m.words[manager+12]=q1;m.words[manager+20]=q3;m.words[manager+24]=q4;m.words[manager+28]=q5;
-    m.Queue(q1,{other});m.Queue(q4,{bg});m.Queue(q5,entries);
-    const auto original=m.words;
-    assert(!P::SkipIntro(m,owner)); // The item-only input patch never affects moon dialogue.
-    P::mask_enabled=false;h.Pass(m,manager,4);assert(!h.panel&&m.words==original);P::mask_enabled=true;
-    P::enabled=false; // Disabling Give Item must not disable Select Mask.
-    h.Pass(m,manager,4);
-    assert(h.panel==panel&&h.mask_menu&&h.icon_count==24&&!h.frame_horizontal&&h.cursor_part==P::Panel);
-    assert(m.words[q4+0x844]==0&&m.words[q1+0x844]==1); // No full-screen mask backdrop on top.
-    h.Pass(m,manager,5);
-    assert(m.words[q5+0x844]==1&&m.words[q5+4+0x80]==other&&m.words[q3+0x844]==27);
-    assert(h.IsDescription(m,message));
-    auto queued=m.words;h.Pass(m,manager,3);h.Begin(m,panel);
-    assert(m.words[label+0xd4]&1);
-    assert(std::bit_cast<float>(m.words[grid+0xec])==60);
-    assert(std::abs(std::bit_cast<float>(m.words[prompt+0xec])-222)<.001f);
-    for(unsigned i=0;i<24;++i)
-        assert(std::bit_cast<float>(m.words[entries[i+1]+8+0xec])==10+.5f*(32+48*(i%6)));
-    h.End(m);assert(m.words==queued);
-    for(U32 c:{cursor,touch}) {
-        h.Begin(m,c);assert(std::bit_cast<float>(m.words[c+8+0xec])==146);
-        h.End(m);assert(m.words==queued);
-    }
-    h.BeginPromptPose(m,panel);
-    for(U32 off:{0x98u,0x9cu,0xd0u})assert(m.words[prompt+off]==std::bit_cast<U32>(1.f));
-    assert(m.words[label+0xd4]&1);h.EndPromptPose(m);assert(m.words==queued);
-    m.words.erase(label+0xd4);auto broken=m.words;
-    h.BeginPromptPose(m,panel);h.EndPromptPose(m);assert(m.words==broken);m.words=queued;
-
-    // The mask player is at +0x30; +0x34 contains an animation resource.
-    const auto player=m.Alloc(0x18),anim=m.Alloc(0x18);m.words[owner+0x30]=player;
-    m.words[owner+0x34]=anim;m.words[player+0xc]=anim;
-    m.words[grid+0x3c]=std::bit_cast<U32>(100.f);m.words[grid+0x40]=std::bit_cast<U32>(60.f);
-    for(bool opening:{true,false}) {
-        m.words[anim+8]=m.String(opening?"in_mask_presen_anim":"out_mask_presen_anim");
-        float travel=0;
-        for(float f:{0.f,1.5f,3.f,4.5f,6.f}) {
-            m.words[player+0x10]=std::bit_cast<U32>(f);h.ReadTransition(m);
-            assert(h.transitioning&&h.transition_opening==opening);
-            if(f==0)travel=h.transition_travel;
-            assert(travel==h.transition_travel&&travel>0);
-            assert(std::abs(h.transition_x+travel*(opening?1-f/6:f/6))<.001f);
-            m.words[grid+0xec]=std::bit_cast<U32>(-96.f); // Native animation must not add a second slide.
-            const auto before=m.words;std::vector<P::Hook::Write> writes;std::vector<U32> seen;
-            assert(h.Move(m,grid,P::Panel,writes,seen));for(auto w:writes)m.Write(w.address,w.after);
-            assert(std::abs(std::bit_cast<float>(m.words[grid+0xec])-(60+h.transition_x))<.001f);
-            for(auto w:writes)m.Write(w.address,w.before);assert(m.words==before);
-        }
-    }
-    m.words[anim+8]=m.String("in_item_presen_anim");h.ReadTransition(m);assert(!h.transitioning);
-    // Invalid layout/owner/icon data leaves both queues and guest state untouched.
-    for(U32 address:{owner+0x28,owner+0x50+23*4,group+0x18}) {
-        m.words=original;m.words[address]=0;const auto before=m.words;
-        h.Pass(m,manager,4);h.Pass(m,manager,5);assert(!h.panel&&m.words==before);
-    }
-    P::Apply({});P::ApplyMask({});
 }
 void InventoryNavigationChecks() {
     namespace N=MM3D::InventoryNavigation;
@@ -2536,22 +2422,21 @@ void InventoryShadowChecks() {
 }
 void ExpandedPanelShadowChecks() {
     namespace S=MM3D::InventoryShadow;namespace P=MM3D::NativeItemPresent;
-    for(const char* name:{"MenuItem","MenuMask","MenuCollect","MenuItemPresen","MenuMaskPresen"})
+    for(const char* name:{"MenuItem","MenuMask","MenuCollect","MenuItemPresen"})
     for(bool horizontal:{false,true})for(float scale:{.5f,1.f,1.5f})for(float fade:{0.f,.4f,1.f}) {
         Memory m;S::Hook shadow;Hook inventory;P::Hook present;
         auto panel=m.Layout(name);inventory.panel=present.panel=panel;inventory.pass=present.pass=3;
         inventory.routed=present.routed={panel};
-        const bool gear=std::string_view(name)=="MenuCollect",giving_masks=std::string_view(name)=="MenuMaskPresen",
-                   giving=giving_masks||std::string_view(name)=="MenuItemPresen",masks=std::string_view(name)=="MenuMask"||giving_masks;
-        present.mask_menu=giving_masks;
+        const bool gear=std::string_view(name)=="MenuCollect",giving=std::string_view(name)=="MenuItemPresen",
+                   masks=std::string_view(name)=="MenuMask";
         const unsigned count=giving?3:2;
         const char* names[3]={gear?"left_base_pane":masks?"mask_panel_pane00":"item_panel_pane00",
-                             gear?"right_base_pane":masks?"mask_panel_pane01":"item_panel_pane01",giving_masks?"mask_panel_pane02":"right_base_pane"};
+                             gear?"right_base_pane":masks?"mask_panel_pane01":"item_panel_pane01","right_base_pane"};
         std::vector<U32> panes;std::array<float,3> left{},bottom{},width{};
         const auto f=[&](U32 at,float v){m.words[at]=std::bit_cast<U32>(v);};
         const auto get=[&](U32 at){return std::bit_cast<float>(m.words.at(at));};
         for(unsigned i=0;i<count;++i) {
-            const bool strip=gear?i==1:!giving_masks&&i==2;
+            const bool strip=gear?i==1:i==2;
             auto node=m.Widget(names[i],20.f+30*i,40.f+20*i),geo=m.Alloc(0x7c);panes.push_back(node);
             m.words[node+0x28]=geo;m.words[geo+4]=6;
             f(node+0x134,fade);f(node+0xe0,scale);f(node+0xf4,scale);
@@ -2569,34 +2454,18 @@ void ExpandedPanelShadowChecks() {
             if(fade==0){assert(root==panel+8);shadow.scratch.End(m);assert(m.words==before);continue;}
             assert(root!=panel+8);
             const unsigned children=m.words[root+0x18];assert(children>24&&children<=97);
-            if(giving_masks)assert(children==97); // One finely sampled halo for the whole panel.
             assert(m.words[root+0x140+4*(children-1)]==panel+8);
-            const unsigned per_panel=(children-1)/(giving_masks?1:2);
+            const unsigned per_panel=(children-1)/2;
             for(unsigned i=0;i<children-1;++i) {
                 const auto n=m.words[root+0x140+4*i],g=m.words[n+0x28];
                 const unsigned part=i<per_panel?0:2;
-                const float l=giving_masks?std::min({left[0],left[1],left[2]}):part?left[2]:std::min(left[0],left[1]);
-                const float r=giving_masks?std::max({left[0]+width[0],left[1]+width[1],left[2]+width[2]}):part?left[2]+width[2]:std::max(left[0]+width[0],left[1]+width[1]);
+                const float l=part?left[2]:std::min(left[0],left[1]);
+                const float r=part?left[2]+width[2]:std::max(left[0]+width[0],left[1]+width[1]);
                 const float actual_top=part? (horizontal?bottom[2]-56*scale:80+3*scale):40+3*scale;
-                const float bottom_edge=giving_masks?std::max({bottom[0],bottom[1],bottom[2]}):part?bottom[2]:std::max(bottom[0],bottom[1]);
+                const float bottom_edge=part?bottom[2]:std::max(bottom[0],bottom[1]);
                 const float x=get(n+0xec),y=get(n+0xfc),w=get(g+0x20),h=get(g+0x24);
-                assert(w>0&&h>0&&get(n+0x134)>0&&get(n+0x134)<=fade*(giving_masks?.6f:.38f));
+                assert(w>0&&h>0&&get(n+0x134)>0&&get(n+0x134)<=fade*.38f);
                 assert(x+w<=l+.001f||x>=r-.001f||y+h<=actual_top+.001f||y>=bottom_edge-.001f);
-            }
-            if(giving_masks) {
-                for(unsigned ring=0;ring<24;++ring) {
-                    const auto child=[&](unsigned edge){return m.words[root+0x140+4*(ring*4+edge)];};
-                    const auto l=child(0),r=child(1),t=child(2),b=child(3);
-                    const auto lg=m.words[l+0x28],rg=m.words[r+0x28],tg=m.words[t+0x28],bg=m.words[b+0x28];
-                    const float a=get(l+0x134);
-                    assert(a==get(r+0x134)&&a==get(t+0x134)&&a==get(b+0x134));
-                    if(ring)assert(a<get(m.words[root+0x140+4*((ring-1)*4)]+0x134));
-                    assert(std::abs(get(t+0xfc)+get(tg+0x24)-get(l+0xfc))<.0001f);
-                    assert(std::abs(get(l+0xfc)+get(lg+0x24)-get(b+0xfc))<.0001f);
-                    assert(get(t+0xec)==get(l+0xec)&&get(b+0xec)==get(l+0xec));
-                    assert(std::abs(get(tg+0x20)-(get(r+0xec)+get(rg+0x20)-get(l+0xec)))<.0001f);
-                    assert(get(tg+0x20)==get(bg+0x20));
-                }
             }
         } else {
         assert(root!=panel+8);
@@ -2671,48 +2540,8 @@ void NotebookMixedRowsChecks() {
     }
 }
 void NotebookScrollbarChecks() {
-    // Exercise the complete Events path, including row expansion, track
-    // normalization and final screen pose. Testing Resize alone missed the
-    // additional 320/296 stretch applied to Events' shorter native track.
-    for(float list_scale:{.5f,.69f,1.f}) {
-        Memory m;MM3D::NativeNotebook::Hook h;
-        auto owner=m.Alloc(0x800),up=m.Layout("UpQuestlist"),all=m.Widget("all");
-        auto attachment=m.Widget("scroll_bar_l"),bar=m.Layout("ScrollBar");
-        m.Children(up+8,{all});m.words[attachment+0x20]=bar;
-        m.words[owner+0x78]=bar;m.words[owner+0x70]=6u<<24;m.words[owner+0x254]=0;
-        h.row_window.observed_owner=owner;h.row_window.layout=up;
-        std::vector<U32> children{attachment};
-        for(unsigned i=0;i<9;++i) {
-            auto slot=m.Widget("slot",212,51+38.f*i);children.push_back(slot);
-            h.row_window.anchors[i]=slot;
-            if(i<6)m.words[slot+0x20]=m.Layout(i==0||i==2?"QuestCategoryPlate":"QuestPlate",212,51+38.f*i);
-        }
-        m.Children(all,children);
-        auto upper=m.Widget("bb_pane00"),middle=m.Widget("bb_pane01"),lower=m.Widget("bb_pane02");
-        auto top=m.Widget("bar00",388,41),strip=m.Widget("bar01",388,43),bottom=m.Widget("bar02",388,232);
-        m.Children(bar+8,{upper,middle,lower,top,strip,bottom});
-        const auto put=[&](U32 at,float value){m.words[at]=std::bit_cast<U32>(value);};
-        for(auto pane:{upper,lower}) {
-            auto geo=m.Alloc(0x40);m.words[pane+0x28]=geo;
-            put(geo+0x14,384);put(geo+0x18,pane==upper?36:228);
-            put(geo+0x20,16);put(geo+0x24,8);
-        }
-        put(strip+0xf4,186);
-        h.active=true;h.pass=2;h.list={up};
-        h.frame[0]={-47.6f,9.6f,list_scale};h.frame[3]={-7.8f,18.6f,.6f};h.frame[8]={179.6f,0,1};
-        auto before=m.words;h.Begin(m,up);
-        const auto value=[&](U32 at){return std::bit_cast<float>(m.words[at]);};
-        const float track_top=value(upper+0xfc)+36*value(upper+0xf4);
-        const float track_bottom=value(lower+0xfc)+236*value(lower+0xf4);
-        const float thumb_end=value(bottom+0xfc)-value(bottom+0xf4);
-        assert(std::abs(track_top-40.2f)<.001f&&std::abs(track_bottom-232.2f)<.001f);
-        assert(std::abs(value(top+0xfc)-43.2f)<.001f&&std::abs(thumb_end-229.2f)<.001f);
-        assert(std::abs(value(top+0xf4)-.6f)<.001f&&std::abs(value(bottom+0xf4)-.6f)<.001f);
-        h.End(m);assert(m.words==before);
-    }
-    for(float scale:{.6f,1.f})for(unsigned total:{3u,8u,9u,10u,20u,61u,67u})
-        for(float progress:{0.f,.5f,47.f/53.f,48.f/53.f,49.f/53.f,1.f})
-        for(float native_height:{1.f,40.f,186.f}) {
+    for(float scale:{.6f,1.f})for(unsigned total:{3u,8u,9u,10u,20u,67u})
+        for(float progress:{0.f,.5f,1.f})for(float native_height:{1.f,40.f,186.f}) {
             Memory m;MM3D::NotebookRows::Hook hook;Hook helper;
             hook.observed_owner=m.Alloc(0x800);
             constexpr float base=17.f;
@@ -2733,30 +2562,16 @@ void NotebookScrollbarChecks() {
             assert(hook.Scrollbar(m,helper,writes,base+332*scale,progress,coverage));
             for(auto w:writes)m.Write(w.address,w.after);
             const auto y=[&](U32 p){return std::bit_cast<float>(m.words[p+0xfc]);};
-            const float start=base+41*scale,end=base+327*scale;
+            const float start=base+41*scale,end=base+324*scale;
             const float height=(end-start)*coverage;
             assert(std::abs(y(top)-(start+progress*((end-start)-height)))<.001f);
             // Native lower cap geometry spans local Y=-3..-1, not its anchor.
             const float cap_top=y(cap_pane)-3*scale,cap_bottom=y(cap_pane)-scale;
             assert(std::abs(cap_bottom-y(top)-height)<.001f);
             assert(y(top)>=start-.001f&&cap_bottom<=end+.001f);
-            if(total<=8) {
-                // Filled tracks have equal five-unit insets at both ends,
-                // including the lower background cap's eight-unit height.
-                assert(std::abs((base+332*scale-cap_bottom)-5*scale)<.001f);
-                assert(std::abs(y(top)-(base+36*scale)-5*scale)<.001f);
-            }
-            // Include the captured 61-entry list's four/five/six steps from
-            // the bottom. Inner joins overlap even at fractional positions;
-            // the strip must stay clear of both rounded outside edges.
-            assert(std::abs(y(strip)-y(top)-1.5f*scale)<.001f);
-            const float strip_end=y(strip)+std::bit_cast<float>(m.words[strip+0xf4]);
-            assert(std::abs(strip_end-cap_top-.5f*scale)<.001f);
-            assert(y(strip)>y(top)&&strip_end<cap_bottom);
-            // The real layout shader floors positions before projection.
-            // Tiny floating-point errors at an exact join can lose a pixel.
-            assert(std::floor(y(strip))<=std::floor(y(top)+2.f*scale));
-            assert(std::floor(strip_end)>=std::floor(cap_top));
+            assert(std::abs(y(strip)-y(top)-2*scale)<.001f);
+            // The one-unit strip touches both caps at every native animation size.
+            assert(std::abs(y(strip)+std::bit_cast<float>(m.words[strip+0xf4])-cap_top)<.001f);
             assert(m.words[top+0xf4]==before.at(top+0xf4)&&m.words[bottom+0xf4]==before.at(bottom+0xf4));
             for(auto i=writes.rbegin();i!=writes.rend();++i)m.Write(i->address,i->before);
             assert(m.words==before);
@@ -3080,18 +2895,18 @@ int main(int argc,char** argv) {
         assert(h.Expand(m,up,helper,writes));for(auto w:writes)m.Write(w.address,w.after);
         assert(std::bit_cast<float>(m.words[footer+0xfc])==120.f);
         assert(std::bit_cast<float>(m.words[bottom+0xfc])==120.f);
-        assert(std::bit_cast<float>(m.words[last+0xfc])==352.f); // rendered cap ends one unit above anchor
+        assert(std::bit_cast<float>(m.words[last+0xfc])==349.f); // rendered cap ends one unit above anchor
         for(auto i=writes.rbegin();i!=writes.rend();++i)m.Write(i->address,i->before);assert(m.words==before);
-        for(int count:{0,1,7,8,9,10,28})for(int first:{0,std::max(0,count-7)}) {
+        for(int count:{1,7,8,9,10,28})for(int first:{0,std::max(0,count-7)}) {
             h.total=count;h.first=first;writes.clear();
             assert(h.Expand(m,up,helper,writes));for(auto w:writes)m.Write(w.address,w.after);
             const float y=std::bit_cast<float>(m.words[top+0xfc]);
             const float end=std::bit_cast<float>(m.words[last+0xfc])-1.f;
-            const float height=310.f*(count>7?7.f/float(count):1.f);
+            const float height=307.f*float(std::min(7,count))/float(count);
             assert(std::abs(end-y-height)<.001f);
-            assert(std::abs(std::bit_cast<float>(m.words[strip+0xfc])+std::bit_cast<float>(m.words[strip+0xf4])-(end-1.5f))<.001f);
+            assert(std::abs(std::bit_cast<float>(m.words[strip+0xfc])+std::bit_cast<float>(m.words[strip+0xf4])-(end-2.f))<.001f);
             if(first==0)assert(std::abs(y-41.f)<.001f);
-            if(first==std::max(0,count-7))assert(std::abs(end-351.f)<.001f);
+            if(first==std::max(0,count-7))assert(std::abs(end-348.f)<.001f);
             for(auto i=writes.rbegin();i!=writes.rend();++i)m.Write(i->address,i->before);
             assert(m.words==before);
         }
@@ -3772,9 +3587,7 @@ int main(int argc,char** argv) {
     fm.words[fmanager+28]=f5;fm.words[fmanager+20]=f3;fm.words[fmanager+16]=f2;
     fm.Queue(f5,{fl});fm.Queue(f2,{fs});auto f_original=fm.words;
     MM3D::NativeFileSelect::enabled=false;fh.Pass(fm,fmanager,5);assert(!fh.active&&fm.words==f_original);
-    MM3D::NativeFileSelect::enabled=true;fh.Pass(fm,fmanager,5);assert(fh.active&&fm.words[f5+0x844]==1&&fm.words[f3+0x844]==2);
-    assert(fm.words[f3+4+0x80]==fl&&fm.words[f3+8+0x80]==fs);
-    assert(fm.words[f2+0x844]==0&&fm.words[f2+0x808]==0);
+    MM3D::NativeFileSelect::enabled=true;fh.Pass(fm,fmanager,5);assert(fh.active&&fm.words[f5+0x844]==1&&fm.words[f3+0x844]==1);
     auto f_routed=fm.words;fh.Begin(fm,fl);
     assert(fm.words[fb[9]+0xd4]==15&&fm.words[fb[8]+0xd4]==14);fh.End(fm);assert(fm.words==f_routed);
     fh.Pass(fm,fmanager,3);fh.Begin(fm,fl);
@@ -3800,7 +3613,7 @@ int main(int argc,char** argv) {
         fh.End(fm);assert(fm.words==before);
     }
     fh.frame_spacing=0;fm.words=f_routed;
-    fh.Pass(fm,fmanager,3);fh.Begin(fm,fs);assert(std::bit_cast<float>(fm.words[fs+8+0xec])==100*fh.frame[MM3D::NativeFileSelect::Summary].scale+fh.Mapping(MM3D::NativeFileSelect::Summary).tx);
+    fh.Pass(fm,fmanager,2);fh.Begin(fm,fs);assert(std::bit_cast<float>(fm.words[fs+8+0xec])==100*fh.frame[MM3D::NativeFileSelect::Summary].scale+fh.Mapping(MM3D::NativeFileSelect::Summary).tx);
     assert(fh.Mapping(MM3D::NativeFileSelect::Summary).tx+400*fh.frame[MM3D::NativeFileSelect::Summary].scale<=-32);
     fh.End(fm);assert(fm.words==f_routed);
     // Relocated stones, prompt/actions and cursors follow the native exit cover.
@@ -3843,14 +3656,6 @@ int main(int argc,char** argv) {
     fm.words=f_original;fm.words[fa+0x18]=9;auto f_invalid=fm.words;fh.Pass(fm,fmanager,5);assert(!fh.active&&fm.words==f_invalid);
     fm.words=f_original;auto unrelated_file=fm.Layout("Other");fm.Queue(f3,std::vector<U32>(32,unrelated_file));auto f_full=fm.words;
     fh.Pass(fm,fmanager,5);assert(!fh.active&&fm.words==f_full);
-    // One free slot cannot fit both the stones and the summary: no partial routing.
-    fm.words=f_original;fm.Queue(f3,std::vector<U32>(31,unrelated_file));f_full=fm.words;
-    fh.Pass(fm,fmanager,5);assert(!fh.active&&fm.words==f_full);
-    // Preserve unrelated detail/top entries and put the summary after the stones.
-    fm.words=f_original;fm.Queue(f2,{unrelated_file,fs,unrelated_file});fm.Queue(f3,{unrelated_file});
-    fh.Pass(fm,fmanager,5);assert(fh.active);
-    assert(fm.words[f2+0x844]==2&&fm.words[f2+4+0x80]==unrelated_file&&fm.words[f2+8+0x80]==unrelated_file);
-    assert(fm.words[f3+4+0x80]==unrelated_file&&fm.words[f3+8+0x80]==fl&&fm.words[f3+12+0x80]==fs);
     fm.words=f_original;fm.words[f5+0x808]=0;fm.words[f5+0x844]=0;fh.Pass(fm,fmanager,5);assert(!fh.active);
     fm.words=f_original;
     auto popup=fm.Layout("PopupWindow"),pa=fm.Widget("all");fm.Children(popup+8,{pa});
@@ -3860,9 +3665,8 @@ int main(int argc,char** argv) {
         parts.push_back(fm.Widget(name,100,60));
     fm.Children(pa,parts);fm.Queue(f5,{fl,popup});
     fo.poses[MM3D::NativeFileSelect::Popup]={40,10,.5f};MM3D::NativeFileSelect::Apply(fo);
-    fh.Pass(fm,fmanager,5);assert(fh.active&&fm.words[f3+0x844]==3);
+    fh.Pass(fm,fmanager,5);assert(fh.active&&fm.words[f3+0x844]==2);
     assert(fm.words[f3+4+15*0x80]==popup);
-    assert(fm.words[f3+4+0x80]==fl&&fm.words[f3+8+0x80]==fs&&fm.words[f2+0x844]==0);
     auto popup_routed=fm.words;
     fh.Begin(fm,popup);assert(fm.words[popup+8+0xd4]==14);fh.End(fm);assert(fm.words==popup_routed);
     fh.Pass(fm,fmanager,3);fh.Begin(fm,popup);
@@ -3872,21 +3676,6 @@ int main(int argc,char** argv) {
     fh.Begin(fm,popup,true);
     assert(std::abs(std::bit_cast<float>(fm.words[parts.back()+0xec])-120.f)<.001f);
     fh.End(fm);assert(fm.words==popup_routed);
-    // At the highest priority, the three relocated layouts share one bucket.
-    fm.words=popup_routed;fm.Queue(f3,{});fm.words[f3+0x804+15*4]=0;fm.words[f3+0x844]=0;
-    fm.Queue(f2,{fs});fm.Queue(f5,{});
-    fm.words[f5+4+15*0x80]=fl;fm.words[f5+8+15*0x80]=popup;
-    fm.words[f5+0x804+15*4]=2;fm.words[f5+0x844]=2;
-    const auto highest=fm.words;
-    fh.Pass(fm,fmanager,5);assert(fh.active);
-    assert(fm.words[f3+4+15*0x80]==fl&&fm.words[f3+8+15*0x80]==fs&&fm.words[f3+12+15*0x80]==popup);
-    fm.words=highest;
-    for(unsigned i=0;i<30;++i)fm.words[f3+4+15*0x80+4*i]=unrelated_file;
-    fm.words[f3+0x804+15*4]=30;fm.words[f3+0x844]=30;
-    const auto insufficient=fm.words;fh.Pass(fm,fmanager,5);assert(!fh.active&&fm.words==insufficient);
-    // A missing destination must not leave one queue partially modified.
-    fm.words=highest;fm.words.erase(f3+12+15*0x80);
-    const auto unreadable=fm.words;fh.Pass(fm,fmanager,5);assert(!fh.active&&fm.words==unreadable);
     auto backdrop=nm.Layout("CommonUpBg",0,0);auto backdrop_before=nm.words;
     nh.Pass(nm,nmanager,2);nh.Begin(nm,backdrop,true);
     assert(std::abs(std::bit_cast<float>(nm.words[backdrop+8+0xec])+13.333333f)<.001f);
@@ -4021,7 +3810,6 @@ int main(int argc,char** argv) {
     PressStartChecks();
     NotebookPromptChecks();
     ItemPresentChecks();
-    MaskPresentChecks();
     InventoryNavigationChecks();
     BottomStripNavigationChecks();
     InventoryTransitionChecks();

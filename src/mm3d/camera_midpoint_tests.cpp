@@ -78,27 +78,6 @@ int main() {
         }
     }
     {
-        using MM3D::WidescreenProbe::LocalLayoutPane;
-        constexpr auto shader=0x9b343fea686d98e0ULL,swizzle=0xac22b79e29209c01ULL;
-        const std::array<float,4> right{301.05f,0,0,20.9f},ry{48.35f,0,20.9f,0};
-        const std::array<float,4> left{-6.6f,0,0,22.8f},ly{78.6f,0,22.8f,0};
-        Check(LocalLayoutPane(shader,swizzle,6,0,{0,3,0,1},right,ry),
-              "Schedule detail flash keeps portrait widescreen scaling");
-        Check(LocalLayoutPane(shader,swizzle,6,0,{1,3,0,1},left,ly),
-              "Schedule row flash keeps portrait widescreen scaling");
-        Check(!LocalLayoutPane(shader,swizzle,6,0,{0,3,0,1},{0,0,0,400},{0,0,240,0}),
-              "fullscreen fades retain saved widescreen bypass");
-        Check(!LocalLayoutPane(shader,swizzle,6,0,{0,3,0,1},{-13.333f,0,0,426.667f},{60,0,27.6f,0}),
-              "full-width solid banners retain their rule");
-        Check(!LocalLayoutPane(shader,swizzle,6,1,{0,3,0,1},right,ry)&&
-              !LocalLayoutPane(shader,swizzle,12,0,{0,3,0,1},right,ry)&&
-              !LocalLayoutPane(shader+1,swizzle,6,0,{0,3,0,1},right,ry),
-              "textured draws, batches and world shaders are excluded");
-        auto invalid=right;invalid[0]=std::numeric_limits<float>::quiet_NaN();
-        Check(!LocalLayoutPane(shader,swizzle,6,0,{0,3,0,1},invalid,ry),
-              "invalid pane bounds are rejected");
-    }
-    {
         namespace B=MM3D::BannerInterpolation;
         B::Values a{};B::Tev tev{};
         for(unsigned i=0;i<6;++i)tev[i]={i==0?0x0ee00ee0u:i==1?0x0e3f0e3fu:0x0eef0eefu,

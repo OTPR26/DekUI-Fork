@@ -178,22 +178,6 @@ bool Settings::Load(const QString& path) {
         p.y=value((key+"y").toUtf8().constData(),p.y,-512.f,512.f);
         p.scale=value((key+"scale").toUtf8().constData(),p.scale,.1f,2.f);
     }
-    // Seed the independent moon-mask controls from the former shared placement.
-    // Preserve the description's previous global dialogue pose on first load.
-    mask_present=item_present;
-    mask_present.horizontal=false;
-    mask_present.poses[NativeItemPresent::Description]={0,value("dialogue_y",0,-120,120),value("dialogue_scale",1,.5f,1)};
-    mask_present.enabled=object.value("mask_present_native").toBool(mask_present.enabled);
-    mask_present.help_pose={value("mask_present_help_x",mask_present.help_pose.x,-512,512),
-        value("mask_present_help_y",mask_present.help_pose.y,-512,512),value("mask_present_help_scale",mask_present.help_pose.scale,.1f,2)};
-    mask_present.help_spacing=value("mask_present_help_spacing",mask_present.help_spacing,0,100);
-    for(unsigned i=0;i<NativeItemPresent::Count;++i) {
-        if(i==NativeItemPresent::Background||i==NativeItemPresent::Right)continue;
-        const QString key=QString("mask_present_%1_").arg(i);auto& p=mask_present.poses[i];
-        p.x=value((key+"x").toUtf8().constData(),p.x,-512,512);
-        p.y=value((key+"y").toUtf8().constData(),p.y,-512,512);
-        p.scale=value((key+"scale").toUtf8().constData(),p.scale,.1f,2);
-    }
     for(unsigned i=0;i<NativeFileSelect::Count;++i) {
         const QString key=QString("file_select_%1_").arg(i);auto& p=file_select.poses[i];
         p.x=value((key+"x").toUtf8().constData(),p.x,-512.f,512.f);
@@ -342,7 +326,6 @@ bool Settings::Load(const QString& path) {
     widescreen = object.value("widescreen").toBool(false);
     camera_zoom_out = value("camera_zoom_out", 1.f, 1.f, 1.5f);
     game_camera_fov = value("game_camera_fov", 65.f, 45.f, 70.f);
-    cutscene_camera_fov = value("cutscene_camera_fov", 49.f, 45.f, 70.f);
     restoration_hud_scale = value("restoration_hud_scale", 1.f, .5f, 1.5f);
     const OptionsMenu::Options options_defaults;
     options_menu.x=value("options_menu_x",options_defaults.x,-400.f,400.f);
@@ -414,7 +397,7 @@ bool Settings::Save(const QString& path) const {
     if (!file.open(QIODevice::WriteOnly)) return false;
     QJsonObject object{{"version", 1}, {"accurate_hle_audio",accurate_hle_audio}, {"damage_multiplier",damage_multiplier}, {"disable_heart_drops",disable_heart_drops}, {"disable_rupee_drops",disable_rupee_drops}, {"disable_fairy_drops",disable_fairy_drops}, {"disable_magic_drops",disable_magic_drops}, {"disable_ammo_pickups",disable_ammo_pickups}, {"lose_rupees_on_death",lose_rupees_on_death}, {"world_ends_on_death",world_ends_on_death}, {"double_prices",double_prices}, {"price_multiplier",price_multiplier}, {"inventory_panel_x",inventory_menu.x}, {"inventory_panel_y",inventory_menu.y}, {"inventory_panel_scale",inventory_menu.scale}, {"dialogue_scale",dialogue_scale}, {"dialogue_y",dialogue_y}, {"dialogue_background_width",dialogue_background_width}, {"dialogue_indicator_x",dialogue_indicator_x}, {"dialogue_indicator_y",dialogue_indicator_y}, {"indicator", indicator}, {"show_performance", show_performance}, {"show_startup_settings_hint", show_startup_settings_hint},
         {"scale", scale}, {"opacity", opacity}, {"x", x}, {"y", y},
-        {"single_screen_text", single_screen_text}, {"fix_bloom", fix_bloom}, {"interpolation_60fps", interpolation_60fps}, {"red_potion_hearts", red_potion_hearts}, {"blue_potion_hearts", blue_potion_hearts}, {"bottled_fairy_hearts", bottled_fairy_hearts}, {"widescreen", widescreen}, {"camera_zoom_out", camera_zoom_out}, {"game_camera_fov", game_camera_fov}, {"cutscene_camera_fov", cutscene_camera_fov}, {"restoration_hud_scale", restoration_hud_scale}, {"minigame_hud_x",minigame_hud.x},{"minigame_hud_y",minigame_hud.y},{"minigame_hud_scale",minigame_hud.scale},{"magic_shadow_enabled",magic_border.shadow_enabled},{"magic_shadow_size",magic_border.shadow_size},{"magic_shadow_opacity",magic_border.shadow_opacity},{"magic_border_enabled",magic_border.enabled},{"magic_border_thickness",magic_border.thickness},{"magic_border_r",magic_border.color[0]},{"magic_border_g",magic_border.color[1]},{"magic_border_b",magic_border.color[2]}, {"magic_bar_y", magic_bar_y}, {"magic_bar_height", magic_bar_height}, {"dpad_y", dpad_y},
+        {"single_screen_text", single_screen_text}, {"fix_bloom", fix_bloom}, {"interpolation_60fps", interpolation_60fps}, {"red_potion_hearts", red_potion_hearts}, {"blue_potion_hearts", blue_potion_hearts}, {"bottled_fairy_hearts", bottled_fairy_hearts}, {"widescreen", widescreen}, {"camera_zoom_out", camera_zoom_out}, {"game_camera_fov", game_camera_fov}, {"restoration_hud_scale", restoration_hud_scale}, {"minigame_hud_x",minigame_hud.x},{"minigame_hud_y",minigame_hud.y},{"minigame_hud_scale",minigame_hud.scale},{"magic_shadow_enabled",magic_border.shadow_enabled},{"magic_shadow_size",magic_border.shadow_size},{"magic_shadow_opacity",magic_border.shadow_opacity},{"magic_border_enabled",magic_border.enabled},{"magic_border_thickness",magic_border.thickness},{"magic_border_r",magic_border.color[0]},{"magic_border_g",magic_border.color[1]},{"magic_border_b",magic_border.color[2]}, {"magic_bar_y", magic_bar_y}, {"magic_bar_height", magic_bar_height}, {"dpad_y", dpad_y},
         {"minimap", minimap}, {"minimap_scale", minimap_scale}, {"minimap_opacity", minimap_opacity},
         {"minimap_right_margin", minimap_right_margin}, {"minimap_bottom_margin", minimap_bottom_margin}};
     for(const auto& f:SubmenuHeader::Fields) object.insert(f.key,submenu_header.*f.member);
@@ -577,14 +560,6 @@ bool Settings::Save(const QString& path) const {
         const QString key=QString("item_present_%1_").arg(i);const auto& p=item_present.poses[i];
         object.insert(key+"x",p.x);
         if(i!=NativeItemPresent::Background){object.insert(key+"y",p.y);object.insert(key+"scale",p.scale);}
-    }
-    object.insert("mask_present_native",mask_present.enabled);
-    object.insert("mask_present_help_x",mask_present.help_pose.x);object.insert("mask_present_help_y",mask_present.help_pose.y);
-    object.insert("mask_present_help_scale",mask_present.help_pose.scale);object.insert("mask_present_help_spacing",mask_present.help_spacing);
-    for(unsigned i=0;i<NativeItemPresent::Count;++i) {
-        if(i==NativeItemPresent::Background||i==NativeItemPresent::Right)continue;
-        const QString key=QString("mask_present_%1_").arg(i);const auto& p=mask_present.poses[i];
-        object.insert(key+"x",p.x);object.insert(key+"y",p.y);object.insert(key+"scale",p.scale);
     }
     for(unsigned i=0;i<NativeFileSelect::Count;++i) {
         const QString key=QString("file_select_%1_").arg(i);const auto& p=file_select.poses[i];
