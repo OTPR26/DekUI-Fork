@@ -20,8 +20,6 @@ DekUI Fork builds on [tgacquin’s DekUI](https://github.com/tgacquin/mm3d-dekui
 - Optional controller-neutral English item prompts.
 - Adult Link appearance mod generated on the device from your own OoT3D ROM, with adult voice clips imported from that ROM.
 - Original green, blue, and red tunic variants, an optional Master Sword model and matching HUD icon, and matching textures from your own OoT3D texture pack when available.
-- Adult Link torch compatibility: Deku sticks can light torches and burn cobwebs with the taller model.
-- Optimized ARM64 Android build. Development and gameplay testing have focused on the Odin 2 Portal.
 
 ## Get started
 
