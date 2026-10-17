@@ -1392,7 +1392,7 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
         const auto epoch=generation.load();
         if(epoch!=midpoint_generation || midpoint_width!=unsigned(viewport.width) || midpoint_height!=unsigned(viewport.height)) {
             midpoint_scene_clear.Reset();
-            midpoint_history.Reset();world_map_history.Reset();glare_cpu_history.Reset();forest_particle_history.Reset();snow_history.Reset();fire_impact_history.Reset();leaf_particle_history.Reset();moth_history.Reset();message_history.Reset();message_override.reset();item_slide_history.Reset();item_slide_override.reset();file_select_history.Reset();file_select_override.reset();inventory_history.Reset();banner_history.Reset();magic_meter_history.Reset();heart_history.Reset();lens_history.Reset();inventory_override.reset();torch_history.Reset();water_particle_history.Reset();water_model_history.Reset();splash_cpu_history.Reset();burst_particle_history.Reset();spark_history.Reset();firework_history.Reset();chest_particle_history.Reset();sword_trail_history.Reset();shockwave_history.Reset();bubble_history.Reset();midpoint_target_frame.reset();midpoint_world_frame.reset();midpoint_opaque_world_frame.reset();midpoint_stencil_frame.reset();midpoint_generation=epoch;
+            midpoint_history.Reset();world_map_history.Reset();glare_cpu_history.Reset();forest_particle_history.Reset();snow_history.Reset();fire_impact_history.Reset();leaf_particle_history.Reset();moth_history.Reset();message_history.Reset();message_override.reset();item_slide_history.Reset();item_slide_override.reset();file_select_history.Reset();file_select_override.reset();inventory_history.Reset();banner_history.Reset();magic_meter_history.Reset();heart_history.Reset();lens_history.Reset();inventory_override.reset();torch_history.Reset();water_particle_history.Reset();water_model_history.Reset();moving_effect_history.Reset();splash_cpu_history.Reset();burst_particle_history.Reset();spark_history.Reset();firework_history.Reset();chest_particle_history.Reset();sword_trail_history.Reset();shockwave_history.Reset();bubble_history.Reset();midpoint_target_frame.reset();midpoint_world_frame.reset();midpoint_opaque_world_frame.reset();midpoint_stencil_frame.reset();midpoint_generation=epoch;
             link_history.Reset();song_history.Reset();song_overrides.reset();link_frame.reset();link_overrides={};
             midpoint_width=unsigned(viewport.width);midpoint_height=unsigned(viewport.height);
         }
@@ -1470,7 +1470,7 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
                 if(MM3D::LinkPoseCapture::Enabled() && !map_camera) {
                     const auto link_epoch=MM3D::LinkPoseCapture::interpolation_generation.load();
                     if(link_epoch!=link_generation) {
-                        link_history.Reset();song_history.Reset();leaf_particle_history.Reset();moth_history.Reset();message_history.Reset();message_override.reset();item_slide_history.Reset();item_slide_override.reset();file_select_history.Reset();file_select_override.reset();inventory_history.Reset();banner_history.Reset();magic_meter_history.Reset();heart_history.Reset();lens_history.Reset();inventory_override.reset();torch_history.Reset();water_particle_history.Reset();water_model_history.Reset();splash_cpu_history.Reset();burst_particle_history.Reset();spark_history.Reset();firework_history.Reset();chest_particle_history.Reset();sword_trail_history.Reset();shockwave_history.Reset();bubble_history.Reset();song_overrides.reset();link_frame.reset();link_generation=link_epoch;
+                        link_history.Reset();song_history.Reset();leaf_particle_history.Reset();moth_history.Reset();message_history.Reset();message_override.reset();item_slide_history.Reset();item_slide_override.reset();file_select_history.Reset();file_select_override.reset();inventory_history.Reset();banner_history.Reset();magic_meter_history.Reset();heart_history.Reset();lens_history.Reset();inventory_override.reset();torch_history.Reset();water_particle_history.Reset();water_model_history.Reset();moving_effect_history.Reset();splash_cpu_history.Reset();burst_particle_history.Reset();spark_history.Reset();firework_history.Reset();chest_particle_history.Reset();sword_trail_history.Reset();shockwave_history.Reset();bubble_history.Reset();song_overrides.reset();link_frame.reset();link_generation=link_epoch;
                     }
                     if(link_frame!=frame) {
                         link_poses=MM3D::LinkPoseCapture::ForFrame(frame);link_frame=frame;
@@ -1529,16 +1529,20 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
                         const auto* moon=MM3D::SongEffectInterpolation::MoonEffect(regs.pipeline.num_vertices,values,texture_mask);
                         namespace Bay=MM3D::GreatBayWaterInterpolation;
                         const auto bay=Bay::Identify(regs.pipeline.num_vertices,texture_mask,values);
-                        bool bay_material=false;
-                        if(bay) {
+                        const auto coastal=MM3D::CoastalWaterInterpolation::Identify(regs.pipeline.num_vertices,texture_mask,values);
+                        bool bay_material=false,coastal_material=false;
+                        if(bay || coastal) {
                             Bay::Tev tev{};const auto stages=regs.texturing.GetTevStages();
                             for(unsigned i=0;i<6;++i)tev[i]={stages[i].sources_raw,stages[i].modifiers_raw,
                                 stages[i].ops_raw,stages[i].const_color,stages[i].scales_raw};
-                            bay_material=Bay::MatchesMaterial(*bay,unsigned(blend.src_color_blend_factor.Value()),
+                            if(bay)bay_material=Bay::MatchesMaterial(*bay,unsigned(blend.src_color_blend_factor.Value()),
                                 unsigned(blend.dst_color_blend_factor.Value()),
                                 pipeline_info.state.depth_stencil.depth_write_enable,tev);
+                            if(coastal)coastal_material=MM3D::CoastalWaterInterpolation::MatchesMaterial(*coastal,
+                                unsigned(blend.src_color_blend_factor.Value()),unsigned(blend.dst_color_blend_factor.Value()),
+                                pipeline_info.state.depth_stencil.depth_write_enable,tev);
                         }
-                        if((bay_material || (MM3D::SongEffectInterpolation::Recognized(regs.pipeline.num_vertices,values,texture_mask) &&
+                        if((coastal_material || bay_material || (MM3D::SongEffectInterpolation::Recognized(regs.pipeline.num_vertices,values,texture_mask) &&
                            (!moon || (!pipeline_info.state.depth_stencil.depth_write_enable &&
                             unsigned(blend.color_blend_eq.Value())==moon->equation &&
                             blend.dst_color_blend_factor==(moon->additive?BF::One:BF::OneMinusSourceAlpha))) &&
@@ -1556,10 +1560,10 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
                            !pipeline_info.state.depth_stencil.stencil_test_enable && blend.color_write_mask==15) {
                             song_overrides=song_history.Apply(frame,{
                                 regs.pipeline.vertex_attributes.GetPhysicalBaseAddress(),
-                                regs.texturing.texture0.GetPhysicalAddress(),epona?0u:regs.texturing.texture1.GetPhysicalAddress(),
-                                epona?0u:regs.texturing.texture2.GetPhysicalAddress(),unsigned(blend.dst_color_blend_factor.Value())|(texture_mask<<8)|(unsigned(blend.color_blend_eq.Value())<<16),
+                                regs.texturing.texture0.GetPhysicalAddress(),(epona || (coastal_material && !(texture_mask&2)))?0u:regs.texturing.texture1.GetPhysicalAddress(),
+                                (epona || (coastal_material && !(texture_mask&4)))?0u:regs.texturing.texture2.GetPhysicalAddress(),unsigned(blend.dst_color_blend_factor.Value())|(texture_mask<<8)|(unsigned(blend.color_blend_eq.Value())<<16)|(coastal_material?1u<<24:0u),
                                 regs.pipeline.num_vertices,is_indexed?u32(regs.pipeline.index_array.offset):0},
-                                values,!fallback && !native_preview.load(),texture_mask);
+                                values,!fallback && !native_preview.load(),texture_mask,coastal_material?coastal:std::nullopt);
                         }
                     }
                     {
@@ -1640,6 +1644,42 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
                                 link_overrides[0]=MM3D::CameraMidpoint::Multiply(MM3D::CameraMidpoint::InverseRigid(camera),half->model);
                                 song_overrides=half->uv;
                                 water_model_alpha_override=std::pair{alpha_stage,half->alpha};fs_data_dirty=true;
+                            }
+                        }
+                    }
+                }
+                // Moving flame and wake layers need per-instance histories;
+                // sharing only texture addresses would mix nearby enemies.
+                {
+                    using BF=Pica::FramebufferRegs::BlendFactor;
+                    const auto& blend=pipeline_info.state.blending;
+                    const auto& depth=pipeline_info.state.depth_stencil;
+                    const unsigned count=regs.pipeline.num_vertices;
+                    if((count==12 || count==24 || count==144 || count==180) && !map_camera &&
+                       blend.blend_enable && blend.src_color_blend_factor==BF::SourceAlpha &&
+                       blend.dst_color_blend_factor==BF::One &&
+                       blend.color_blend_eq==Pica::FramebufferRegs::BlendEquation::Add &&
+                       blend.color_write_mask==15 && depth.depth_test_enable &&
+                       !depth.depth_write_enable && !depth.stencil_test_enable) {
+                        namespace E=MM3D::MovingEffectInterpolation;
+                        E::Sample sample{};auto model=Identity();
+                        for(unsigned r=0;r<3;++r)for(unsigned c=0;c<4;++c)
+                            model[r][c]=pica.vs_setup.uniforms.f[20+r][c].ToFloat32();
+                        sample.model=Multiply(camera,model);
+                        for(unsigned r=0;r<6;++r)for(unsigned c=0;c<4;++c)
+                            sample.uv[r][c]=pica.vs_setup.uniforms.f[MM3D::SongEffectInterpolation::Rows[r]][c].ToFloat32();
+                        const auto& tex=regs.texturing.main_config;
+                        const unsigned mask=unsigned(tex.texture0_enable)|(unsigned(tex.texture1_enable)<<1)|(unsigned(tex.texture2_enable)<<2);
+                        E::Tev tev{};const auto stages=regs.texturing.GetTevStages();
+                        for(unsigned i=0;i<6;++i)tev[i]={stages[i].sources_raw,stages[i].modifiers_raw,
+                            stages[i].ops_raw,stages[i].const_color,stages[i].scales_raw};
+                        if(const auto kind=E::Identify(count,mask,sample.uv,tev)) {
+                            const auto half=moving_effect_history.Apply(frame,
+                                {regs.texturing.texture0.GetPhysicalAddress(),regs.texturing.texture1.GetPhysicalAddress(),
+                                 tex.texture2_enable?regs.texturing.texture2.GetPhysicalAddress():0u,epoch,*kind},sample);
+                            if(half && !fallback && !native_preview.load()) {
+                                link_overrides[0]=Multiply(InverseRigid(camera),half->model);
+                                song_overrides=half->uv;
                             }
                         }
                     }
@@ -3209,7 +3249,7 @@ void RasterizerVulkan::ClearAll(bool flush) {
     midpoint_color_clears.Reset();
     ResetVisibilityDepth();
     ResetPause();
-    midpoint_history.Reset();world_map_history.Reset();glare_cpu_history.Reset();forest_particle_history.Reset();snow_history.Reset();fire_impact_history.Reset();leaf_particle_history.Reset();moth_history.Reset();message_history.Reset();message_override.reset();item_slide_history.Reset();item_slide_override.reset();file_select_history.Reset();file_select_override.reset();inventory_history.Reset();banner_history.Reset();magic_meter_history.Reset();heart_history.Reset();lens_history.Reset();inventory_override.reset();torch_history.Reset();water_particle_history.Reset();water_model_history.Reset();splash_cpu_history.Reset();burst_particle_history.Reset();spark_history.Reset();firework_history.Reset();chest_particle_history.Reset();sword_trail_history.Reset();shockwave_history.Reset();bubble_history.Reset();link_history.Reset();song_history.Reset();song_overrides.reset();link_frame.reset();link_overrides={};
+    midpoint_history.Reset();world_map_history.Reset();glare_cpu_history.Reset();forest_particle_history.Reset();snow_history.Reset();fire_impact_history.Reset();leaf_particle_history.Reset();moth_history.Reset();message_history.Reset();message_override.reset();item_slide_history.Reset();item_slide_override.reset();file_select_history.Reset();file_select_override.reset();inventory_history.Reset();banner_history.Reset();magic_meter_history.Reset();heart_history.Reset();lens_history.Reset();inventory_override.reset();torch_history.Reset();water_particle_history.Reset();water_model_history.Reset();moving_effect_history.Reset();splash_cpu_history.Reset();burst_particle_history.Reset();spark_history.Reset();firework_history.Reset();chest_particle_history.Reset();sword_trail_history.Reset();shockwave_history.Reset();bubble_history.Reset();link_history.Reset();song_history.Reset();song_overrides.reset();link_frame.reset();link_overrides={};
     midpoint_scene_clear.Reset();
     midpoint_target_frame.reset();midpoint_world_frame.reset();midpoint_opaque_world_frame.reset();midpoint_stencil_frame.reset();midpoint_fade_frame.reset();midpoint_title_depth_frame.reset();
     for(const auto id : {"@camera_midpoint","@camera_midpoint_fade","@camera_midpoint_hud"})
@@ -3556,7 +3596,7 @@ void RasterizerVulkan::SwitchDiskResources(u64 title_id) {
 #ifdef ENABLE_MM3D_PRESENTATION
     midpoint_color_clears.Reset();
     ResetPause();
-    midpoint_history.Reset();world_map_history.Reset();glare_cpu_history.Reset();forest_particle_history.Reset();snow_history.Reset();fire_impact_history.Reset();leaf_particle_history.Reset();moth_history.Reset();message_history.Reset();message_override.reset();item_slide_history.Reset();item_slide_override.reset();file_select_history.Reset();file_select_override.reset();inventory_history.Reset();banner_history.Reset();magic_meter_history.Reset();heart_history.Reset();lens_history.Reset();inventory_override.reset();torch_history.Reset();water_particle_history.Reset();water_model_history.Reset();splash_cpu_history.Reset();burst_particle_history.Reset();spark_history.Reset();firework_history.Reset();chest_particle_history.Reset();sword_trail_history.Reset();shockwave_history.Reset();bubble_history.Reset();link_history.Reset();song_history.Reset();song_overrides.reset();link_frame.reset();link_overrides={};
+    midpoint_history.Reset();world_map_history.Reset();glare_cpu_history.Reset();forest_particle_history.Reset();snow_history.Reset();fire_impact_history.Reset();leaf_particle_history.Reset();moth_history.Reset();message_history.Reset();message_override.reset();item_slide_history.Reset();item_slide_override.reset();file_select_history.Reset();file_select_override.reset();inventory_history.Reset();banner_history.Reset();magic_meter_history.Reset();heart_history.Reset();lens_history.Reset();inventory_override.reset();torch_history.Reset();water_particle_history.Reset();water_model_history.Reset();moving_effect_history.Reset();splash_cpu_history.Reset();burst_particle_history.Reset();spark_history.Reset();firework_history.Reset();chest_particle_history.Reset();sword_trail_history.Reset();shockwave_history.Reset();bubble_history.Reset();link_history.Reset();song_history.Reset();song_overrides.reset();link_frame.reset();link_overrides={};
     midpoint_target_frame.reset();midpoint_world_frame.reset();midpoint_opaque_world_frame.reset();midpoint_stencil_frame.reset();midpoint_fade_frame.reset();midpoint_title_depth_frame.reset();
     for(const auto id : {"@camera_midpoint","@camera_midpoint_fade","@camera_midpoint_hud"})
         if(const auto it=prompt_layers.find(id);it!=prompt_layers.end())it->second->NextFrame();

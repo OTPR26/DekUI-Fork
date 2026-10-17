@@ -37,8 +37,10 @@ inline std::optional<std::vector<Quad>> Decode(std::span<const Vertex> inputs,
             const float b = q.vertices[2][0][c] - q.vertices[0][0][c];
             aa += a*a; bb += b*b; ab += a*b;
         }
+        // Snowhead's reveal reaches 24.24-unit squares. Rejecting one large
+        // sparkle used to discard the entire particle strip for that frame.
         if (std::abs(aa-bb) > .01f*std::max(1.f, aa) ||
-            std::abs(ab) > .002f*std::max(1.f, aa) || aa > 23*23) return {};
+            std::abs(ab) > .002f*std::max(1.f, aa) || aa > 25*25) return {};
         for (unsigned k = 0; k < 4; ++k)
             if (!Near(q.vertices[k][2][0], float(k/2)) ||
                 !Near(q.vertices[k][2][1], float(1-k%2))) return {};

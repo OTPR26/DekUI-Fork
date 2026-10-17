@@ -920,7 +920,7 @@ struct Hook {
         if(!Pointer(manager,0x20))return 0;
         U32 owner=0;
         // World-map HUD uses native top queue 2; relocated inventory pages
-        // use 3/5. Common backgrounds/titles alone cannot establish ownership.
+        // and Double Time use 3/5. Common backgrounds/titles alone cannot establish ownership.
         for(unsigned screen:{2u,3u,5u}) {
             if(world_map_only && screen!=2)continue;
             Buckets submitted;
@@ -930,7 +930,7 @@ struct Hook {
                 const bool menu=screen==2?LayoutNamed(m,layout,"UpWorldMapHud"):
                     LayoutNamed(m,layout,"MenuItem")||LayoutNamed(m,layout,"MenuMask")||
                     LayoutNamed(m,layout,"MenuCollect")||LayoutNamed(m,layout,"MenuMapDungeon")||
-                    LayoutNamed(m,layout,"MenuMusicList");
+                    LayoutNamed(m,layout,"MenuMusicList")||LayoutNamed(m,layout,"LapTimeSong");
                 if(menu&&(!owner||layout<owner))owner=layout;
             }
         }

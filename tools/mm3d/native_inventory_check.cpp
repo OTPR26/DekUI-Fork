@@ -2980,7 +2980,14 @@ int main(int argc,char** argv) {
         m.Queue(queues[3],{});m.Queue(queues[5],{m.Layout("MenuMapDungeon")});
         assert(hook.SubmittedInterpolationOwner(m,manager)!=0);
         assert(!hook.SubmittedInterpolationOwner(m,manager,true));
-        m.Queue(queues[5],{});m.Queue(queues[1],{world});
+        m.Queue(queues[5],{});
+        const auto double_time=m.Layout("LapTimeSong");
+        m.Queue(queues[3],{double_time});
+        assert(hook.SubmittedInterpolationOwner(m,manager)==double_time);
+        assert(!hook.SubmittedInterpolationOwner(m,manager,true));
+        m.Queue(queues[3],{});
+        assert(!hook.SubmittedInterpolationOwner(m,manager));
+        m.Queue(queues[1],{world});
         assert(!hook.SubmittedInterpolationOwner(m,manager)); // No stale or background-only owner.
     }
     if(argc>1){

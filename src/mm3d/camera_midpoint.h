@@ -227,6 +227,10 @@ inline bool GradualTimeSkipDistortion(const Matrix& a,const Matrix& b) {
         // near/far range. Keep the two families separate across transitions.
         if(p[2][2]>=1.00032 && p[2][2]<=1.00040 &&
            std::abs(p[2][3]-5.001953601837158)<.000002)return 2u;
+        // Double Time also retains this scene's shorter far plane. The white
+        // cutscene animates the same lens offsets at this captured depth range.
+        if(p[2][2]>=1.00043 && p[2][2]<=1.00051 &&
+           std::abs(p[2][3]-5.002501487731934)<.000002)return 3u;
         return 0u;
     };
     const auto kind=captured(a);

@@ -7,6 +7,7 @@
 #include <map>
 #include <optional>
 #include "mm3d/great_bay_water_interpolation.h"
+#include "mm3d/coastal_water_interpolation.h"
 namespace MM3D::SongEffectInterpolation {
 inline constexpr std::array<unsigned,6> Rows{10,11,14,15,17,18};
 using Values=std::array<std::array<float,4>,6>;
@@ -178,13 +179,17 @@ class History {
     std::map<Key,Entry> entries;
 public:
     void Reset() { entries.clear(); }
-    std::optional<Values> Apply(std::uint64_t frame,const Key& key,const Values& value,bool allow,unsigned texture_mask=0) {
+    std::optional<Values> Apply(std::uint64_t frame,const Key& key,const Values& value,bool allow,unsigned texture_mask=0,
+                                std::optional<unsigned> coastal={}) {
         for(auto it=entries.begin();it!=entries.end();)
             if(it->second.frame>frame || frame-it->second.frame>2)it=entries.erase(it);else ++it;
         const auto epona=EponaSingleTexture(key[5],value,texture_mask);
         const auto* moon=MoonEffect(key[5],value,texture_mask);
         const auto bay=GreatBayWaterInterpolation::Identify(key[5],texture_mask,value);
-        for(unsigned r=0;r<(bay?GreatBayWaterInterpolation::Rows(*bay):epona?2u:6u);++r)
+        // The renderer supplies this only after the complete material matches.
+        if(coastal && (*coastal>=std::size(CoastalWaterInterpolation::Patterns) ||
+           CoastalWaterInterpolation::Identify(key[5],texture_mask,value)!=coastal))return {};
+        for(unsigned r=0;r<(coastal?CoastalWaterInterpolation::Rows(*coastal):bay?GreatBayWaterInterpolation::Rows(*bay):epona?2u:6u);++r)
             for(float v:value[r])if(!std::isfinite(v))return {};
         auto it=entries.find(key);
         if(it==entries.end()) {
@@ -195,8 +200,8 @@ public:
             return {};
         }
         auto& e=it->second;
-        if(bay) {
-            const unsigned rows=GreatBayWaterInterpolation::Rows(*bay);
+        if(bay || coastal) {
+            const unsigned rows=coastal?CoastalWaterInterpolation::Rows(*coastal):GreatBayWaterInterpolation::Rows(*bay);
             if(e.frame==frame) {
                 if(!allow || !e.half)return {};
                 auto half=value;
@@ -207,7 +212,8 @@ public:
                 return half;
             }
             const auto half=frame==e.frame+1?
-                GreatBayWaterInterpolation::Midpoint(*bay,e.value,value):std::nullopt;
+                (coastal?CoastalWaterInterpolation::Midpoint(*coastal,e.value,value):
+                 GreatBayWaterInterpolation::Midpoint(*bay,e.value,value)):std::nullopt;
             e={frame,value,half};
             return allow?e.half:std::nullopt;
         }

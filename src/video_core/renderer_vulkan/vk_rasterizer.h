@@ -5,6 +5,7 @@
 #pragma once
 #include "mm3d/glare_interpolation.h"
 #include "mm3d/water_model_interpolation.h"
+#include "mm3d/moving_effect_interpolation.h"
 #ifdef ENABLE_MM3D_PRESENTATION
 #include <map>
 #include "mm3d/profiles.h"
@@ -164,6 +165,7 @@ private:
     bool visibility_depth_refresh_enabled{};
     std::unique_ptr<VisibilityDepthCache> visibility_depth;
     MM3D::WaterModelInterpolation::History water_model_history;
+    MM3D::MovingEffectInterpolation::History moving_effect_history;
     std::optional<std::pair<unsigned,float>> water_model_alpha_override;
     MM3D::GlareInterpolation glare_history;
     MM3D::GlareInterpolation::ScreenHistory glare_cpu_history;

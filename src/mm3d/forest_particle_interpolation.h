@@ -139,6 +139,26 @@ inline std::optional<unsigned> Match(const Quad& q, const std::vector<Quad>& can
     // Require a clear nearest neighbor; near ties stay native.
     return second > best * 1.5f + .01f ? index : std::nullopt;
 }
+// Boss stars drift sideways much less than they rise. Euclidean proximity
+// confuses vertically stacked neighbors. Match the captured upward motion and
+// lifetime fade instead; a new particle at the base must never borrow history.
+inline std::optional<unsigned> BossMatch(const Quad& q,const std::vector<Quad>& candidates,bool newer) {
+    std::optional<unsigned> index;
+    float best=std::numeric_limits<float>::infinity(),second=best;
+    for(unsigned i=0;i<candidates.size();++i) {
+        const auto& now=newer?q:candidates[i];
+        const auto& old=newer?candidates[i]:q;
+        if(Kind(now.vertices[0])!=3 || Kind(old.vertices[0])!=3)continue;
+        const auto a=Center(now),b=Center(old);
+        const float x=a[0]-b[0],y=a[1]-b[1],z=a[2]-b[2];
+        const float fade=now.vertices[0][1][3]-old.vertices[0][1][3];
+        if(y<-.01f || y>8 || std::abs(x)>1.6f || std::abs(z)>1.6f ||
+           (!Near(fade,0) && !Near(fade,-20.f/255) && !Near(fade,-55.f/255)))continue;
+        const float score=x*x+z*z+.01f*y*y;
+        if(score<best){second=best;best=score;index=i;}else if(score<second)second=score;
+    }
+    return second>best*1.5f+.01f?index:std::nullopt;
+}
 inline void PreserveSpinSize(Quad& half, const Quad& a, const Quad& b) {
     // Averaging rotating corners alone shrinks the star between native frames.
     // Rebuild a square from the midpoint orientation and mean native edge size.
@@ -189,8 +209,9 @@ public:
         bool changed = false;
         if (e.frame + 1 == frame) {
             for (unsigned i = 0; i < quads.size(); ++i) {
-                const auto match = Match(quads[i], e.quads);
-                if (!match || Match(e.quads[*match], quads) != i) continue;
+                const bool boss=Kind(quads[i].vertices[0])==3;
+                const auto match=boss?BossMatch(quads[i],e.quads,true):Match(quads[i],e.quads);
+                if(!match || (boss?BossMatch(e.quads[*match],quads,false):Match(e.quads[*match],quads))!=i)continue;
                 for (unsigned v = 0; v < 4; ++v)
                     for (unsigned a = 0; a < 3; ++a)
                         for (unsigned c = 0; c < 4; ++c)
