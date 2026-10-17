@@ -22,6 +22,9 @@ Memory BackgroundFixture(U32 page=Q) {
     m.Write(SC,0x630000);m.Write(SC+4,UI);m.Write(SC+8,page);
     m.Write(SC+12,0);m.Write(SC+16,0x101);m.Write(G+0x34,0);
     m.Write(0x656b04,PLAY);m.Write(G+0xaac,0x12340001);
+    for(unsigned i=0;i<7;++i)m.Write(G+0x11010+i*4,0);
+    m.Write(G+0x11010,0x310000);m.Write(G+0x11014,0x311000);
+    m.Write(G+0x11018,0x290000);m.Write(G+0x11024,0x00f00190);
     m.Write(0x66889c,GRAPHICS);m.Write(G+0x100,GAME_GRAPHICS);m.Write(GRAPHICS+0x184,0x80000);
     // Live Gear: global capture manager is ready=8, game graphics is a separate
     // object with state=1. Neither equal pointers nor equal states are required.
@@ -36,6 +39,79 @@ Memory BackgroundFixture(U32 page=Q) {
     m.Write(QUEUE+0x844,0);return m;
 }
 int main(int argc,char** argv) {
+    for(bool shared_graphics:{false,true})for(bool keep_scene:{false,true}) {
+        // A saved pictograph must not free or replace the scene screenshot.
+        // Model both native allocation lifetimes, including the two destructor
+        // calls needed on a real exit and only one on a menu tab handoff.
+        auto m=BackgroundFixture();Backdrop h;h.Pause(m,G,Q,0xaac,1);
+        if(shared_graphics)m.Write(G+0x100,GRAPHICS);
+        std::array<U32,7> scene{};
+        for(unsigned i=0;i<scene.size();++i)scene[i]=*m.Read(G+0x11010+i*4);
+        std::array<U32,16> r{};r[0]=G+0x11010;r[1]=0x320000;r[2]=0x330000;
+        r[4]=Q;r[7]=G;r[14]=0x123456;r[15]=0x5a6a20;
+        const auto original=r;
+        h.GearImageImport(m,r);
+        assert(r[14]==0x5a6a20&&r[15]==0x609fa8&&h.HasRetainedCapture());
+        for(unsigned i=0;i<14;++i)assert(r[i]==original[i]);
+        for(unsigned i=0;i<3;++i)assert(m.Read(G+0x11010+i*4)==0);
+        // The import's destructor sees an empty object. Native conversion then
+        // owns distinct photo resources and temporarily enters capture state7.
+        for(unsigned i=0;i<3;++i)m.Write(G+0x11010+i*4,0x340000+i*0x1000);
+        m.Byte(GRAPHICS+0x186,7);h.Tick(m);h.Pass(m,MANAGER,0);
+        assert(h.Active(m)&&h.owner==SC&&m.Read(G+0xaac)==0x12340003);
+        assert(m.Read(LG+0x10)==scene[2]&&m.Read(RG+0x10)==scene[2]+0x58);
+        assert(h.Background(m,G)->textures==scene[2]);
+        m.Byte(GRAPHICS+0x186,8);h.Tick(m);
+        assert(Backdrop::Source(m,G)->textures==0x342000); // native photo
+        assert(h.Background(m,G)->textures==scene[2]); // frozen scene
+        // Close releases pause ownership, but retains the scene allocations
+        // until the photo's own native destructor has finished.
+        h.Release(m);assert(m.Read(G+0xaac)==0x12340001);
+        r[0]=G+0x11010;r[4]=G;
+        assert(h.CloseGearPhoto(m,r,keep_scene));
+        assert(r[14]==0x5a5ff8&&r[15]==0x198864);
+        for(unsigned i=0;i<3;++i) {
+            assert(m.Read(G+0x11010+i*4)==0x340000+i*0x1000);
+            m.Write(G+0x11010+i*4,0); // native destroys only the photo
+        }
+        m.Byte(GRAPHICS+0x186,0);r[15]=0x5a5ffc;h.FinishGearPhoto(m,r);
+        assert(!h.HasRetainedCapture());
+        for(unsigned i=0;i<scene.size();++i)assert(m.Read(G+0x11010+i*4)==scene[i]);
+        if(keep_scene) {
+            assert(r[15]==(shared_graphics?0x5a6000u:0x5a5ffcu));
+            if(!shared_graphics)assert(r[0]==GAME_GRAPHICS);
+            assert(Byte(m,GRAPHICS+0x186)==8&&Backdrop::Ready(m,G));
+            // Reentering Gear can safely retain the same scene again.
+            h.Pause(m,G,Q,0xaac,1);r[0]=G+0x11010;r[4]=Q;r[7]=G;
+            h.GearImageImport(m,r);assert(h.HasRetainedCapture());
+        } else {
+            assert(r[15]==0x198864&&r[14]==0x5a5ff8&&r[0]==G+0x11010);
+            for(unsigned i=0;i<3;++i)m.Write(G+0x11010+i*4,0); // destroy scene
+            r[15]=0x5a5ffc;h.FinishGearPhoto(m,r);
+            assert(r[15]==0x5a5ffc&&r[0]==(shared_graphics?GRAPHICS:GAME_GRAPHICS));
+            assert(m.Read(G+0x11018)==0&&!Backdrop::Ready(m,G));
+        }
+    }
+    for(unsigned n=0;n<10;++n) {
+        auto m=BackgroundFixture();Backdrop h;h.Pause(m,G,Q,0xaac,1);
+        std::array<U32,16> r{};r[0]=G+0x11010;r[4]=Q;r[7]=G;
+        switch(n) {
+        case 0:h.owner=0;break;
+        case 1:r[0]+=4;break;
+        case 2:r[4]=P;break;
+        case 3:r[7]+=4;break;
+        case 4:m.Write(SC+8,P);break;
+        case 5:m.Write(G+0xaac,1);break;
+        case 6:m.Write(G+0x11018,0);break;
+        case 7:m.Byte(GRAPHICS+0x186,7);break;
+        case 8:MM3D::GearMenu::enabled=false;break;
+        case 9:m.words.erase(G+0x11028);break;
+        }
+        const auto before=m.words;
+        h.GearImageImport(m,r);
+        assert(r[14]==0x5a6a20&&r[15]==0x609fa8&&m.words==before&&!h.HasRetainedCapture());
+        MM3D::GearMenu::enabled=true;
+    }
     for(U32 page:{Q,P}) {
         auto m=BackgroundFixture(page);Backdrop h;assert(h.Active(m));
         h.Pause(m,G,page,0xaac,1);assert(m.Read(G+0xaac)==0x12340003);

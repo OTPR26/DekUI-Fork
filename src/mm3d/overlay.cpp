@@ -40,6 +40,7 @@
 #include "mm3d/actor_draw_distance.h"
 #include "mm3d/prop_draw_distance.h"
 #include "mm3d/death_penalties.h"
+#include "mm3d/fast_time.h"
 #include "mm3d/prices.h"
 #include "mm3d/single_screen_text.h"
 #include "mm3d/notebook.h"
@@ -48,6 +49,7 @@
 #include "mm3d/texture_picker.h"
 #include "mm3d/overlay.h"
 #include "mm3d/bloom_sampling.h"
+#include "mm3d/fog.h"
 #include "mm3d/bottle_healing.h"
 #include "mm3d/player_settings.h"
 #include "mm3d/settings.h"
@@ -117,6 +119,7 @@ void ApplyPresentationSettings(const Settings& settings) {
     TatlReminders::disabled.store(settings.disable_tatl_reminders);
     SingleScreenText::enabled.store(settings.single_screen_text);
     BloomSampling::enabled.store(settings.fix_bloom);
+    Fog::disabled.store(settings.disable_fog);
     ClassicSaving::enabled.store(settings.classic_saving);
     ClassicDoubleTime::enabled.store(settings.classic_double_time);
     OwlSword::enabled.store(settings.sword_activate_owls);
@@ -137,6 +140,8 @@ void ApplyPresentationSettings(const Settings& settings) {
     Difficulty::disable_ammo_pickups.store(settings.disable_ammo_pickups);
     DeathPenalties::lose_rupees.store(settings.lose_rupees_on_death);
     DeathPenalties::world_ends.store(settings.world_ends_on_death);
+    DeathPenalties::advance_six_hours.store(settings.advance_six_hours_on_death);
+    FastTime::enabled.store(settings.fast_time);
     InventoryMenu::Apply(settings.inventory_menu);
     NativeNotebook::Apply(settings.notebook_live);
     NativeFileSelect::Apply(settings.file_select);
@@ -155,6 +160,7 @@ void ApplyPresentationSettings(const Settings& settings) {
     WorldMapPrompt::Apply(settings.world_map_zoom_prompt);
     WorldMapPrompt::ApplyNative(settings.world_map_native_zoom);
     NativeItemPresent::Apply(settings.item_present);
+    NativeItemPresent::ApplyMask(settings.mask_present);
     NativeStartup::Apply(settings.startup);
     DialogueScale::scale.store(settings.dialogue_scale);
     DialogueScale::y_offset.store(settings.dialogue_y);
@@ -162,6 +168,7 @@ void ApplyPresentationSettings(const Settings& settings) {
     DialogueScale::indicator_x.store(settings.dialogue_indicator_x);
     DialogueScale::indicator_y.store(settings.dialogue_indicator_y);
     CameraLive::SetFov(settings.game_camera_fov);
+    CameraLive::SetCutsceneFov(settings.cutscene_camera_fov);
     Minimap::enabled.store(settings.minimap);
     Minimap::scale.store(settings.minimap_scale);
     Minimap::opacity.store(settings.minimap_opacity);
@@ -547,6 +554,7 @@ Overlay::Overlay(const Vulkan::Instance& instance, vk::Format format, unsigned i
     if (state.startup_trace) Trace::Start();
 }
 Overlay::~Overlay() {
+    Fog::disabled.store(false);
     WidescreenProbe::Stop();
     Widescreen::enabled.store(false);
     Widescreen::supported_layout.store(false);
@@ -739,6 +747,15 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                     ? "Frame rate saved" : "Frame rate save FAILED";
             }
         };
+        const auto fog_control = [&]() {
+            if (ImGui::Checkbox("Disable fog", &state.settings.disable_fog)) {
+                Fog::disabled.store(state.settings.disable_fog);
+                state.status = state.settings.Save(state.directory + "presentation.json") ?
+                    "Graphics settings saved" : "Graphics settings save FAILED";
+                if (inspection_paused.load()) step_requested.store(true);
+            }
+            hover_help("Removes distance fog. As fog is used for atmospheric effect, it is not recommended to disable it.");
+        };
         const auto bloom_control = [&]() {
             if (ImGui::Checkbox("Fix bloom", &state.settings.fix_bloom)) {
                 BloomSampling::enabled.store(state.settings.fix_bloom);
@@ -763,6 +780,17 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
             if(ImGui::Button("Reset camera zoom")){state.settings.game_camera_fov=65.f;changed=true;}
             if(changed){apply_camera_zoom();
                 state.status=state.settings.Save(state.directory+"presentation.json")?"Camera zoom saved":"Camera zoom save FAILED";}
+            bool cutscene_changed=ImGui::SliderFloat("Cutscene camera (FOV)",&state.settings.cutscene_camera_fov,
+                45.f,70.f,"%.1f deg",ImGuiSliderFlags_AlwaysClamp);
+            hover_help("45 degrees is the original game's FOV. Default: 49 degrees.\n\n"
+                "NOTE: Higher values than default may reveal missing geometry and NPC's on standby");
+            ImGui::SameLine();
+            if(ImGui::Button("Reset cutscene camera")){state.settings.cutscene_camera_fov=49.f;cutscene_changed=true;}
+            if(cutscene_changed) {
+                CameraLive::SetCutsceneFov(state.settings.cutscene_camera_fov);
+                state.status=state.settings.Save(state.directory+"presentation.json")?
+                    "Cutscene camera saved":"Cutscene camera save FAILED";
+            }
         };
         const auto hud_controls=[&]() {
             auto& hud=state.settings.player_hud;
@@ -936,13 +964,17 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
             help_text("Removes loose arrows, bombs, Deku sticks and Deku nuts.");
             changed|=ImGui::Checkbox("Lose rupees on death",&state.settings.lose_rupees_on_death);
             help_text("Lose all carried rupees when you die. Bank savings are unaffected.");
+            changed|=ImGui::Checkbox("Dying moves time forward 6 hours",&state.settings.advance_six_hours_on_death);
+            help_text("Advances time by six hours when you continue after dying. Reaching or passing the end of the final day ends the world. Fairy revivals, pit falls and deaths on the Moon are unaffected. World ends on death takes priority if both are enabled.");
+            changed|=ImGui::Checkbox("Fast time",&state.settings.fast_time);
+            help_text("Uses the first-cycle clock speed (50% faster than normal), including faster time with Inverted Song of Time. Song of Double Time is unchanged.");
             changed|=ImGui::Checkbox("World ends on death",&state.settings.world_ends_on_death);
             changed|=ImGui::Checkbox("Increase purchase prices and fees",&state.settings.double_prices);
             ImGui::BeginDisabled(!state.settings.double_prices);
             changed|=ImGui::SliderInt("Price multiplier",&state.settings.price_multiplier,2,3,"%dx",ImGuiSliderFlags_AlwaysClamp);
             help_text("Multiplies purchase prices and fees. All-Night Mask, Biggest Bomb Bag upgrade and Chateau Romani cost at most 500 rupees. Restart Dekui after changing these settings.");
             ImGui::EndDisabled();
-            if(ImGui::Button("Reset difficulty")){multiplier=1;state.settings.weaker_enhanced_defense=false;state.settings.red_potion_hearts=20;state.settings.blue_potion_hearts=20;state.settings.bottled_fairy_hearts=10;state.settings.disable_heart_drops=false;state.settings.disable_rupee_drops=false;state.settings.disable_fairy_drops=false;state.settings.disable_magic_drops=false;state.settings.disable_ammo_pickups=false;state.settings.double_prices=false;state.settings.price_multiplier=2;state.settings.lose_rupees_on_death=false;state.settings.world_ends_on_death=false;changed=true;}
+            if(ImGui::Button("Reset difficulty")){multiplier=1;state.settings.weaker_enhanced_defense=false;state.settings.red_potion_hearts=20;state.settings.blue_potion_hearts=20;state.settings.bottled_fairy_hearts=10;state.settings.disable_heart_drops=false;state.settings.disable_rupee_drops=false;state.settings.disable_fairy_drops=false;state.settings.disable_magic_drops=false;state.settings.disable_ammo_pickups=false;state.settings.double_prices=false;state.settings.price_multiplier=2;state.settings.lose_rupees_on_death=false;state.settings.world_ends_on_death=false;state.settings.advance_six_hours_on_death=false;state.settings.fast_time=false;changed=true;}
             if(changed){state.settings.damage_multiplier=multiplier;Difficulty::damage_multiplier.store(multiplier);
                 Difficulty::weaker_enhanced_defense.store(state.settings.weaker_enhanced_defense);
                 BottleHealing::red_hearts.store(state.settings.red_potion_hearts);
@@ -955,9 +987,16 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 Difficulty::disable_ammo_pickups.store(state.settings.disable_ammo_pickups);
                 DeathPenalties::lose_rupees.store(state.settings.lose_rupees_on_death);
                 DeathPenalties::world_ends.store(state.settings.world_ends_on_death);
+                DeathPenalties::advance_six_hours.store(state.settings.advance_six_hours_on_death);
+                FastTime::enabled.store(state.settings.fast_time);
                 state.status=state.settings.Save(state.directory+"presentation.json")?"Difficulty saved":"Difficulty save FAILED";}
         };
         const auto cheats_controls=[&] {
+#ifndef __ANDROID__
+            ImGui::TextWrapped("NOTE: Some cheats may not work with DekUI");
+            if(ImGui::Button("Open Azahar cheats"))PlayerSettings::open_cheats.store(true);
+            ImGui::Separator();
+#endif
             using namespace SimpleCheats;
             const bool available=ready.load();
             ImGui::TextWrapped("Buttons apply once. Infinite cheats last for this session. Changes to your inventory can be saved with the game.");
@@ -1052,6 +1091,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 int factor=resolution.load();
                 if(ImGui::SliderInt("Internal resolution",&factor,1,9,"%dx"))set_resolution.store(factor);
                 bloom_control();
+                fog_control();
                 bool sync=vsync.load()!=0;
                 if(ImGui::Checkbox("VSync",&sync))set_vsync.store(sync);
                 bool disk=cache.load()!=0;
@@ -1087,6 +1127,11 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
             if(ImGui::BeginTabItem("Restoration")){restoration_controls();ImGui::EndTabItem();}
             if(ImGui::BeginTabItem("QOL")){qol_controls();ImGui::EndTabItem();}
 #ifndef __ANDROID__
+            if(ImGui::BeginTabItem("Cheats")) {
+                ImGui::TextWrapped("NOTE: Some cheats may not work with DekUI");
+                if(ImGui::Button("Open cheats"))open_cheats.store(true);
+                ImGui::EndTabItem();
+            }
             // Opt-in support tools for packaged builds. Never persist this flag in
             // presentation.json or expose the editor's game-modifying controls.
             static const bool diagnostics_enabled =
@@ -1158,7 +1203,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
         else {
         if(ImGui::BeginTabBar("Editor settings")) {
         if(ImGui::BeginTabItem("General")){general_controls();ImGui::EndTabItem();}
-        if(ImGui::BeginTabItem("Graphics")){interpolation_control();actor_distance_control();ImGui::EndTabItem();}
+        if(ImGui::BeginTabItem("Graphics")){interpolation_control();actor_distance_control();fog_control();ImGui::EndTabItem();}
         if(ImGui::BeginTabItem("Camera")) {
         if(ImGui::CollapsingHeader("Live game camera")) {
             bool inspect=CameraLive::enabled.load();
@@ -1226,6 +1271,12 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
             if(ImGui::Button("Capture rendered frame pair (3 second delay)"))
                 CameraMidpoint::capture_pair_at_us=InputLatency::Now()+3000000;
             ImGui::TextWrapped("Close F1 and keep rotating the camera. Saves midpoint/native images to the log folder; may briefly hitch during readback.");
+            if(ImGui::Button("Capture moving menu frame pair")) {
+                CameraMidpoint::capture_menu_motion_frame=0;
+                CameraMidpoint::capture_menu_pair_at_us=InputLatency::Now()+3000000;
+            }
+            ImGui::TextWrapped("Close F1, wait 3 seconds, then open Gear. Waits up to 20 seconds for horizontal menu motion and saves one midpoint/native image pair in the log folder. Readback may briefly hitch; use these images to inspect geometry, not frame pacing.");
+            if(CameraMidpoint::capture_menu_pair_at_us.load())ImGui::TextUnformatted("Waiting for menu motion...");
             ImGui::Text("Presented frame pairs: %u",CameraMidpoint::presented_pairs.load());
             ImGui::TextWrapped("%s",CameraMidpoint::StatusText(CameraMidpoint::presentation_status.load()));
             bool native=CameraMidpoint::native_preview.load();
@@ -1450,10 +1501,11 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 state.status=state.settings.Save(state.directory+"presentation.json")?"Background settings saved":"Background settings save FAILED";
             }
         }
-        if(ImGui::CollapsingHeader("Give an item")) {
-            auto& o=state.settings.item_present;
-            bool changed=ImGui::Checkbox("Give an item on top screen",&o.enabled);
-            if(ImGui::TreeNode("Select Item button prompts")) {
+        for(bool masks:{false,true})if(ImGui::CollapsingHeader(masks?"Select Mask":"Give an item")) {
+            ImGui::PushID(masks?"select_mask":"give_item");
+            auto& o=masks?state.settings.mask_present:state.settings.item_present;
+            bool changed=ImGui::Checkbox(masks?"Select Mask on top screen":"Give an item on top screen",&o.enabled);
+            if(ImGui::TreeNode("Button prompts")) {
                 changed|=ImGui::SliderFloat("Group X",&o.help_pose.x,-512,512,"%.1f",ImGuiSliderFlags_AlwaysClamp);
                 changed|=ImGui::SliderFloat("Group Y",&o.help_pose.y,-512,512,"%.1f",ImGuiSliderFlags_AlwaysClamp);
                 changed|=ImGui::SliderFloat("Group scale",&o.help_pose.scale,.1f,2,"%.2fx",ImGuiSliderFlags_AlwaysClamp);
@@ -1461,9 +1513,9 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 if(ImGui::Button("Reset prompts")){o.help_pose=NativeItemPresent::Options{}.help_pose;o.help_spacing=6;changed=true;}
                 ImGui::TreePop();
             }
-            constexpr std::array<const char*,NativeItemPresent::Count> names{"Background","Item panel and icons","Right panel","Select Item prompt","Return button","Confirm button","Description textbox"};
+            const std::array<const char*,NativeItemPresent::Count> names{"Background",masks?"Mask panel and icons":"Item panel and icons","Right panel",masks?"Select Mask prompt":"Select Item prompt","Return button","Confirm button","Description box"};
             for(unsigned i=0;i<NativeItemPresent::Count;++i) {
-                if(i==NativeItemPresent::Background)continue;
+                if(i==NativeItemPresent::Background||(masks&&i==NativeItemPresent::Right))continue;
                 ImGui::PushID(int(i)+1500);
                 if(ImGui::TreeNode(names[i])) {
                     auto& p=o.poses[i];
@@ -1478,8 +1530,14 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 }
                 ImGui::PopID();
             }
-            if(changed){NativeItemPresent::Apply(o);state.status=state.settings.Save(state.directory+"presentation.json")?"Give an item settings saved":"Give an item settings save FAILED";}
-            ImGui::TextWrapped("Position and scale each part independently. Selection highlights follow their panel.");
+            if(changed){
+                if(masks)NativeItemPresent::ApplyMask(o);else NativeItemPresent::Apply(o);
+                const bool saved=state.settings.Save(state.directory+"presentation.json");
+                state.status=saved?(masks?"Select Mask settings saved":"Give an item settings saved"):
+                    (masks?"Select Mask settings save FAILED":"Give an item settings save FAILED");
+            }
+            ImGui::TextWrapped("Position and scale each part independently. Selection highlights and shadows follow their panel.");
+            ImGui::PopID();
         }
         if(ImGui::CollapsingHeader("Location and day/night banners")) {
             constexpr const char* names[]{"New location banner","Day / night banner"};
@@ -1642,10 +1700,14 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 if(ImGui::TreeNode(names[i])) {
                     auto& p=o.poses[i];
                     if(i==NativeFileSelect::Files)changed|=ImGui::SliderFloat("Extra spacing",&o.stone_spacing,0.f,80.f,"%.1f",ImGuiSliderFlags_AlwaysClamp);
+                    if(i==NativeFileSelect::Files) {
+                        changed|=ImGui::SliderFloat("Entrance ease-out",&o.entrance_ease,1.f,3.f,"%.2f",ImGuiSliderFlags_AlwaysClamp);
+                        ImGui::TextWrapped("1 is linear. Higher values slow the blocks more as they approach their destination. Applies when entering file select.");
+                    }
                     changed|=ImGui::SliderFloat("X",&p.x,-512.f,512.f,"%.1f",ImGuiSliderFlags_AlwaysClamp);
                     changed|=ImGui::SliderFloat("Y",&p.y,-512.f,512.f,"%.1f",ImGuiSliderFlags_AlwaysClamp);
                     changed|=ImGui::SliderFloat("Scale",&p.scale,.1f,2.f,"%.2fx",ImGuiSliderFlags_AlwaysClamp);
-                    if(ImGui::Button("Reset")){p=NativeFileSelect::Options{}.poses[i];if(i==NativeFileSelect::Files)o.stone_spacing=0;changed=true;}
+                    if(ImGui::Button("Reset")){p=NativeFileSelect::Options{}.poses[i];if(i==NativeFileSelect::Files){o.stone_spacing=0;o.entrance_ease=2;}changed=true;}
                     ImGui::TreePop();
                 }
                 ImGui::PopID();
@@ -1826,7 +1888,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
             auto& options=state.settings.inventory_menu.gear;
             bool changed=ImGui::Checkbox("Gear panels on top screen",&options.enabled);
             constexpr std::array<const char*,GearMenu::Count> labels{
-                "Main panel and gear", "Right-hand strip", "Brown background", "Buttons", "Rotating model", "Description"};
+                "Main panel and gear", "Right-hand strip", "Brown background", "Buttons", "Rotating model", "Description", "Photo and border"};
             for(unsigned i=0;i<GearMenu::Count;++i) {
                 if(i==GearMenu::Background||i==GearMenu::Model||i==GearMenu::Description)continue;
                 ImGui::PushID(int(i)+700);

@@ -42,6 +42,7 @@ struct Settings {
     NativeInventory::ButtonPose world_map_zoom_prompt{0,0,.8f},world_map_native_zoom;
     NativeFileSelect::Options file_select;
     NativeItemPresent::Options item_present;
+    NativeItemPresent::Options mask_present;
     NativeStartup::Options startup;
     float actor_draw_distance = 1.f;
     float prop_draw_distance = 1.f;
@@ -54,6 +55,8 @@ struct Settings {
     bool disable_magic_drops = false, disable_ammo_pickups = false;
     bool lose_rupees_on_death = false;
     bool world_ends_on_death = false;
+    bool advance_six_hours_on_death = false;
+    bool fast_time = false;
     bool double_prices = false;
     int price_multiplier = 2;
     bool accurate_hle_audio = true;
@@ -62,6 +65,7 @@ struct Settings {
     bool disable_tatl_reminders = false;
     bool single_screen_text = true;
     bool fix_bloom = true;
+    bool disable_fog = false;
     bool interpolation_60fps = true;
     bool interpolation_cpu_vertices = true;
     bool classic_saving = false;
@@ -78,6 +82,7 @@ struct Settings {
     bool widescreen = false;
     float camera_zoom_out = 1.f;
     float game_camera_fov = 65.f;
+    float cutscene_camera_fov = 49.f;
     float restoration_hud_scale = 1.f;
     MagicBorder::Options magic_border;
     MinigameHud::Options minigame_hud;

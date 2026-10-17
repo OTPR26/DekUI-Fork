@@ -12,25 +12,32 @@ inline void Apply(const Options& o){for(unsigned i=0;i<2;++i){const auto& p=o.pa
     a.height=p.height;a.y=p.y;a.text_scale=p.text_scale;a.text_x=p.text_x;a.text_y=p.text_y;a.brightness=p.brightness;}}
 struct Hook {
     SongList::Hook helper;
+    U32 owner=0;
     using Write=NativeInventory::Hook::Write;
     std::vector<std::vector<Write>> frames;
     template<class M> void Pass(M& m,U32 manager,U32 screen) {
         // Queue 0 runs before notebook/Items foreground (queues 2/3).
         // Wait until here so the inventory background has already been routed.
-        if(screen!=0||!Pointer(manager,0x24))return;
+        if(screen!=0)return;
+        owner=0;
+        if(!Pointer(manager,0x24))return;
         using Buckets=NativeInventory::Hook::Buckets;
         std::array<U32,4> addresses{};std::array<Buckets,4> queues;
-        bool menu=false;
+        bool menu=false,duplicate=false;U32 telop=0;
         for(unsigned i=0;i<4;++i) {
             auto address=m.Read(manager+8+4*i);
             if(!address||!Pointer(*address,0x848)||!helper.helper.ReadQueue(m,*address,queues[i]))return;
             addresses[i]=*address;
             for(unsigned j=0;j<i;++j)if(addresses[j]==*address)return;
-            for(const auto& bucket:queues[i])for(auto entry:bucket)
+            for(const auto& bucket:queues[i])for(auto entry:bucket) {
+                if(LayoutNamed(m,entry,"Telop")) {
+                    duplicate|=telop&&telop!=entry;telop=entry;
+                }
                 for(const char* name:{"MenuItem","MenuMask","MenuCollect","MenuQuestlist","MenuSchedule","UpQuestlist","UpSchedule","MenuMapDungeon","UpWorldMapBG","UpWorldMapHud"})
                     if(LayoutNamed(m,entry,name))menu=true;
+            }
         }
-        if(!menu)return;
+        if(!menu){owner=duplicate?0:telop;return;}
         bool removed=false;
         for(unsigned i=0;i<4;++i)for(auto& bucket:queues[i]) {
             std::vector<U32> kept;

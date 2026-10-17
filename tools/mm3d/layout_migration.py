@@ -59,6 +59,11 @@ def migrate(raw, data):
                 obj[k] = current[k]
         else:
             retained.append(name)
+    # Update only the exact previously shipped fade rules. A user may have
+    # deliberately removed a rule or added their own; preserve that whole list.
+    previous_rules = data.get('previous_fullscreen_draws')
+    if isinstance(previous_rules, list) and obj.get('fullscreen_draws') == previous_rules:
+        obj['fullscreen_draws'] = copy.deepcopy(current['fullscreen_draws'])
     # Only genuinely absent keys receive release defaults. Existing gameplay/HUD
     # choices, unknown keys and ambiguous layout groups remain unchanged.
     held_prefixes = tuple(p for name in retained for p in GROUPS[name])

@@ -81,7 +81,9 @@ bool PromptLayer::Begin(unsigned w, unsigned h, float depth_clear, bool reset_de
     // Consecutive private replay draws only write attachments. No shader has
     // sampled these images yet, so avoid fragment/transfer-wide dependencies.
     const bool continuing=pending_sample_barrier && !fresh && !clear && !reset_depth;
-    scheduler.Record([image=image, fresh, clear, continuing, opaque=with_depth && profile.id!="@camera_midpoint_hud"](vk::CommandBuffer cmd) {
+    const auto background=with_depth && profile.id!="@camera_midpoint_hud" ?
+        clear_color : std::array<float,4>{0,0,0,0};
+    scheduler.Record([image=image, fresh, clear, continuing, background](vk::CommandBuffer cmd) {
         const vk::ImageSubresourceRange range{vk::ImageAspectFlagBits::eColor,0,1,0,1};
         vk::ImageMemoryBarrier barrier{
             .srcAccessMask=fresh ? vk::AccessFlags{} : vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite,
@@ -100,7 +102,7 @@ bool PromptLayer::Begin(unsigned w, unsigned h, float depth_clear, bool reset_de
             {}, {}, {}, barrier);
         if (clear) {
             cmd.clearColorImage(image, vk::ImageLayout::eGeneral,
-                vk::ClearColorValue{std::array<float,4>{0,0,0,opaque?1.f:0.f}}, range);
+                vk::ClearColorValue{background}, range);
             barrier.srcAccessMask=vk::AccessFlagBits::eTransferWrite;
             barrier.dstAccessMask=vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite;
             barrier.oldLayout=vk::ImageLayout::eGeneral;
