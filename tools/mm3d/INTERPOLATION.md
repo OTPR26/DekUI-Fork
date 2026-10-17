@@ -948,3 +948,19 @@ frame gaps, duplicates, actor ambiguity, particle sizes and layout ownership.
 ### Double Time white-background cutscene clipping range
 
 The cutscene can retain a scene-dependent shorter far plane (depth term 1.00043–1.00051, near term about 5.00250149). Recognize this separately from the existing time-song projection families, preserving skew, lens-step, camera-cut and frame-gap guards. Replaying the sampled capture accepts all 30 consecutive cutscene pairs previously rejected for lens changes; the 15 acquisition frames after capture sampling gaps remain rejected. Native white background clearing is unchanged.
+
+### Lock-on letterbox bar motion
+
+Interpolate the native black top/bottom bars in the ordered midpoint replay, using the captured untextured material, orthographic projection and edge-anchored transform. Keep independent histories for each edge, preserve width, depth and color, and reject gaps, duplicates and height jumps above the captured five-pixel step. Both CPU and GPU paths use the same midpoint height. All 120 sampled bar draws match; all 32 moving consecutive pairs yield midpoint heights. Acquisition/disappearance boundaries remain native; full-screen fades are excluded.
+
+### Goht shared bone transforms
+
+Goht's captured 29-bone skeleton has coincident skin transforms in body meshes and coincident direct transforms in a small limb mesh. Permit the existing consensus resolver for the verified signature and mesh sizes (12, 129, 150, 219, 750, 756, 1878 vertices). Matching current transforms must also agree at the midpoint; different actor instances, missing frames, unknown meshes and divergent histories remain rejected. Replay of both captures restores 539 additional palette-zero overrides. Collapsed zero-scale geometry remains native. Tests cover each mesh, other palette slots, divergent histories, duplicate instances and unrelated skeletons.
+
+### Goht complete skin palettes, including the head
+
+A follow-up capture exposed reconstructed-bind error above the generic matcher in head meshes (96/348/606 vertices) and active slots of other body meshes. Validate all eleven skin mesh palettes against the local model's ordered bone tables, using the measured bounds (up to .05735 translation and 1.009e-5 basis error, guarded at .06 / .000012). Preserve the native bind correction in each interpolated slot. A collapsed bone 15 is validated but never revived. The newest capture improves from 667/2021 to 2021/2021 eligible visible skin-slot overrides; all change from the native pose. The other noncollapsed skeleton bones also produce moving midpoints. This verifies captured animation, not unseen attack/death states. Tests cover complete palette ownership, head/body motion, preserved corrections, rejected mismatches/duplicates/gaps, and hidden geometry.
+
+### Romani Ranch alien glow
+
+The captured moving glow is the alien beam model's 324-vertex outer layer and 180-vertex core, verified against local asset mesh counts and the complete captured materials. Per-instance history now interpolates their transforms, outer-layer UV scroll (including period-1/2 wraps), and animated combiner colors/opacity. Color changes are allowed only in these two materials' animated constant fields; all other material fields remain exact. The midpoint upload preserves native fragment state and clears its color override before subsequent draws. Both layers yield 580 moving midpoints in the capture; births, gaps, distant jumps and ambiguous neighboring instances stay native. Existing flame/wake matching and reflection behavior remain scoped to their original patterns.

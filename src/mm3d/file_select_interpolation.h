@@ -167,7 +167,7 @@ public:
             const float x=channel==Channel::Alpha?*alpha:u[(channel==Channel::X?11:12)+q*4][0];pose.x[q]=x;
             const auto signature=Identify(u,q,pose.count);if(!signature){complete=false;continue;}
             const auto hash=Hash(*signature,key);
-            std::optional<float> old;bool ambiguous=false;
+            float old=0.f;bool have_old=false,ambiguous=false;
             const auto [begin,end]=previous.equal_range(hash);
             for(auto it=begin;it!=end;++it) {
                 const auto& e=it->second;
@@ -175,23 +175,23 @@ public:
                 // Do not join repeated letters on separate lines or animate
                 // text reflow. Only the measured credits scroll is admitted.
                 if(channel==Channel::CreditsY&&std::abs((x-e.x)+.6171875f)>.002f)continue;
-                if(old&&std::abs(*old-e.x)>.001f)ambiguous=true;
-                old=e.x;
+                if(have_old&&std::abs(old-e.x)>.001f)ambiguous=true;
+                old=e.x;have_old=true;
             }
             if(ambiguous&&!motion.empty()) {
-                old.reset();ambiguous=false;
+                have_old=false;ambiguous=false;
                 for(auto it=begin;it!=end;++it) {
                     const auto& e=it->second;
                     if(e.key!=key||e.signature!=*signature)continue;
                     bool matched=false;
                     for(float dx:motion)matched|=std::isfinite(dx)&&std::abs(x-e.x-dx)<.02f;
                     if(!matched)continue;
-                    if(old&&std::abs(*old-e.x)>.001f)ambiguous=true;
-                    old=e.x;
+                    if(have_old&&std::abs(old-e.x)>.001f)ambiguous=true;
+                    old=e.x;have_old=true;
                 }
             }
-            if(old&&!ambiguous&&std::abs(x-*old)<=(channel==Channel::Alpha?.15f:256.f)) {
-                pose.x[q]=(x+*old)*.5f;changed|=x!=*old;
+            if(have_old&&!ambiguous&&std::abs(x-old)<=(channel==Channel::Alpha?.15f:256.f)) {
+                pose.x[q]=(x+old)*.5f;changed|=x!=old;
             } else complete=false;
             if(current.size()<2048)current.emplace(hash,Entry{key,*signature,x});
         }

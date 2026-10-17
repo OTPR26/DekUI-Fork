@@ -4,12 +4,57 @@
 #include <stdexcept>
 #include "mm3d/cpu_interpolation_capture.h"
 #include "mm3d/lens_interpolation.h"
+#include "mm3d/letterbox_interpolation.h"
 
 namespace I=MM3D::InventoryInterpolation;
 void Check(bool condition,const char* message) {
     if(!condition)throw std::runtime_error(message);
 }
 int main() {
+    {
+        namespace B=MM3D::LetterboxInterpolation;
+        B::Values u{};B::Material material;
+        u[0]={0,-1.f/120,0,1};u[1]={-1.f/200,0,0,1};
+        u[2]={0,0,1.f/1800,1.f/3};u[3]={0,0,0,1};
+        u[8]={1.f/255,0,1.f/255,1};u[9]={1,1,1,1};
+        u[20]={400,0,0,200};u[22]={0,0,1,-1200};
+        u[70]={1,0,0,0};u[71]={0,1,0,0};u[72]={0,0,1,1200};
+        material.state={1,6,7,0,15,0,0};
+        for(auto& t:material.tev)t={0x0fff0fff,0,0,0xffffffff,0};
+        material.tev[0]={238030384,0,0,0,0};
+        B::History h;B::Key key{123,1};
+        for(unsigned side=0;side<2;++side) {
+            const auto at=[&](float height){auto v=u;v[21]={0,height,0,side?240-height*.5f:height*.5f};return v;};
+            auto a=at(5),b=at(10);
+            Check(B::Identify(a,material)==side,"top and bottom lock-on bars recognized separately");
+            Check(!h.Apply(1,key,side,a),"bar acquisition remains native");
+            const auto half=h.Apply(2,key,side,b);
+            Check(half&&half->values[21][1]==7.5f&&half->values[21][3]==(side?236.25f:3.75f),
+                  "bar entrance midpoint keeps outer edge fixed");
+            Check(half&&half->alpha==0&&half->rows[21]&&!half->rows[20]&&!half->rows[22]&&half->values[8]==b[8],
+                  "bars preserve width depth and color");
+            const auto closing=h.Apply(3,key,side,a);
+            Check(closing&&closing->values[21][1]==7.5f,"bar exit also interpolates");
+            Check(!h.Apply(3,key,side,a)&&!h.Apply(4,key,side,b),"duplicate bar rejects ambiguous next frame");
+            Check(!h.Apply(6,key,side,a),"missing bar frame does not bridge transitions");
+            Check(!h.Apply(7,key,side,at(20)),"large bar height jump stays native");
+            Check(!h.Apply(8,{123,2},side,at(15)),"bar generation change resets continuity");
+            auto wrong=a;wrong[21][3]+=1;
+            Check(!B::Identify(wrong,material),"unanchored rectangles are not letterbox bars");
+            wrong=at(240);
+            Check(!B::Identify(wrong,material),"full-screen transition fades excluded");
+            wrong=a;wrong[20][0]=200;
+            Check(!B::Identify(wrong,material),"partial-width rectangles excluded");
+            auto bad=material;bad.textures=1;
+            Check(!B::Identify(a,bad),"textured quads excluded");
+            bad=material;bad.tev[0][3]=0xffffffff;
+            Check(!B::Identify(a,bad),"nonblack screen effects excluded");
+            bad=material;bad.state[6]=1;
+            Check(!B::Identify(a,bad),"stencil effects excluded");
+        }
+        h.Reset();u[21]={0,5,0,2.5f};
+        Check(!h.Apply(9,{123,2},0,u),"explicit reset clears both bar histories");
+    }
     {
         namespace H=MM3D::HeartInterpolation;
         H::Values a{};H::Tev tev{};

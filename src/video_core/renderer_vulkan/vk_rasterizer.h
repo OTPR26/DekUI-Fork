@@ -35,6 +35,7 @@
 #include "mm3d/banner_interpolation.h"
 #include "mm3d/magic_meter_interpolation.h"
 #include "mm3d/lens_interpolation.h"
+#include "mm3d/letterbox_interpolation.h"
 #include "mm3d/heart_interpolation.h"
 #include "mm3d/splash_interpolation.h"
 #include "mm3d/song_effect_interpolation.h"
@@ -166,6 +167,7 @@ private:
     std::unique_ptr<VisibilityDepthCache> visibility_depth;
     MM3D::WaterModelInterpolation::History water_model_history;
     MM3D::MovingEffectInterpolation::History moving_effect_history;
+    std::optional<MM3D::MovingEffectInterpolation::Colors> moving_effect_colors;
     std::optional<std::pair<unsigned,float>> water_model_alpha_override;
     MM3D::GlareInterpolation glare_history;
     MM3D::GlareInterpolation::ScreenHistory glare_cpu_history;
@@ -184,6 +186,7 @@ private:
     MM3D::MagicMeterInterpolation::History magic_meter_history;
     MM3D::HeartInterpolation::History heart_history;
     MM3D::LensInterpolation::History lens_history;
+    MM3D::LetterboxInterpolation::History letterbox_history;
     std::optional<MM3D::InventoryInterpolation::Pose> inventory_override;
     MM3D::FileSelectInterpolation::History file_select_history;
     std::optional<MM3D::FileSelectInterpolation::Pose> file_select_override;
