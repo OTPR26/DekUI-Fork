@@ -337,7 +337,6 @@ void Config::ReadValues() {
     Settings::values.async_shader_compilation = false;
     // The authored presentation targets the top screen and Vulkan renderer.
     Settings::values.layout_option = Settings::LayoutOption::SingleScreen;
-    Settings::values.swap_screen = false;
     Settings::values.graphics_api = Settings::GraphicsAPI::Vulkan;
 #endif
 }

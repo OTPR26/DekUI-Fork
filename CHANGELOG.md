@@ -1,3 +1,5 @@
+> Preserved upstream notes. For this fork’s Android release and current limitations, start with [README.md](README.md).
+
 ## 1.0.0-beta.2
 
 ### Added

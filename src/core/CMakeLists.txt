@@ -498,6 +498,10 @@ add_library(citra_core STATIC EXCLUDE_FROM_ALL
     tracer/recorder.h
 )
 
+if (ENABLE_BUILTIN_KEYBLOB)
+    target_sources(citra_core PRIVATE hw/default_keys.h)
+endif()
+
 create_target_directory_groups(citra_core)
 
 target_link_libraries(citra_core PUBLIC citra_common PRIVATE audio_core network video_core)
@@ -548,4 +552,8 @@ endif()
 
 if (CITRA_USE_PRECOMPILED_HEADERS)
     target_precompile_headers(citra_core PRIVATE precompiled_headers.h)
+endif()
+
+if (ENABLE_MM3D_PRESENTATION)
+    target_link_libraries(citra_core PRIVATE json-headers)
 endif()

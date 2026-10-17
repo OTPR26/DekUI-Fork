@@ -168,7 +168,7 @@ bool Exists(const std::string& filename) {
     int result = _wstat64(Common::UTF8ToUTF16W(copy).c_str(), &file_info);
 #elif defined(ANDROID) && !defined(HAVE_LIBRETRO_VFS)
     int result;
-    if (AndroidUtils::CanUseRawFS()) {
+    if (AndroidUtils::CanUseRawFS(filename)) {
         struct stat file_info;
         result = stat(AndroidUtils::TranslateFilePath(copy).c_str(), &file_info);
     } else {
@@ -197,7 +197,7 @@ bool IsDirectory(const std::string& filename) {
 #elif defined(ANDROID) && !defined(HAVE_LIBRETRO_VFS)
     struct stat file_info;
     int result;
-    if (AndroidUtils::CanUseRawFS()) {
+    if (AndroidUtils::CanUseRawFS(filename)) {
         result = stat(AndroidUtils::TranslateFilePath(copy).c_str(), &file_info);
     } else {
         return AndroidUtils::IsDirectory(filename);
@@ -526,7 +526,7 @@ u64 GetSize(const std::string& filename) {
     struct _stat64 buf;
     if (_wstat64(Common::UTF8ToUTF16W(filename).c_str(), &buf) == 0)
 #elif defined(ANDROID) && !defined(HAVE_LIBRETRO_VFS)
-    if (AndroidUtils::CanUseRawFS()) {
+    if (AndroidUtils::CanUseRawFS(filename)) {
         if (stat(AndroidUtils::TranslateFilePath(filename).c_str(), &buf) == 0) {
             return buf.st_size;
         }
@@ -608,7 +608,7 @@ std::optional<std::vector<std::string>> ListDirectoryEntries(const std::string& 
 #elif defined(ANDROID) && !defined(HAVE_LIBRETRO_VFS)
 
 std::optional<std::vector<std::string>> ListDirectoryEntries(const std::string& directory) {
-    if (AndroidUtils::CanUseRawFS()) {
+    if (AndroidUtils::CanUseRawFS(directory)) {
         std::vector<std::string> entries;
 
         DIR* dirp = opendir(AndroidUtils::TranslateFilePath(directory).c_str());
@@ -1360,7 +1360,11 @@ bool IOFile::Open() {
     m_good = m_file != nullptr;
 
 #elif defined(ANDROID) && !defined(HAVE_LIBRETRO_VFS)
-    if (AndroidUtils::CanUseRawFS()) {
+    if (filename.starts_with("/@textures/") && openmode != "r" && openmode != "rb") {
+        m_good = false;
+        return false;
+    }
+    if (AndroidUtils::CanUseRawFS(filename)) {
         m_file = FOPEN(AndroidUtils::TranslateFilePath(filename).c_str(), openmode.c_str());
     } else {
         // Check whether filepath is startsWith content

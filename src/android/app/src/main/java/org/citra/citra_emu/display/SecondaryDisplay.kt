@@ -85,6 +85,17 @@ class SecondaryDisplay(val context: Context) : DisplayManager.DisplayListener {
             return
         }
 
+        // DekUI presents one authored top-screen image. The emulator's hidden
+        // fallback display must not receive a second, bottom-only render pass.
+        if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION &&
+            (availableDisplays.isEmpty() ||
+             IntSetting.SECONDARY_DISPLAY_LAYOUT.int == SecondaryDisplayLayout.NONE.int ||
+             !BooleanSetting.ENABLE_SECONDARY_DISPLAY.boolean)) {
+            currentDisplayId = -1
+            releasePresentation()
+            return
+        }
+
         val displayToUse = if (availableDisplays.isEmpty() ||
             // Theoretically, the NONE option is no longer selectable, but
             // I am leaving this in for backwards compatibility

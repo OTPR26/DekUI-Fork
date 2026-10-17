@@ -56,7 +56,8 @@ object DekuiGameSetup {
             require(header.getInt(0) == 40) { "Unsupported game filesystem" }
             val dt = header.getInt(12).toLong(); val ft = header.getInt(28).toLong()
             val payload = header.getInt(36).toLong()
-            val wanted = inputs.keys().asSequence().filter { it.startsWith("original/") }.toSet()
+            val wanted = inputs.keys().asSequence().filter { it.startsWith("original/") }.toSet() +
+                listOf("use", "usf", "uss").map { "original/romfs/message/us/$it.gmsg" }
             val visited = mutableSetOf<Long>()
             fun directory(at: Long, parent: String, depth: Int): Long {
                 require(depth <= 32 && visited.add(at)) { "Invalid directory tree" }
@@ -113,19 +114,47 @@ object DekuiGameSetup {
                 require(hash(output) == item.getString("sha256")) { "Layout reconstruction mismatch" }
                 val target = mods.child(item.getString("output")); target.parentFile!!.mkdirs(); target.writeBytes(output)
             }
-            // Ship the expanded owl prompt beside the layout mods. The native
-            // hook restores the original payload whenever Classic saving is off.
-            val owl = File(stage,"mods/romfs/message/us/use.gmsg")
-            context.assets.open("dekui-setup/project-restoration/romfs/message/us/use.gmsg").use {
-                owl.parentFile!!.mkdirs(); owl.outputStream().use { out -> it.copyTo(out) }
+            // Expand message storage from the verified user ROM, never from bundled game data.
+            val messageHashes = mapOf(
+                "use" to "70bd72f961a6ff168604249b4c76f893f1cad6fbd9da0290e85f49cd319a1314",
+                "usf" to "b848188634a5bf6c9f2cd837102420dbe0a3275d7fd17bbe0057e8dcbd173a77",
+                "uss" to "3310a03cf6d67a4ce7c054d7fff2b31fd309fcf966e91610f83ffdd92281a688")
+            for ((name, expectedHash) in messageHashes) {
+                var data = sources.getValue("original/romfs/message/us/$name.gmsg")
+                fun expand(id: Int, capacity: Int) {
+                    val table = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN)
+                    require(String(data.copyOfRange(0, 4), Charsets.US_ASCII) == "GMSG")
+                    val count = table.getInt(8); require(count in 1..20000 && 16 + count * 20 <= data.size)
+                    val at = (0 until count).map { 16 + it * 20 }
+                        .single { table.getShort(it).toInt() and 65535 == id }
+                    val offset = table.getInt(at + 12); val size = table.getInt(at + 16)
+                    require(offset >= 16 + count * 20 && size in 1..capacity && offset <= data.size - size)
+                    val end = (data.size + 1) and -2
+                    val output = data.copyOf(end + capacity)
+                    data.copyInto(output, end, offset, offset + size)
+                    ByteBuffer.wrap(output).order(ByteOrder.LITTLE_ENDIAN).apply {
+                        putInt(at + 12, end); putInt(at + 16, capacity)
+                    }
+                    data = output
+                }
+                expand(0x0c01, if (name == "use") 1024 else 1536)
+                if (name != "use") expand(0x1b8a, 128)
+                require(hash(data) == expectedHash) { "Message reconstruction mismatch: $name" }
+                val output = File(stage, "mods/romfs/message/us/$name.gmsg")
+                output.parentFile!!.mkdirs(); output.writeBytes(data)
             }
             val target = File(root,"load/mods/0004000000125500")
             // Retain an existing installation, including the user's edited layouts.
             if (!target.exists()) {
                 target.parentFile!!.mkdirs(); check(mods.renameTo(target))
             } else {
-                val existingOwl = target.child("romfs/message/us/use.gmsg")
-                if (!existingOwl.isFile) { existingOwl.parentFile!!.mkdirs(); check(owl.copyTo(existingOwl).isFile) }
+                for (name in messageHashes.keys) {
+                    val existing = target.child("romfs/message/us/$name.gmsg")
+                    if (!existing.isFile) {
+                        existing.parentFile!!.mkdirs()
+                        File(stage, "mods/romfs/message/us/$name.gmsg").copyTo(existing)
+                    }
+                }
 
                 for (i in 0 until files.length()) {
                     check(target.child(files.getJSONObject(i).getString("output")).isFile) {

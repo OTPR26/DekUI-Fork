@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // ROM-free GPU test: exercise the real overlay on a synthetic Azahar-compatible render target.
 #include <fstream>
-#include <algorithm>
 #include <cstring>
 #include <iostream>
 #include <thread>
@@ -29,9 +28,6 @@
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_descriptor_update_queue.h"
 #include "video_core/renderer_vulkan/vk_texture_runtime.h"
-#include "video_core/renderer_vulkan/vk_stream_buffer.h"
-
-namespace MM3D { void RunVisibilityDepthFixture(const Vulkan::Instance&, Vulkan::Scheduler&); }
 
 class HeadlessWindow final : public Frontend::EmuWindow {
 public:
@@ -106,149 +102,6 @@ static void SkippedFrameFixture(const Vulkan::Instance& instance, Vulkan::Schedu
     Require(bounded, "third skipped frame waits for the oldest outstanding submission");
     Require(correct, "all skipped-frame GPU writes survive until explicit readback");
     std::cout << "PASS skipped frames: asynchronous submission, bounded run-ahead, completed readback\n";
-}
-
-// Native depth must be current while unrelated replay remains unexecuted and
-// its resource tick stays reserved. Test the real download path, command-chunk
-// rollover, repeated partial submissions, an ensuing mutation, and alias fallback.
-static void DepthReadbackOrderingFixture(const Vulkan::Instance& instance,
-                                        Vulkan::Scheduler& scheduler,
-                                        Vulkan::RenderManager& manager,
-                                        Vulkan::TextureRuntime& runtime,
-                                        Vulkan::Surface& surface) {
-    MM3D::PromptLayer midpoint(instance, scheduler, manager, true);
-    const u32 side = 8 * surface.res_scale;
-    Require(midpoint.Begin(side, side), "allocate readback replay target");
-    midpoint.End();
-    scheduler.Finish();
-    midpoint.NextFrame();
-    scheduler.SetReplayBatchingEnabled(true);
-    VideoCore::TextureClear clear{};
-    clear.texture_rect = surface.GetScaledRect();
-    clear.value.depth = 0.f;
-    clear.value.stencil = 13;
-    runtime.ClearTexture(surface, clear);
-    Vulkan::Framebuffer native_framebuffer(runtime, {}, nullptr, &surface);
-    {
-        Vulkan::Scheduler::NativeDrawScope native{scheduler};
-        manager.BeginRendering(&native_framebuffer, surface.GetScaledRect());
-        scheduler.Record([extent = surface.RealExtent()](vk::CommandBuffer cmd) {
-            const vk::ClearAttachment attachment{
-                .aspectMask = vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil,
-                .clearValue = {.depthStencil = {1.f, 91}},
-            };
-            const vk::ClearRect rect{.rect = {{0, 0}, {extent.width, extent.height}}, .layerCount = 1};
-            cmd.clearAttachments(attachment, rect);
-        });
-        // Keep the native pass open, as it is when a guest depth read interrupts
-        // rendering. The priority path must end only this pass before download.
-    }
-    std::atomic<unsigned> replay_executed{};
-    constexpr unsigned draws = 40;
-    {
-        Vulkan::RenderManager::ReplayScope replay{manager, true, midpoint.Attachments()};
-        Require(midpoint.Begin(side, side), "begin deferred replay target");
-        for (unsigned i = 0; i < draws; ++i) {
-            std::array<u64, 512> snapshot;
-            snapshot.fill(i);
-            scheduler.Record([snapshot, i, side, &replay_executed](vk::CommandBuffer cmd) {
-                Require(std::all_of(snapshot.begin(), snapshot.end(),
-                                    [i](u64 value) { return value == i; }),
-                        "replay snapshot survives partial submissions");
-                ++replay_executed;
-                const vk::ClearAttachment attachment{
-                    .aspectMask = vk::ImageAspectFlagBits::eColor,
-                    .colorAttachment = 0,
-                    .clearValue = vk::ClearColorValue{
-                        std::array<float, 4>{i & 1 ? 0.f : 1.f, i & 1 ? 1.f : 0.f, 0.f, 1.f}},
-                };
-                const vk::ClearRect rect{.rect = {{0, 0}, {side, side}}, .layerCount = 1};
-                cmd.clearAttachments(attachment, rect);
-            });
-        }
-        midpoint.End(false);
-    }
-    Require(scheduler.HasReplay(), "replay pending at native depth read");
-    Require(manager.CanReadbackBeforeReplay(surface.Image()), "independent depth qualifies");
-    const auto tick = scheduler.CurrentTick();
-    const auto read = [&] {
-        const auto staging = runtime.FindStaging(8 * 8 * 4, false);
-        surface.Download({.buffer_offset = staging.offset, .buffer_size = staging.size,
-                          .texture_rect = {16, 32, 24, 24}, .texture_level = 0}, staging);
-        u32 value;
-        std::memcpy(&value, staging.mapped.data(), sizeof(value));
-        return value;
-    };
-    for (unsigned i = 0; i < 6; ++i) {
-        Require(read() == 0xffffff5bu, "priority download reads current native depth/stencil");
-        if (scheduler.ReadbackPriorityEnabled()) {
-            Require(replay_executed == 0 && scheduler.HasReplay(),
-                    "native readback completes before deferred replay executes");
-            Require(scheduler.CurrentTick() == tick && !scheduler.IsFree(tick),
-                    "readback fence must not retire replay buffer/descriptor lifetime");
-            Require(scheduler.IsStateDirty(Vulkan::StateFlags::Pipeline) &&
-                        scheduler.IsStateDirty(Vulkan::StateFlags::DescriptorSets),
-                    "partial command-buffer submission invalidates cached bindings");
-        }
-    }
-    // The very next resource mutation must drain all pending replay in order.
-    clear.value.depth = 0.f;
-    clear.value.stencil = 37;
-    runtime.ClearTexture(surface, clear);
-    Require(!scheduler.HasReplay(), "resource mutation drains pending replay");
-    const auto after_mutation = read();
-    if (after_mutation != 37 || replay_executed != draws) {
-        throw std::runtime_error(fmt::format(
-            "replay before mutation: depth={:#x} expected=0x25 draws={} expected={}",
-            after_mutation, replay_executed.load(), draws));
-    }
-
-    Vulkan::StreamBuffer result(instance, scheduler, vk::BufferUsageFlagBits::eTransferDst,
-                                side * side * 4, Vulkan::BufferType::Download);
-    const auto [pixels, offset, invalidated] = result.Map(side * side * 4, 4);
-    midpoint.PrepareForSampling();
-    scheduler.Record([image = midpoint.Image(), buffer = result.Handle(), offset, side](vk::CommandBuffer cmd) {
-        const vk::MemoryBarrier before{.srcAccessMask = vk::AccessFlagBits::eMemoryWrite,
-                                       .dstAccessMask = vk::AccessFlagBits::eTransferRead};
-        cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
-                            vk::PipelineStageFlagBits::eTransfer, {}, before, {}, {});
-        const vk::BufferImageCopy copy{.bufferOffset = offset,
-            .imageSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
-            .imageExtent = {side, side, 1}};
-        cmd.copyImageToBuffer(image, vk::ImageLayout::eGeneral, buffer, copy);
-        const vk::MemoryBarrier after{.srcAccessMask = vk::AccessFlagBits::eTransferWrite,
-                                      .dstAccessMask = vk::AccessFlagBits::eHostRead};
-        cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                            vk::PipelineStageFlagBits::eHost, {}, after, {}, {});
-    });
-    scheduler.Finish();
-    result.Commit(side * side * 4);
-    for (u32 i = 0; i < side * side; ++i)
-        Require(pixels[i * 4] == 0 && pixels[i * 4 + 1] == 255 &&
-                    pixels[i * 4 + 2] == 0 && pixels[i * 4 + 3] == 255,
-                "all replay pixels retain final draw order after priority readbacks");
-    Require(scheduler.IsFree(tick), "normal completion finally retires replay resources");
-
-    // A declared write to the source, or an unknown capture, must use the old
-    // ordering and include the pending write in the returned depth value.
-    for (const bool known : {true, false}) {
-        const std::array writes{surface.Image()};
-        {
-            Vulkan::RenderManager::ReplayScope replay{manager, true,
-                known ? std::span<const vk::Image>{writes} : std::span<const vk::Image>{}};
-            clear.value.depth = known ? 1.f : 0.f;
-            clear.value.stencil = known ? 53 : 71;
-            runtime.ClearTexture(surface, clear);
-        }
-        Require(!manager.CanReadbackBeforeReplay(surface.Image()), "alias/unknown writes rejected");
-        Require(read() == (known ? 0xffffff35u : 71u) && !scheduler.HasReplay(),
-                "fallback includes aliasing and unknown deferred depth writes");
-    }
-    scheduler.Finish();
-    scheduler.WaitWorker();
-    std::cout << "PASS depth readback ordering: scale=" << surface.res_scale
-              << " priority=" << scheduler.ReadbackPriorityEnabled()
-              << "; native parity, deferred replay, resource lifetime, chunk rollover, mutation and alias fallback\n";
 }
 
 // Exercise the production D24S8 conversion and synchronous download, without a ROM,
@@ -358,7 +211,6 @@ static void DepthReadbackFixture(const Vulkan::Instance& instance, Vulkan::Sched
         }
         std::cout << "PASS depth tile parity: scale=" << scale
                   << "; nonuniform depth/stencil, redraw, boundaries and partial ownership\n";
-        DepthReadbackOrderingFixture(instance, scheduler, manager, runtime, surface);
         scheduler.Finish();
     }
     scheduler.Finish();
@@ -498,10 +350,6 @@ int main(int argc, char** argv) {
         }
         if (argc > 1 && std::string_view(argv[1]) == "--pass-switching") {
             MM3D::RunPassSwitchFixture(instance, scheduler);
-            return 0;
-        }
-        if (argc > 1 && std::string_view(argv[1]) == "--visibility-depth") {
-            MM3D::RunVisibilityDepthFixture(instance, scheduler);
             return 0;
         }
         if (argc > 1 && std::string_view(argv[1]) == "--depth-readback") {

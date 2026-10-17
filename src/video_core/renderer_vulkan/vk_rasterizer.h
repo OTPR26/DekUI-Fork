@@ -15,8 +15,6 @@
 #include "mm3d/splash_interpolation.h"
 #include "mm3d/song_effect_interpolation.h"
 #include "mm3d/pause_capture.h"
-#include "mm3d/visibility_depth.h"
-#include "video_core/renderer_vulkan/vk_visibility_depth.h"
 #endif
 
 #include "video_core/rasterizer_accelerated.h"
@@ -53,7 +51,7 @@ class RenderManager;
 
 class RasterizerVulkan : public VideoCore::RasterizerAccelerated
 #ifdef ENABLE_MM3D_PRESENTATION
-    , public MM3D::PauseCapture::Backend, public MM3D::VisibilityDepth::Backend
+    , public MM3D::PauseCapture::Backend
 #endif
 {
 public:
@@ -67,7 +65,6 @@ public:
 
     void TickFrame();
 #ifdef ENABLE_MM3D_PRESENTATION
-    void EndGuestFrame() override;
     const auto& PromptOverlays() const { return prompt_layers; }
     MM3D::CameraMidpoint::PresentationStatus MidpointStatus(u64 completed) const {
         using namespace MM3D::CameraMidpoint;
@@ -79,8 +76,6 @@ public:
             return PresentationStatus::UnsupportedHud;
         return PresentationStatus::Active;
     }
-    std::optional<u32> ReadVisibilityDepth(u32 address, const MM3D::VisibilityDepth::Context& context) override;
-    void ResetVisibilityDepth() override;
     void CapturePause(u32 source,unsigned eye) override;
     void BindPause(u32 texture,unsigned eye,const MM3D::PauseCapture::Probes& probes) override;
     void ResetPause() override;
@@ -135,9 +130,6 @@ private:
     std::array<u64,2> midpoint_transfer_logged{};
     u64 glare_trace_session{}, glare_trace_frame{};
     unsigned glare_trace_samples{};
-    bool visibility_depth_enabled{};
-    bool visibility_depth_refresh_enabled{};
-    std::unique_ptr<VisibilityDepthCache> visibility_depth;
     MM3D::GlareInterpolation glare_history;
     MM3D::RippleInterpolation::History ripple_history;
     MM3D::ForestParticleInterpolation::History forest_particle_history;

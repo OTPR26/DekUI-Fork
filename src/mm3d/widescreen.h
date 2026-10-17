@@ -15,6 +15,11 @@ inline std::atomic<float> camera_zoom_out{1.f};
 inline std::atomic<bool> supported_layout{false};
 inline std::atomic<unsigned> corrected_draws{0};
 inline unsigned frame_corrected_draws=0; // Renderer thread only.
+// Guest geometry uses the main display's projection. A bottom-only or hidden
+// Android display must never disable that projection for the following frame.
+inline void UpdateLayoutSupport(bool primary, bool top_enabled, bool landscape, bool mono) {
+    if (primary) supported_layout.store(top_enabled && landscape && mono);
+}
 inline bool Active() { return enabled.load() && supported_layout.load(); }
 inline bool IsTopViewport(unsigned width,unsigned height) {
     // Captured MM3D top draws use 480x400, while bottom draws use 240x320.

@@ -17,7 +17,6 @@
 #include "video_core/renderer_vulkan/renderer_vulkan.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
-#include <cstdlib>
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/texture/texture_decode.h"
 
@@ -105,13 +104,6 @@ RasterizerVulkan::RasterizerVulkan(Memory::MemorySystem& memory, Pica::PicaCore&
 #ifdef ENABLE_MM3D_PRESENTATION
     ResetPause();
     MM3D::PauseCapture::backend.store(this);
-    const char* depth_option = std::getenv("DEKUI_ASYNC_VISIBILITY_DEPTH");
-    visibility_depth_enabled = !depth_option || std::string_view{depth_option} != "0";
-    const char* refresh_option = std::getenv("DEKUI_REFRESH_VISIBILITY_DEPTH");
-    visibility_depth_refresh_enabled = !refresh_option || std::string_view{refresh_option} != "0";
-    MM3D::VisibilityDepth::backend.store(this);
-    LOG_INFO(Render_Vulkan, "Bounded visibility depth snapshots enabled={} background_refresh={}",
-             visibility_depth_enabled, visibility_depth_refresh_enabled);
 #endif
     vertex_buffers.fill(stream_buffer.Handle());
 
@@ -183,8 +175,6 @@ RasterizerVulkan::~RasterizerVulkan() {
 #ifdef ENABLE_MM3D_PRESENTATION
     MM3D::PauseCapture::Backend* expected=this;
     MM3D::PauseCapture::backend.compare_exchange_strong(expected,nullptr);
-    MM3D::VisibilityDepth::Backend* depth_expected = this;
-    MM3D::VisibilityDepth::backend.compare_exchange_strong(depth_expected, nullptr);
     runtime.Finish();
 #endif
 }
@@ -1420,8 +1410,7 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
                 {
                 RenderManager::ReplayScope batching{renderpass_cache,
                     layer->CanBatch(std::max<unsigned>(draw_rect.right, viewport.width),
-                                    std::max<unsigned>(draw_rect.top, viewport.height)),
-                    layer->Attachments()};
+                                    std::max<unsigned>(draw_rect.top, viewport.height))};
                 if(layer->Begin(std::max<unsigned>(draw_rect.right,viewport.width),
                                 std::max<unsigned>(draw_rect.top,viewport.height),reverse?0.f:1.f,
                                 midpoint_world_frame!=frame)) {
@@ -2128,49 +2117,6 @@ void RasterizerVulkan::BindTextureCube(const Pica::TexturingRegs::FullTextureCon
 }
 
 #ifdef ENABLE_MM3D_PRESENTATION
-void RasterizerVulkan::EndGuestFrame() {
-    if (!visibility_depth_refresh_enabled) return;
-    if (!visibility_depth || !visibility_depth->SourceAddress()) return;
-    if (!visibility_depth_enabled || !MM3D::CameraMidpoint::enabled.load()) {
-        ResetVisibilityDepth();
-        return;
-    }
-    MM3D::InterpolationPerformance::Scope timing{
-        MM3D::InterpolationPerformance::Part::VisibilityRefresh};
-    struct GuestMemory {
-        Memory::MemorySystem& memory;
-        std::optional<u32> Read(u32 at) { return memory.Read32OrNullopt(at); }
-    } guest{memory};
-    const auto context = MM3D::VisibilityDepth::LiveContext(
-        guest, MM3D::guest_frames.load(), MM3D::CameraMidpoint::generation.load());
-    if (!context || !MM3D::VisibilityDepth::CodeMatches(guest)) {
-        ResetVisibilityDepth();
-        return;
-    }
-    // Inspect only the existing GPU-owned source. Never load/create a surface,
-    // clean guest memory, or retain a raw surface pointer between guest frames.
-    auto* surface = res_cache.GetDirtySurface(*visibility_depth->SourceAddress(), 4);
-    if (!surface) return;
-    visibility_depth->Refresh(runtime, *surface, *context, MM3D::InterpolationPerformance::Now());
-}
-
-std::optional<u32> RasterizerVulkan::ReadVisibilityDepth(u32 address, const MM3D::VisibilityDepth::Context& context) {
-    if (!visibility_depth_enabled || !MM3D::CameraMidpoint::enabled.load()) {
-        ResetVisibilityDepth();
-        return {};
-    }
-    auto* surface = res_cache.GetDirtySurface(address, 4);
-    if (!surface) { // Clean/CPU-owned memory uses the exact ordinary read.
-        MM3D::InterpolationPerformance::RecordVisibilityEvent(
-            MM3D::InterpolationPerformance::VisibilityEvent::CleanMemory);
-        return {};
-    }
-    if (!visibility_depth) visibility_depth = std::make_unique<VisibilityDepthCache>(instance, scheduler);
-    return visibility_depth->Read(runtime, *surface, address, context, MM3D::InterpolationPerformance::Now());
-}
-void RasterizerVulkan::ResetVisibilityDepth() {
-    if (visibility_depth) visibility_depth->Reset();
-}
 void RasterizerVulkan::ResetPause() {
     pause_textures={};pause_orientation={};pause_draw={};
     MM3D::PauseCapture::captured_scale=0;MM3D::PauseCapture::bound_textures=0;
@@ -2216,7 +2162,6 @@ void RasterizerVulkan::BindPause(u32 texture,unsigned eye,const MM3D::PauseCaptu
 
 void RasterizerVulkan::FlushAll() {
 #ifdef ENABLE_MM3D_PRESENTATION
-    ResetVisibilityDepth();
     MM3D::InterpolationPerformance::ReadbackScope readback{"flush all"};
 #endif
     res_cache.FlushAll();
@@ -2231,7 +2176,6 @@ void RasterizerVulkan::FlushRegion(PAddr addr, u32 size) {
 
 void RasterizerVulkan::InvalidateRegion(PAddr addr, u32 size) {
 #ifdef ENABLE_MM3D_PRESENTATION
-    if (visibility_depth) visibility_depth->Invalidate(addr, size);
     MM3D::InterpolationPerformance::ReadbackScope readback{"memory invalidation",addr,size};
 #endif
     res_cache.InvalidateRegion(addr, size);
@@ -2239,7 +2183,6 @@ void RasterizerVulkan::InvalidateRegion(PAddr addr, u32 size) {
 
 void RasterizerVulkan::FlushAndInvalidateRegion(PAddr addr, u32 size) {
 #ifdef ENABLE_MM3D_PRESENTATION
-    if (visibility_depth) visibility_depth->Invalidate(addr, size);
     MM3D::InterpolationPerformance::ReadbackScope readback{"external memory read/write",addr,size};
 #endif
     res_cache.FlushRegion(addr, size);
@@ -2248,7 +2191,6 @@ void RasterizerVulkan::FlushAndInvalidateRegion(PAddr addr, u32 size) {
 
 void RasterizerVulkan::ClearAll(bool flush) {
 #ifdef ENABLE_MM3D_PRESENTATION
-    ResetVisibilityDepth();
     ResetPause();
     midpoint_history.Reset();forest_particle_history.Reset();link_history.Reset();song_history.Reset();song_overrides.reset();link_frame.reset();link_overrides={};
     midpoint_scene_clear.Reset();

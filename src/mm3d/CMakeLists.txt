@@ -25,10 +25,6 @@ add_executable(mm3d_player_settings_tests player_settings_bridge_tests.cpp)
 target_include_directories(mm3d_player_settings_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 add_test(NAME mm3d_player_settings COMMAND mm3d_player_settings_tests)
 
-add_executable(mm3d_visibility_depth_tests visibility_depth_tests.cpp)
-target_include_directories(mm3d_visibility_depth_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
-add_test(NAME mm3d_visibility_depth COMMAND mm3d_visibility_depth_tests)
-
 add_executable(mm3d_interpolation_timeline_tests interpolation_timeline_tests.cpp)
 target_include_directories(mm3d_interpolation_timeline_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 add_test(NAME mm3d_interpolation_timeline COMMAND mm3d_interpolation_timeline_tests)
@@ -55,7 +51,7 @@ add_executable(mm3d_registry_tests registry_tests.cpp)
 target_link_libraries(mm3d_registry_tests PRIVATE mm3d_overlay video_core Qt6::Core ${PLATFORM_LIBRARIES})
 add_test(NAME mm3d_profile_registry COMMAND mm3d_registry_tests)
 
-add_executable(mm3d_vulkan_fixture vulkan_fixture.cpp pass_switch_fixture.cpp visibility_depth_fixture.cpp)
+add_executable(mm3d_vulkan_fixture vulkan_fixture.cpp pass_switch_fixture.cpp)
 target_link_libraries(mm3d_vulkan_fixture PRIVATE mm3d_overlay video_core tsl::robin_map Qt6::Core ${PLATFORM_LIBRARIES})
 # GPU fixture is explicit: CI machines without a Vulkan device should not silently skip a failure.
 

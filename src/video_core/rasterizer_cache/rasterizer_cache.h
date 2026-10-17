@@ -1,3 +1,7 @@
+#ifdef ENABLE_MM3D_PRESENTATION
+#include "mm3d/tunic_color.h"
+#include "mm3d/sword_icon.h"
+#endif
 // Copyright 2015-2026 Citra Emulator Project / Azahar Emulator Project
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
@@ -1055,6 +1059,19 @@ void RasterizerCache<T>::UploadSurface(Surface& surface, SurfaceInterval interva
     DecodeTexture(load_info, load_info.addr, load_info.end, upload_data, staging.mapped,
                   runtime.NeedsConversion(surface));
 
+#ifdef ENABLE_MM3D_PRESENTATION
+    if(MM3D::TunicColor::selected.load()!=0 &&
+       (load_info.pixel_format==PixelFormat::ETC1 || load_info.pixel_format==PixelFormat::ETC1A4)) {
+        const auto hash=Common::ComputeHash64<Common::HashAlgo64::CityHash>(upload_data.data(),upload_data.size());
+        MM3D::TunicColor::Apply(hash,staging.mapped);
+    }
+#endif
+#ifdef ENABLE_MM3D_PRESENTATION
+    if(load_info.width==512 && load_info.height==512 && load_info.pixel_format==PixelFormat::ETC1A4) {
+        const auto hash=Common::ComputeHash64<Common::HashAlgo64::CityHash>(upload_data.data(),upload_data.size());
+        MM3D::SwordIcon::Apply(hash,staging.mapped,512,512);
+    }
+#endif
     const bool should_dump = False(surface.flags & SurfaceFlagBits::Custom) &&
                              False(surface.flags & SurfaceFlagBits::RenderTarget);
     if (dump_textures && should_dump) {
@@ -1261,15 +1278,6 @@ void RasterizerCache<T>::ClearAll(bool flush) {
     cached_pages -= flush_interval;
     dirty_regions.clear();
     page_table.clear();
-}
-
-template <class T>
-typename RasterizerCache<T>::Surface* RasterizerCache<T>::GetDirtySurface(PAddr addr, u32 size) {
-    if (!size || addr > 0xffffffffU - size) return nullptr;
-    const SurfaceInterval request{addr, addr + size};
-    const auto it = dirty_regions.find(request);
-    if (it == dirty_regions.end() || !it->second || (it->first & request) != request) return nullptr;
-    return &slot_surfaces[it->second];
 }
 
 template <class T>

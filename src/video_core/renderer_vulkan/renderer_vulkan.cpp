@@ -139,10 +139,19 @@ RendererVulkan::RendererVulkan(Core::System& system, Pica::PicaCore& pica_,
                                          update_queue,
                                          main_present_window.ImageCount()},
       present_heap{instance, scheduler.GetMasterSemaphore(), PRESENT_BINDINGS, 32} {
+#ifdef ENABLE_MM3D_PRESENTATION
+    const auto& primary_layout = render_window.GetFramebufferLayout();
+    MM3D::Widescreen::UpdateLayoutSupport(true, primary_layout.top_screen_enabled,
+        primary_layout.is_rotated, primary_layout.render_3d_mode==Settings::StereoRenderOption::Off);
+#endif
     CompileShaders();
     BuildLayouts();
     BuildPipelines();
-    if (secondary_window) {
+    if (secondary_window
+#if defined(ANDROID) && defined(ENABLE_MM3D_PRESENTATION)
+        && secondary_window->GetWindowInfo().render_surface != nullptr
+#endif
+    ) {
         secondary_present_window_ptr = std::make_unique<PresentWindow>(
             *secondary_window, instance, scheduler, IsLowRefreshRate());
     }
@@ -1211,8 +1220,10 @@ void RendererVulkan::DrawScreens(Frame* frame, const Layout::FramebufferLayout& 
         if(layer && layer->Visible())layer->PrepareForSampling();
     const bool wide_supported=layout.top_screen_enabled && layout.is_rotated &&
         layout.render_3d_mode==Settings::StereoRenderOption::Off;
-    MM3D::Widescreen::supported_layout.store(wide_supported);
-    if(MM3D::Widescreen::Active())
+    MM3D::Widescreen::UpdateLayoutSupport(!isSecondaryWindow,
+        layout.top_screen_enabled, layout.is_rotated,
+        layout.render_3d_mode==Settings::StereoRenderOption::Off);
+    if(wide_supported && MM3D::Widescreen::enabled.load())
         layout.top_screen=MM3D::Widescreen::FitTop(layout.top_screen,layout.bottom_screen,
             layout.width,layout.bottom_screen_enabled);
     if(wide_supported&&MM3D::ScreenShrink::native_normalized.load())
@@ -1476,14 +1487,29 @@ void RendererVulkan::SwapBuffers() {
 #endif
 
 #ifdef ANDROID
-    if (secondary_window) {
-        secondaryWindowEnabled = true;
-    } else {
-        secondaryWindowEnabled = false;
-    }
+#ifdef ENABLE_MM3D_PRESENTATION
+    // Android allocates a secondary EmuWindow even without an attached display.
+    // Rendering that bottom-only placeholder both wastes work and invalidates
+    // the single-screen interpolation/presentation path.
+    secondaryWindowEnabled = secondary_window &&
+        secondary_window->GetWindowInfo().render_surface != nullptr;
+#else
+    secondaryWindowEnabled = secondary_window != nullptr;
+#endif
 #endif
 
     const Layout::FramebufferLayout& layout = render_window.GetFramebufferLayout();
+#ifdef ENABLE_MM3D_PRESENTATION
+    MM3D::Widescreen::UpdateLayoutSupport(true, layout.top_screen_enabled, layout.is_rotated,
+        layout.render_3d_mode==Settings::StereoRenderOption::Off);
+    static unsigned viewport_report_count = 0;
+    if (viewport_report_count++ < 3) {
+        LOG_INFO(Render_Vulkan,
+            "DekUI viewport: canvas={}x{}, top={}x{}, widescreen={}, supported={}, secondary_active={}",
+            layout.width, layout.height, layout.top_screen.GetWidth(), layout.top_screen.GetHeight(),
+            MM3D::Widescreen::enabled.load(), MM3D::Widescreen::supported_layout.load(), secondaryWindowEnabled);
+    }
+#endif
     PrepareRendertarget();
     RenderScreenshot();
     isSecondaryWindow = false;
@@ -1503,7 +1529,7 @@ void RendererVulkan::SwapBuffers() {
 #endif
 
 #ifdef ANDROID
-    if (secondary_window) {
+    if (secondaryWindowEnabled) {
         const auto& secondary_layout = secondary_window->GetFramebufferLayout();
         if (!secondary_present_window_ptr) {
             secondary_present_window_ptr = std::make_unique<PresentWindow>(

@@ -1,20 +1,5 @@
 name: Dekui macOS (Apple Silicon)
 on:
-  push:
-    branches: [main, develop]
-    paths:
-      - '.github/workflows/mm3d-macos-test.yml'
-      - '.gitmodules'
-      - '.gitattributes'
-      - 'CMakeLists.txt'
-      - 'CMakePresets.json'
-      - 'CMakeModules/**'
-      - 'src/**'
-      - 'externals/**'
-      - 'dist/**'
-      - 'resources/**'
-      - 'tools/mm3d/**'
-      - 'license.txt'
   workflow_dispatch:
 concurrency:
   group: mm3d-macos-${{ github.ref }}

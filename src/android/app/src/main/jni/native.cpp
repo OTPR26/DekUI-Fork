@@ -16,6 +16,9 @@
 #include <core/hle/service/cfg/cfg.h>
 #include "audio_core/dsp_interface.h"
 #include "common/arch.h"
+#include "common/cityhash.h"
+#include "common/texture.h"
+#include "video_core/rasterizer_cache/texture_codec.h"
 
 #if CITRA_ARCH(arm64)
 #include "common/aarch64/cpu_detect.h"
@@ -37,6 +40,7 @@
 #ifdef ENABLE_MM3D_PRESENTATION
 #include "mm3d/diagnostics.h"
 #include "mm3d/player_settings_bridge.h"
+#include "mm3d/android_menu.h"
 #endif
 #include "common/string_util.h"
 #include "core/core.h"
@@ -426,6 +430,44 @@ void InitializeGpuDriver(const std::string& hook_lib_dir, const std::string& cus
 extern "C" {
 
 // Called on Android's UI thread, like reloadSettings. Kotlin owns INI writes.
+void Java_org_citra_citra_1emu_NativeLibrary_updateDekuiAndroidUi(JNIEnv* env, jclass,
+    jobjectArray bindings, jstring textures, jstring status, jint capture, jboolean touch,
+    jint opacity, jint scale, jboolean haptics) {
+#ifdef ENABLE_MM3D_PRESENTATION
+    MM3D::AndroidMenu::State next;
+    const auto count=env->GetArrayLength(bindings);
+    for(jsize i=0;i<count;++i) {
+        auto value=static_cast<jstring>(env->GetObjectArrayElement(bindings,i));
+        next.bindings.push_back(GetJString(env,value)); env->DeleteLocalRef(value);
+    }
+    next.textures=GetJString(env,textures);next.status=GetJString(env,status);
+    next.capture=capture;next.touch=touch;next.opacity=opacity;next.scale=scale;next.haptics=haptics;
+    std::scoped_lock lock{MM3D::AndroidMenu::mutex};MM3D::AndroidMenu::state=std::move(next);
+#endif
+}
+
+void Java_org_citra_citra_1emu_NativeLibrary_onDekuiScroll(JNIEnv*, jclass, jfloat x, jfloat y, jfloat amount) {
+#ifdef ENABLE_MM3D_PRESENTATION
+    if(window) {const auto& layout=window->GetFramebufferLayout();MM3D::Scroll(x*layout.width,y*layout.height,0,amount);}
+#endif
+}
+
+jfloat Java_org_citra_citra_1emu_NativeLibrary_dekuiScrollbarCenter(JNIEnv*,jclass,jfloat x,jfloat y) {
+#ifdef ENABLE_MM3D_PRESENTATION
+    if(window) {
+        const auto& layout=window->GetFramebufferLayout();
+        if(layout.width>0)return MM3D::AndroidScrollbarCenter(x*layout.width,y*layout.height)/layout.width;
+    }
+#endif
+    return -1.f;
+}
+
+void Java_org_citra_citra_1emu_NativeLibrary_onDekuiMenuKey(JNIEnv*,jclass,jint key,jboolean down) {
+#ifdef ENABLE_MM3D_PRESENTATION
+    MM3D::AndroidMenuKey(key,down);
+#endif
+}
+
 jintArray Java_org_citra_citra_1emu_NativeLibrary_pollDekuiSettings([[maybe_unused]] JNIEnv* env, jclass) {
 #ifdef ENABLE_MM3D_PRESENTATION
     auto& system = Core::System::GetInstance();
@@ -434,12 +476,13 @@ jintArray Java_org_citra_citra_1emu_NativeLibrary_pollDekuiSettings([[maybe_unus
     bool changed = false;
     ApplyPending(Settings::values, [&] { system.ApplySettings(); }, [&] { changed = true; });
     const jint actions = (quit.exchange(false) ? 1 : 0) | (controls.exchange(false) ? 2 : 0);
-    if (!changed && !actions) return nullptr;
+    const jint android_action=MM3D::AndroidMenu::pending.exchange(0);
+    if (!changed && !actions && !android_action) return nullptr;
     const jint data[] = {changed ? resolution.load() : -1, volume.load(), vsync.load(),
                          cache.load(), textures.load(), hardware_shaders.load(),
-                         async_shaders.load(), actions};
-    auto result = env->NewIntArray(8);
-    if (result) env->SetIntArrayRegion(result, 0, 8, data);
+                         async_shaders.load(), actions, android_action};
+    auto result = env->NewIntArray(9);
+    if (result) env->SetIntArrayRegion(result, 0, 9, data);
     return result;
 #else
     return nullptr;
@@ -464,6 +507,17 @@ jboolean Java_org_citra_citra_1emu_NativeLibrary_hasDekuiSettings(JNIEnv*, jclas
 jboolean Java_org_citra_citra_1emu_NativeLibrary_openDekuiSettings(JNIEnv*, jclass) {
 #ifdef ENABLE_MM3D_PRESENTATION
     if (!MM3D::presentation_available.load()) return false;
+    // Opening the touch menu consumes future input. Release held gameplay input
+    // now so a centered/released controller cannot leave the game moving behind it.
+    if (auto* buttons=InputManager::ButtonHandler()) {
+        for(int key=InputManager::N3DS_BUTTON_A;key<=InputManager::N3DS_DPAD_RIGHT;++key)buttons->ReleaseKey(key);
+        buttons->ReleaseKey(InputManager::N3DS_TRIGGER_L);buttons->ReleaseKey(InputManager::N3DS_TRIGGER_R);
+    }
+    if (auto* analog=InputManager::AnalogHandler()) {
+        analog->MoveJoystick(InputManager::N3DS_CIRCLEPAD,0,0);
+        analog->MoveJoystick(InputManager::N3DS_STICK_C,0,0);
+    }
+    if(window)window->OnTouchEvent(0,0,false);
     MM3D::overlay_visible.store(true);
     return true;
 #else
@@ -569,6 +623,10 @@ void Java_org_citra_citra_1emu_NativeLibrary_secondarySurfaceChanged(JNIEnv* env
 void Java_org_citra_citra_1emu_NativeLibrary_secondarySurfaceDestroyed(
     JNIEnv* env, [[maybe_unused]] jobject obj) {
     std::scoped_lock lock(surface_mutex);
+
+#ifdef ENABLE_MM3D_PRESENTATION
+    if (secondary_window) secondary_window->OnSurfaceChanged(nullptr);
+#endif
 
     if (s_secondary_surface != nullptr) {
         ANativeWindow_release(s_secondary_surface);
@@ -1440,6 +1498,34 @@ void Java_org_citra_citra_1emu_NativeLibrary_deleteVulkanShaderCache(JNIEnv* env
             }
             return true;
         });
+}
+
+JNIEXPORT jbyteArray JNICALL Java_org_citra_citra_1emu_NativeLibrary_dekuiDecodeTextureRgba(
+    JNIEnv* env,jclass,jbyteArray input,jint width,jint height,jint format) {
+    if(!input || width<8 || height<8 || width>4096 || height>4096 || width%8 || height%8 || format!=13)return nullptr;
+    const std::size_t length=std::size_t(width)*height;
+    if(std::size_t(env->GetArrayLength(input))!=length)return nullptr;
+    std::vector<u8> raw(length),linear(length*4);
+    env->GetByteArrayRegion(input,0,length,reinterpret_cast<jbyte*>(raw.data()));
+    VideoCore::UNSWIZZLE_TABLE[format](width,height,0,length,linear,raw);
+    Common::FlipRGBA8Texture(linear,width,height);
+    auto result=env->NewByteArray(linear.size());env->SetByteArrayRegion(result,0,linear.size(),reinterpret_cast<const jbyte*>(linear.data()));return result;
+}
+
+JNIEXPORT jlongArray JNICALL Java_org_citra_citra_1emu_NativeLibrary_dekuiTextureHashes(
+    JNIEnv* env,jclass,jbyteArray input,jint width,jint height,jint format) {
+    if(!input || width<8 || height<8 || width>4096 || height>4096 ||
+       (width%8) || (height%8) || (format!=3 && format!=12 && format!=13))return nullptr;
+    const auto pixel_format=static_cast<VideoCore::PixelFormat>(format);
+    const std::size_t length=std::size_t(width)*height*VideoCore::GetFormatBpp(pixel_format)/8;
+    if(std::size_t(env->GetArrayLength(input))<length)return nullptr;
+    std::vector<u8> raw(length);
+    env->GetByteArrayRegion(input,0,length,reinterpret_cast<jbyte*>(raw.data()));
+    std::vector<u8> linear(std::size_t(width)*height*VideoCore::GetFormatBytesPerPixel(pixel_format));
+    VideoCore::UNSWIZZLE_TABLE[format](width,height,0,length,linear,raw);
+    const jlong hashes[]={static_cast<jlong>(Common::CityHash64(reinterpret_cast<const char*>(raw.data()),raw.size())),
+                          static_cast<jlong>(Common::CityHash64(reinterpret_cast<const char*>(linear.data()),linear.size()))};
+    auto result=env->NewLongArray(2);env->SetLongArrayRegion(result,0,2,hashes);return result;
 }
 
 } // extern "C"

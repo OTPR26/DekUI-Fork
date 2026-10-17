@@ -9,6 +9,8 @@ namespace MM3D {
 bool Pointer(float x, float y, int button = -1, bool down = false);
 bool Scroll(float x, float y, float horizontal, float vertical);
 bool TextInput(const char* text);
+float AndroidScrollbarCenter(float x,float y);
+void AndroidMenuKey(int key, bool down);
 void KeyInput(int key, bool down);
 inline std::atomic<bool> text_input_active{false};
 // Observation only: GSP submissions are not a verified simulation tick counter.

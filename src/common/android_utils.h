@@ -59,6 +59,7 @@ ANDROID_JNI_FUNCTIONS(FS)
 #undef FS
 #undef FR
 bool CanUseRawFS();
+bool CanUseRawFS(const std::string& filepath);
 bool MoveAndRenameFile(const std::string& src_full_path, const std::string& dest_full_path);
 std::string TranslateFilePath(const std::string& filepath);
 // Reference:

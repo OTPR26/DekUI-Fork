@@ -335,6 +335,10 @@ std::string TranslateFilePath(const std::string& filepath) {
     return "";
 }
 
+bool CanUseRawFS(const std::string& filepath) {
+    return !filepath.starts_with("/@textures/") && CanUseRawFS();
+}
+
 bool CanUseRawFS() {
     return AndroidUtils::GetBuildFlavor() != AndroidBuildFlavors::GOOGLEPLAY;
 }

@@ -156,6 +156,9 @@ if (ENABLE_MM3D_PRESENTATION)
     if ((NOT ENABLE_QT AND NOT ANDROID) OR NOT ENABLE_VULKAN OR ENABLE_LIBRETRO)
         message(FATAL_ERROR "MM3D presentation requires Vulkan and a Qt or Android frontend (not libretro)")
     endif()
+    if (NOT DEFINED ENABLE_BUILTIN_KEYBLOB OR ENABLE_BUILTIN_KEYBLOB)
+        message(FATAL_ERROR "MM3D presentation requires explicit -DENABLE_BUILTIN_KEYBLOB=OFF")
+    endif()
 endif()
 
 if (ENABLE_MM3D_GAME_FOLDER)
@@ -167,6 +170,8 @@ if (ENABLE_MM3D_GAME_FOLDER)
     endif()
     add_compile_definitions(ENABLE_MM3D_GAME_FOLDER)
 endif()
+
+option(ENABLE_BUILTIN_KEYBLOB "Enable the inclusion of the default crypto keys blob" ON)
 
 # Compile options
 CMAKE_DEPENDENT_OPTION(COMPILE_WITH_DWARF "Add DWARF debugging information" ${IS_DEBUG_BUILD} "MINGW" OFF)

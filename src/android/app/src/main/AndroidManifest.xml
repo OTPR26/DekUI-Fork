@@ -35,7 +35,7 @@
 
     <application
         android:name="org.citra.citra_emu.CitraApplication"
-        android:label="@string/app_name"
+        android:label="${applicationLabel}"
         android:icon="@mipmap/ic_launcher"
         android:appCategory="game"
         android:allowBackup="false"
@@ -59,8 +59,14 @@
             </intent-filter>
         </activity>
 
+        <activity android:name="org.citra.citra_emu.activities.DekuiSettingsActivity"
+            android:exported="false" android:theme="@style/Theme.Citra.Main"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|uiMode" />
+
         <activity android:name="org.citra.citra_emu.activities.DekuiLaunchActivity"
             android:exported="false" android:theme="@style/Theme.Citra.Main"
+            android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|screenSize|uiMode" />
 
         <activity

@@ -19,6 +19,11 @@
 #include "core/hw/aes/key.h"
 #include "core/hw/unique_data.h"
 #include "core/loader/loader.h"
+#ifdef ENABLE_MM3D_PRESENTATION
+#include "mm3d/model_mod.h"
+#include "mm3d/sword_icon.h"
+#include "core/frontend/image_interface.h"
+#endif
 
 namespace FileSys {
 
@@ -636,6 +641,57 @@ Loader::ResultStatus NCCHContainer::ReadRomFS(std::shared_ptr<RomFSReader>& romf
         romfs_file = std::move(direct_romfs);
     }
 
+#ifdef ENABLE_MM3D_PRESENTATION
+    // Keep optional appearance assets outside the normal mods tree. Disabling the
+    // option restores the unmodified human model on the next game launch.
+    if (GetModId(ncch_header.program_id) == 0x0004000000125500ULL) {
+        MM3D::ModelMod::adult_active.store(false);
+        MM3D::TunicColor::selected.store(0);
+        std::atomic_store(&MM3D::SwordIcon::image,std::shared_ptr<const MM3D::SwordIcon::Image>{});
+        const auto settings = FileUtil::GetUserPath(FileUtil::UserPath::ConfigDir) +
+                              "mm3d-local/presentation.json";
+        std::string text;
+        if (FileUtil::GetSize(settings) <= 4 * 1024 * 1024 &&
+            FileUtil::ReadFileToString(true, settings, text) &&
+            MM3D::ModelMod::AdultSelected(text)) {
+            const auto model_root = FileUtil::GetUserPath(FileUtil::UserPath::LoadDir) + "mm3d-models/adult-link/";
+            const auto variant = MM3D::ModelMod::MasterSwordSelected(text)?"master":"kokiri";
+            const int color=MM3D::ModelMod::SelectedTunic(text);
+            const std::string suffix=color==1?"-blue":color==2?"-red":"";
+            auto model_path=model_root+"variants/"+variant+suffix+"/romfs/";
+            if(!FileUtil::Exists(model_path+std::string(MM3D::ModelMod::actor_path))) {
+                LOG_WARNING(Service_FS, "Requested Adult Link variant {}{} is not generated; using installed fallback", variant, suffix);
+                model_path=model_root+"variants/"+variant+"/romfs/";
+            }
+            if(!FileUtil::Exists(model_path+std::string(MM3D::ModelMod::actor_path)))
+                model_path=model_root+"romfs/"; // Existing prototype installations remain usable.
+            if (FileUtil::Exists(model_path + std::string(MM3D::ModelMod::actor_path))) {
+                romfs_file = std::make_shared<LayeredFS>(std::move(romfs_file), model_path, "");
+                MM3D::ModelMod::adult_active.store(true);
+                const auto voice_path=model_root+"voices/romfs/";
+                if(FileUtil::Exists(voice_path+"sound/sequence/JokerSound.bcsar")) {
+                    romfs_file=std::make_shared<LayeredFS>(std::move(romfs_file),voice_path,"");
+                    LOG_INFO(Service_FS,"Adult Link imported voice bank enabled");
+                } else LOG_WARNING(Service_FS,"Adult Link voices are not generated; regenerate the mod from the OoT3D ROM");
+                MM3D::TunicColor::selected.store(color<=2?0:color);
+                const auto icon_path=model_root+"master-sword-icon.png";
+                if(MM3D::ModelMod::MasterSwordSelected(text) &&
+                   model_path.find("variants/master")!=std::string::npos &&
+                   FileUtil::Exists(icon_path) && FileUtil::GetSize(icon_path)<=16*1024*1024) {
+                    FileUtil::IOFile icon_file(icon_path,"rb");std::vector<u8> encoded(icon_file.GetSize());
+                    auto image=std::make_shared<MM3D::SwordIcon::Image>();
+                    if(icon_file.ReadBytes(encoded.data(),encoded.size())==encoded.size() &&
+                       Core::System::GetInstance().GetImageInterface()->DecodePNG(image->pixels,image->width,image->height,encoded) &&
+                       image->width<=2048 && image->height<=2048)
+                        std::atomic_store(&MM3D::SwordIcon::image,std::shared_ptr<const MM3D::SwordIcon::Image>(std::move(image)));
+                }
+                LOG_INFO(Service_FS, "Adult Link model loaded: {} (requested tunic {}, Master Sword {})", model_path, color, MM3D::ModelMod::MasterSwordSelected(text));
+            } else {
+                LOG_WARNING(Service_FS, "Adult Link selected, but the converted model is missing");
+            }
+        }
+    }
+#endif
     return Loader::ResultStatus::Success;
 }
 

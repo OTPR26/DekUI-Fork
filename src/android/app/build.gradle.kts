@@ -99,10 +99,11 @@ android {
             applicationId = "io.github.tgacquin.dekui.experiment"
         }
         buildConfigField("boolean", "DEKUI_PRESENTATION", dekuiPresentation.toString())
+        manifestPlaceholders["applicationLabel"] = if (dekuiPresentation) "DekUI Fork" else "@string/app_name"
         minSdk = 29
         targetSdk = 37
         versionCode = autoVersion
-        versionName = getGitVersion()
+        versionName = if (dekuiPresentation) "1.0.0-beta.2-android.33" else getGitVersion()
 
         ndk {
             //noinspection ChromeOsAbiSupport
@@ -125,6 +126,7 @@ android {
                         // Qt Android uses the shared STL. Match it so AGP also packages libc++_shared.so.
                         "-DANDROID_STL=c++_shared",
                         "-DENABLE_MM3D_GAME_FOLDER=OFF",
+                        "-DENABLE_BUILTIN_KEYBLOB=OFF",
                         "-DENABLE_VULKAN=ON",
                         "-DENABLE_TESTS=OFF",
                         "-DQt6_DIR=${file("$dekuiQtRoot/lib/cmake/Qt6").absolutePath}",
@@ -205,6 +207,27 @@ android {
                 checkReleaseBuilds = false // Ditto
                 // ^- The name of this property is misleading, this doesn't actually disable linting for the `release` build.
             }
+        }
+
+        // Optimized local DekUI build. Keep the installed app ID and signing key for in-place updates.
+        register("performance") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-performance"
+            signingConfig = signingConfigs.getByName("debug")
+            isDebuggable = false
+            isJniDebuggable = false
+            matchingFallbacks += listOf("release")
+            externalNativeBuild {
+                cmake {
+                    arguments(
+                        "-DCMAKE_BUILD_TYPE=Release",
+                        "-DCMAKE_C_FLAGS_RELEASE=-O3 -DNDEBUG",
+                        "-DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG"
+                    )
+                }
+            }
+            lint { checkReleaseBuilds = false }
         }
 
         // Signed by debug key disallowing distribution on Play Store.

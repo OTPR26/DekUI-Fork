@@ -123,6 +123,9 @@ struct Hook {
     }
     template<class M> void MapFade(M& m) {
         detail_opacity=1.f;
+        // No notebook exists during startup or ordinary play. Avoid probing
+        // fields through a null owner (three unmapped reads on every UI pass).
+        if(!Pointer(notebook_owner,0x5c))return;
         auto map=m.Read(notebook_owner+0x54),state=m.Read(notebook_owner+0x4c),player=m.Read(notebook_owner+0x58);
         if(!map||!state||!player||!LayoutNamed(m,*map,"UpEventMap"))return;
         auto playing=m.Read(*player+8);if(!playing)return;

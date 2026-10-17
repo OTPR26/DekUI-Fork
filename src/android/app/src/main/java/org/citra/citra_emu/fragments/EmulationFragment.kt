@@ -234,6 +234,7 @@ class EmulationFragment :
         binding.doneControlConfig.setOnClickListener {
             binding.doneControlConfig.visibility = View.GONE
             binding.surfaceInputOverlay.setIsInEditMode(false)
+            if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) NativeLibrary.openDekuiSettings()
         }
 
         // Show/hide the "Stats" overlay
@@ -265,7 +266,9 @@ class EmulationFragment :
             }
 
             override fun onDrawerClosed(drawerView: View) {
-                binding.drawerLayout.setDrawerLockMode(EmulationMenuSettings.drawerLockMode)
+                binding.drawerLayout.setDrawerLockMode(
+                    if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) DrawerLayout.LOCK_MODE_LOCKED_CLOSED
+                    else EmulationMenuSettings.drawerLockMode)
                 binding.surfaceInputOverlay.isClickable = true
                 binding.surfaceInputOverlay.isFocusable = true
                 binding.surfaceInputOverlay.isFocusableInTouchMode = true
@@ -453,6 +456,12 @@ class EmulationFragment :
                         return
                     }
 
+                    if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) {
+                        if (NativeLibrary.isDekuiSettingsOpen()) NativeLibrary.closeDekuiSettings()
+                        else NativeLibrary.openDekuiSettings()
+                        return
+                    }
+
                     if (NativeLibrary.isDekuiSettingsOpen()) {
                         NativeLibrary.closeDekuiSettings()
                     } else if (binding.drawerLayout.isOpen) {
@@ -476,6 +485,11 @@ class EmulationFragment :
                             NativeLibrary.hasDekuiSettings()) {
                             binding.inGameMenu.menu.findItem(R.id.menu_dekui_settings).isVisible = true
                             val actions = DekuiSettingsBridge.poll()
+                            if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) {
+                                handleDekuiAndroidAction(DekuiSettingsBridge.androidAction)
+                                org.citra.citra_emu.utils.DekuiAndroidMenu.sync()
+                            }
+
                             if (DekuiSettingsBridge.saveFailed && !reportedSaveFailure) {
                                 android.widget.Toast.makeText(requireContext(),
                                     R.string.dekui_settings_save_failed, android.widget.Toast.LENGTH_LONG).show()
@@ -486,7 +500,7 @@ class EmulationFragment :
                                 EmulationLifecycleUtil.closeGame()
                                 break
                             }
-                            if (actions and 2 != 0) {
+                            if (actions and 2 != 0 && !org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) {
                                 NativeLibrary.closeDekuiSettings()
                                 SettingsActivity.launch(requireContext(), SettingsFile.FILE_NAME_CONFIG, "")
                             }
@@ -548,7 +562,8 @@ class EmulationFragment :
                             binding.inGameMenu.menu.findItem(R.id.menu_emulation_savestates)
                                 .setVisible(NativeLibrary.getSavestateInfo() != null)
                             binding.drawerLayout.setDrawerLockMode(
-                                EmulationMenuSettings.drawerLockMode
+                                if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) DrawerLayout.LOCK_MODE_LOCKED_CLOSED
+                                else EmulationMenuSettings.drawerLockMode
                             )
                         }
                     }
@@ -557,6 +572,31 @@ class EmulationFragment :
         }
 
         setInsets()
+    }
+
+    private fun handleDekuiAndroidAction(action: Int) {
+        if (action == 0) return
+        val kind=action ushr 16; val value=action and 65535
+        when(kind) {
+            1 -> org.citra.citra_emu.utils.DekuiAndroidMenu.begin(value)
+            2 -> org.citra.citra_emu.utils.DekuiAndroidMenu.cancel()
+            3 -> { EmulationMenuSettings.showOverlay=value!=0; binding.surfaceInputOverlay.refreshControls() }
+            4 -> {
+                EmulationMenuSettings.showOverlay=true;binding.surfaceInputOverlay.refreshControls()
+                NativeLibrary.closeDekuiSettings();editControlsPlacement()
+            }
+            5 -> showToggleControlsDialog()
+            6 -> setControlOpacity(value.coerceIn(0,100))
+            7 -> setControlScale(value.coerceIn(0,150),"controlScale")
+            8 -> { EmulationMenuSettings.hapticFeedback=value!=0 }
+            9 -> emulationActivity.dekuiSwapScreens()
+            10 -> emulationActivity.openAmiiboFileLauncher.launch(false)
+            11 -> NativeLibrary.removeAmiibo()
+            12 -> emulationActivity.dekuiTexturePicker.launch(android.net.Uri.parse(
+                "content://com.android.externalstorage.documents/document/primary%3AROMs%2Fn3DS"))
+            13 -> org.citra.citra_emu.utils.DekuiAndroidMenu.clear(value)
+            14 -> org.citra.citra_emu.utils.DekuiTextureStorage.clear()
+        }
     }
 
     fun isDrawerOpen(): Boolean = binding.drawerLayout.isOpen
@@ -574,6 +614,7 @@ class EmulationFragment :
         Choreographer.getInstance().postFrameCallback(this)
         if (NativeLibrary.isRunning()) {
             emulationState.unpause()
+            if (emulationActivity.isActivityRecreated) emulationActivity.onEmulationReattached()
 
             // If the overlay is enabled, we need to update the position if changed
             val position = IntSetting.PERFORMANCE_OVERLAY_POSITION.int
@@ -1797,6 +1838,9 @@ class EmulationFragment :
         fun newSurface(surface: Surface?) {
             this.surface = surface
             if (this.surface != null) {
+                // A restored fragment can receive a surface before onResume.
+                // The native core already owns the game; only reattach its surface.
+                if (state == State.STOPPED && NativeLibrary.isRunning()) state=State.PAUSED
                 runWithValidSurface()
             }
         }

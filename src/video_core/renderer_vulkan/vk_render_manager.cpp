@@ -2,7 +2,6 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
-#include <algorithm>
 #include "common/assert.h"
 #include "video_core/rasterizer_cache/pixel_format.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -35,27 +34,11 @@ void RenderManager::SwapReplayState() {
     std::swap(num_draws, replay_num_draws);
 }
 
-RenderManager::ReplayScope::ReplayScope(RenderManager& manager_, bool eligible,
-                                        std::span<const vk::Image> writes) {
+RenderManager::ReplayScope::ReplayScope(RenderManager& manager_, bool eligible) {
     if (!eligible || !manager_.scheduler.ReplayBatchingEnabled()) return;
     manager = &manager_;
-    if (!manager->scheduler.HasReplay()) {
-        manager->replay_writes.clear();
-        manager->replay_writes_known = true;
-    }
-    manager->replay_writes_known &= !writes.empty();
-    for (const auto image : writes) {
-        if (image && std::find(manager->replay_writes.begin(), manager->replay_writes.end(), image) ==
-                         manager->replay_writes.end())
-            manager->replay_writes.push_back(image);
-    }
     manager->SwapReplayState();
     manager->scheduler.BeginReplayCapture();
-}
-
-bool RenderManager::CanReadbackBeforeReplay(vk::Image source) const {
-    return source && scheduler.HasReplay() && replay_writes_known && !replay_writes.empty() &&
-           std::find(replay_writes.begin(), replay_writes.end(), source) == replay_writes.end();
 }
 
 RenderManager::ReplayScope::~ReplayScope() {
@@ -74,8 +57,6 @@ void RenderManager::DrainReplay() {
     EndRendering();
     scheduler.EndReplayCapture();
     SwapReplayState();
-    replay_writes.clear();
-    replay_writes_known = false;
 }
 
 void RenderManager::BeginRendering(const Framebuffer* framebuffer,
@@ -135,8 +116,7 @@ void RenderManager::BeginRendering(const RenderPass& new_pass) {
 }
 
 void RenderManager::EndRendering() {
-    if (!scheduler.CapturingReplay() && !scheduler.DrainingReplay() &&
-        !scheduler.ReadingBeforeReplay()) scheduler.FlushReplay();
+    if (!scheduler.CapturingReplay() && !scheduler.DrainingReplay()) scheduler.FlushReplay();
     if (!pass.render_pass) {
         return;
     }
@@ -201,8 +181,7 @@ void RenderManager::EndRendering() {
     // The Mali guide recommends flushing at the end of each major renderpass
     // Testing has shown this has a significant effect on rendering performance
     if (num_draws > MinDrawsToFlush && instance.ShouldFlush() &&
-        !scheduler.CapturingReplay() && !scheduler.DrainingReplay() &&
-        !scheduler.ReadingBeforeReplay()) {
+        !scheduler.CapturingReplay() && !scheduler.DrainingReplay()) {
         scheduler.Flush();
         num_draws = 0;
     }

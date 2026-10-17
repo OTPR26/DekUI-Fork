@@ -11,6 +11,7 @@
 #include "mm3d/camera_instruction_probe.h"
 #include "mm3d/form_camera.h"
 #include "mm3d/camera_live.h"
+#include "mm3d/camera_distance.h"
 #include "mm3d/camera_midpoint.h"
 #include "mm3d/link_pose_capture.h"
 #include "mm3d/diagnostics.h"
@@ -26,13 +27,17 @@
 #include "mm3d/death_penalties.h"
 #include "mm3d/classic_save_hooks.h"
 #include "mm3d/bottle_healing.h"
+#include "mm3d/movement_speed.h"
+#include "mm3d/player_model_scale.h"
+#include "mm3d/adult_stick_contact.h"
+#include "mm3d/model_mod.h"
+
 #include "mm3d/inventory_shadow.h"
 #include "mm3d/items_map_prompt.h"
 #include "mm3d/menu_help.h"
 #include "mm3d/world_map_prompt.h"
 #include "mm3d/menu_tabs.h"
 #include "mm3d/pause_capture.h"
-#include "mm3d/visibility_depth.h"
 #include "mm3d/native_notebook.h"
 #include "mm3d/native_file_select.h"
 #include "mm3d/file_select_prompt.h"
@@ -99,6 +104,12 @@ constexpr u32 SIGILL = 4;
 constexpr u32 SIGTRAP = 5;
 #endif
 
+#ifdef ENABLE_MM3D_PRESENTATION
+static_assert(MM3D::AdultStickContact::FirstSVC >= MM3D::PlayerModelScale::FirstSVC + MM3D::PlayerModelScale::PCs.size());
+static_assert(MM3D::PlayerModelScale::FirstSVC >= MM3D::CameraDistance::FirstSVC + MM3D::CameraDistance::Loads.size() ||
+              MM3D::PlayerModelScale::FirstSVC + MM3D::PlayerModelScale::PCs.size() <= MM3D::CameraDistance::FirstSVC,
+              "Player model scale and Camera Distance hook IDs must not overlap");
+#endif
 namespace Core {
 
 class DynarmicUserCallbacks final : public Dynarmic::A32::UserCallbacks {
@@ -109,6 +120,7 @@ public:
 
 #ifdef ENABLE_MM3D_PRESENTATION
     MM3D::FormCamera::Hook form_camera;
+    MM3D::CameraDistance::Orbit camera_distance_orbit;
     MM3D::FormCamera::ArrivalLens arrival_lens;
     MM3D::FormCamera::OcarinaReturnLens ocarina_return_lens;
     MM3D::FormCamera::DekuFreeCamera deku_free_camera;
@@ -132,7 +144,6 @@ public:
     MM3D::MenuBackdrop::Hook menu_backdrop;
     u32 menu_sound_context=0;
     MM3D::PauseCapture::Hook pause_capture_hook;
-    MM3D::VisibilityDepth::Hook visibility_depth_hook;
     MM3D::NativeNotebook::Hook notebook_hook;
     MM3D::NativeFileSelect::Hook file_select_hook;
     MM3D::FileSelectPrompt::Hook file_select_prompt_hook;
@@ -210,6 +221,30 @@ public:
             const auto process=parent.system.Kernel().GetCurrentProcess();
             if(process&&process->codeset&&process->codeset->program_id==0x0004000000125500ULL&&MM3D::MinimapShortcut::CodeMatches(code))
                 return MM3D::MinimapShortcut::Instruction(vaddr,*instruction);
+        }
+        if(instruction&&MM3D::CameraDistance::Instruction(vaddr,*instruction)!=*instruction) {
+            struct CodeMemory {Memory::MemorySystem& memory;std::optional<u32> Read(u32 at){return memory.Read32OrNullopt(at);}} code{memory};
+            const auto process=parent.system.Kernel().GetCurrentProcess();
+            if(process&&process->codeset&&process->codeset->program_id==0x0004000000125500ULL&&MM3D::CameraDistance::CodeMatches(code,vaddr))
+                return MM3D::CameraDistance::Instruction(vaddr,*instruction);
+        }
+        if(instruction&&MM3D::AdultStickContact::Instruction(vaddr,*instruction)!=*instruction) {
+            struct CodeMemory {Memory::MemorySystem& memory;std::optional<u32> Read(u32 at){return memory.Read32OrNullopt(at);}} code{memory};
+            const auto process=parent.system.Kernel().GetCurrentProcess();
+            if(process&&process->codeset&&process->codeset->program_id==0x0004000000125500ULL&&MM3D::AdultStickContact::CodeMatches(code))
+                return MM3D::AdultStickContact::Instruction(vaddr,*instruction);
+        }
+        if(instruction&&MM3D::PlayerModelScale::Instruction(vaddr,*instruction)!=*instruction) {
+            struct CodeMemory {Memory::MemorySystem& memory;std::optional<u32> Read(u32 at){return memory.Read32OrNullopt(at);}} code{memory};
+            const auto process=parent.system.Kernel().GetCurrentProcess();
+            if(process&&process->codeset&&process->codeset->program_id==0x0004000000125500ULL&&MM3D::PlayerModelScale::CodeMatches(code))
+                return MM3D::PlayerModelScale::Instruction(vaddr,*instruction);
+        }
+        if(instruction&&MM3D::MovementSpeed::Instruction(vaddr,*instruction)!=*instruction) {
+            struct CodeMemory {Memory::MemorySystem& memory;std::optional<u32> Read(u32 at){return memory.Read32OrNullopt(at);}} code{memory};
+            const auto process=parent.system.Kernel().GetCurrentProcess();
+            if(process&&process->codeset&&process->codeset->program_id==0x0004000000125500ULL&&MM3D::MovementSpeed::CodeMatches(code))
+                return MM3D::MovementSpeed::Instruction(vaddr,*instruction);
         }
         if(instruction&&MM3D::BottleHealing::Instruction(vaddr,*instruction)!=*instruction) {
             struct CodeMemory {Memory::MemorySystem& memory;std::optional<u32> Read(u32 at){return memory.Read32OrNullopt(at);}} code{memory};
@@ -414,15 +449,6 @@ public:
             if(process&&process->codeset&&process->codeset->program_id==0x0004000000125500ULL&&MM3D::NativeItemPresent::IntroCodeMatches(code))
                 return MM3D::NativeItemPresent::IntroInstruction(vaddr,*instruction);
         }
-        if (instruction && MM3D::VisibilityDepth::Instruction(vaddr, *instruction) != *instruction) {
-            struct CodeMemory { Memory::MemorySystem& memory;
-                std::optional<u32> Read(u32 at) { return memory.Read32OrNullopt(at); }
-            } code{memory};
-            const auto process = parent.system.Kernel().GetCurrentProcess();
-            if (process && process->codeset && process->codeset->program_id == MM3D::VisibilityDepth::Title &&
-                MM3D::VisibilityDepth::CodeMatches(code))
-                return MM3D::VisibilityDepth::Instruction(vaddr, *instruction);
-        }
         if(instruction&&MM3D::PauseCapture::Instruction(vaddr,*instruction)!=*instruction) {
             struct CodeMemory {Memory::MemorySystem& memory;std::optional<u32> Read(u32 at){return memory.Read32OrNullopt(at);}} code{memory};
             const auto process=parent.system.Kernel().GetCurrentProcess();
@@ -570,28 +596,6 @@ public:
 
     void CallSVC(std::uint32_t swi) override {
 #ifdef ENABLE_MM3D_PRESENTATION
-        if (swi == MM3D::VisibilityDepth::FirstSVC || swi == MM3D::VisibilityDepth::FirstSVC + 1) {
-            auto& regs = parent.jit->Regs();
-            const bool enabled = MM3D::CameraMidpoint::enabled.load();
-            const auto generation = MM3D::CameraMidpoint::generation.load();
-            if (swi == MM3D::VisibilityDepth::FirstSVC) {
-                struct CodeMemory { Memory::MemorySystem& memory;
-                    std::optional<u32> Read(u32 at) { return memory.Read32OrNullopt(at); }
-                } code{memory};
-                visibility_depth_hook.Begin(code, enabled, MM3D::guest_frames.load(), generation);
-                regs[0] = 0; // displaced MOV r0,#0; flags unchanged
-            } else {
-                const auto cached = visibility_depth_hook.Read(regs[2], regs[0], enabled, generation);
-                if (cached) regs[0] = *cached;
-                else {
-                    const u32 address = regs[2] + (regs[0] << 2);
-                    MM3D::InterpolationPerformance::GuestReadScope origin{
-                        address, MM3D::VisibilityDepth::LoadPC, regs[14]};
-                    regs[0] = memory.Read32(address); // exact displaced LDR on every fallback
-                }
-            }
-            return;
-        }
         if(swi==MM3D::ScreenShrink::GuardSVC) {
             auto& regs=parent.jit->Regs();
             regs[15]=MM3D::ScreenShrink::Guard(regs[5],regs[0],parent.jit->Cpsr(),regs[3]);
@@ -666,6 +670,38 @@ public:
             struct GuestMemory {Memory::MemorySystem& memory;
                 std::optional<u32> Read(u32 at){return memory.Read32OrNullopt(at);}} guest{memory};
             MM3D::MinimapShortcut::Handle(guest,parent.jit->Regs());
+            return;
+        }
+        if(swi>=MM3D::CameraDistance::FirstSVC&&swi<MM3D::CameraDistance::FirstSVC+MM3D::CameraDistance::Loads.size()) {
+            struct GuestMemory {Memory::MemorySystem& memory;std::optional<u32> Read(u32 at){return memory.Read32OrNullopt(at);}} guest{memory};
+            MM3D::CameraDistance::ApplyLoad(guest,parent.jit->Regs(),parent.jit->ExtRegs(),swi-MM3D::CameraDistance::FirstSVC,
+                MM3D::CameraDistance::multiplier.load(),&camera_distance_orbit);
+            return;
+        }
+        if(swi==MM3D::AdultStickContact::FirstSVC) {
+            struct GuestMemory {Memory::MemorySystem& memory;
+                std::optional<u32> Read(u32 at){return memory.Read32OrNullopt(at);}} guest{memory};
+            const auto before=parent.jit->ExtRegs()[1];
+            if(MM3D::AdultStickContact::Apply(guest,parent.jit->Regs(),parent.jit->ExtRegs(),MM3D::ModelMod::adult_active.load())) {
+                static unsigned reports=0;
+                if(reports++<4)LOG_INFO(Core_ARM11,"Adult Link torch contact: vertical separation={}, corrected distance={}",
+                    std::bit_cast<float>(before),std::bit_cast<float>(parent.jit->ExtRegs()[1]));
+            }
+            return;
+        }
+        if(swi>=MM3D::PlayerModelScale::FirstSVC&&swi<MM3D::PlayerModelScale::FirstSVC+4) {
+            struct GuestMemory {Memory::MemorySystem& memory;
+                std::optional<u32> Read(u32 at){return memory.Read32OrNullopt(at);}} guest{memory};
+            MM3D::PlayerModelScale::Apply(guest,parent.jit->Regs(),parent.jit->ExtRegs(),
+                swi-MM3D::PlayerModelScale::FirstSVC,MM3D::ModelMod::adult_active.load());
+            return;
+        }
+        if(swi>=MM3D::MovementSpeed::FirstSVC&&swi<MM3D::MovementSpeed::FirstSVC+4) {
+            struct GuestMemory {Memory::MemorySystem& memory;
+                std::optional<u32> Read(u32 at){return memory.Read32OrNullopt(at);}
+                void Write(u32 at,u32 value){memory.Write32(at,value);}} guest{memory};
+            MM3D::MovementSpeed::Apply(guest,parent.jit->Regs(),parent.jit->ExtRegs(),swi-MM3D::MovementSpeed::FirstSVC,
+                MM3D::MovementSpeed::walk.load(),MM3D::MovementSpeed::climb.load(),MM3D::MovementSpeed::swim.load());
             return;
         }
         if(swi>=MM3D::BottleHealing::FirstSVC&&swi<MM3D::BottleHealing::FirstSVC+3) {
@@ -1285,6 +1321,7 @@ public:
                 const auto before=guest.Read(regs[13]);
                 form_camera.Radius(guest,regs);
                 arrival_lens.Radius(guest,regs,form_camera);
+                camera_distance_orbit.Apply(guest,regs,form_camera,MM3D::CameraDistance::multiplier.load());
                 if(MM3D::FormCamera::diagnostics.load()) {
                     const auto after=guest.Read(regs[13]);
                     LOG_INFO(Core_ARM11,"Form camera orbit: cam={:08x} native={} applied={} saved={}",
@@ -1341,6 +1378,7 @@ public:
             form_camera.ChangeMode(guest,cam,effective);
             entry_recovery_orbit.Observe(guest,cam,effective);
             deku_free_camera.Observe(cam,effective);
+            camera_distance_orbit.Observe(cam,effective);
             if(MM3D::FormCamera::diagnostics.load()) {
                 const auto player=guest.Read(cam+0xa4).value_or(0);
                 LOG_INFO(Core_ARM11,"Arrival lens mode: before={} active={} setting={} normal={} native={} ground={:08x} requested={}",

@@ -299,27 +299,6 @@ TextureRuntime::TextureRuntime(const Instance& instance, Scheduler& scheduler,
 
 TextureRuntime::~TextureRuntime() = default;
 
-#ifdef ENABLE_MM3D_PRESENTATION
-void TextureRuntime::QueueVisibilityDepth(Surface& surface, vk::Buffer buffer) {
-    const VideoCore::BufferTextureCopy copy{
-        .buffer_offset = 0, .buffer_size = surface.width * surface.height * 4,
-        .texture_rect = surface.GetRect(), .texture_level = 0,
-    };
-    blit_helper.DepthToBuffer(surface, buffer, copy);
-    scheduler.Record([buffer, size = copy.buffer_size](vk::CommandBuffer cmd) {
-        const vk::BufferMemoryBarrier barrier{
-            .srcAccessMask = vk::AccessFlagBits::eShaderWrite,
-            .dstAccessMask = vk::AccessFlagBits::eHostRead,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .buffer = buffer, .offset = 0, .size = size,
-        };
-        cmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, vk::PipelineStageFlagBits::eHost,
-                            {}, {}, barrier, {});
-    });
-}
-#endif
-
 VideoCore::StagingData TextureRuntime::FindStaging(u32 size, bool upload) {
     StreamBuffer& buffer = upload ? upload_buffer : download_buffer;
     const auto [data, offset, invalidate] = buffer.Map(size, 16);
@@ -1055,11 +1034,6 @@ void Surface::Download(const VideoCore::BufferTextureCopy& download,
 #ifdef ENABLE_MM3D_PRESENTATION
     MM3D::InterpolationPerformance::TraceDownload(addr,width,height,static_cast<unsigned>(pixel_format));
 #endif
-    // Only the native depth is read, and its layout is restored before replay.
-    // Unknown/aliasing replay writes and other formats use the original drain.
-    Scheduler::NativeReadbackScope readback{scheduler,
-        pixel_format == PixelFormat::D24S8 && download.texture_level == 0 &&
-        runtime.renderpass_cache.CanReadbackBeforeReplay(Image())};
     SCOPE_EXIT({
         scheduler.Finish();
         runtime.download_buffer.Commit(staging.size);

@@ -1,3 +1,5 @@
+> Preserved upstream notes. For this fork’s Android release and current limitations, start with [README.md](README.md).
+
 # Known issues
 
 - Camera behavior may have issues, including unexpected zoom or positioning.

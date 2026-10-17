@@ -1,7 +1,6 @@
 // Copyright 2026 MM3D presentation contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
-#include <array>
 #include <atomic>
 #include <string_view>
 #include <fmt/format.h>
@@ -24,7 +23,6 @@ public:
     Profiles::Profile profile;
     vk::ImageView View() const { return view; }
     vk::Image Image() const { return image; }
-    std::array<vk::Image, 2> Attachments() const { return {image, depth_image}; }
     unsigned Width() const { return width; }
     unsigned Height() const { return height; }
     bool CanBatch(unsigned w, unsigned h) const {

@@ -24,7 +24,7 @@ import org.citra.citra_emu.utils.BuildUtil
  * C++ Citra log file directory will be /log/azahar_log.txt.
  * After DocumentsTree.resolvePath() it will become content URI.
  */
-class DocumentsTree {
+class DocumentsTree(private val externalReadOnly: Boolean = false) {
     private var root: DocumentsNode? = null
     private val context get() = CitraApplication.appContext
 
@@ -37,6 +37,7 @@ class DocumentsTree {
 
     @Synchronized
     fun createFile(filepath: String, name: String): Boolean {
+        if (externalReadOnly) return false
         val node = resolvePath(filepath) ?: return false
         if (!node.isDirectory) return false
         if (!node.loaded) structTree(node)
@@ -55,6 +56,7 @@ class DocumentsTree {
 
     @Synchronized
     fun createDir(filepath: String, name: String): Boolean {
+        if (externalReadOnly) return false
         val node = resolvePath(filepath) ?: return false
         if (!node.isDirectory) return false
         if (!node.loaded) structTree(node)
@@ -73,6 +75,7 @@ class DocumentsTree {
 
     @Synchronized
     fun openContentUri(filepath: String, openMode: String): Int {
+        if (externalReadOnly && openMode != "r") return -1
         val node = resolvePath(filepath) ?: return -1
         return FileUtil.openContentUri(node.uri.toString(), openMode)
     }
@@ -272,7 +275,7 @@ class DocumentsTree {
 
     @Synchronized
     private fun resolvePath(filepath: String): DocumentsNode? {
-        if (!BuildUtil.isGooglePlayBuild) {
+        if (!BuildUtil.isGooglePlayBuild && !externalReadOnly) {
             var isLegalPath = false
             kotlinDirectoryAccessWhitelist.forEach {
                 if (filepath.startsWith(it)) {

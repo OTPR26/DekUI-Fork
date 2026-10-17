@@ -11,12 +11,11 @@
 #include <string_view>
 #include "common/logging/log.h"
 #include "mm3d/interpolation_timeline.h"
-#include "mm3d/visibility_depth.h"
 
 namespace MM3D::InterpolationPerformance {
 using U64=std::uint64_t;
 enum class Part { Draw, Replay, Skeleton, WorkerWait, GpuWait, Submit, AcquireFrame, Compose, Present,
-                  NativePass, MidpointPass, SlowFrame, UniformReuse, TexelReuse, VertexReuse, UploadReuse, DownloadReuse, CpuVertexReplay, VisibilityRefresh, Count };
+                  NativePass, MidpointPass, SlowFrame, UniformReuse, TexelReuse, VertexReuse, UploadReuse, DownloadReuse, CpuVertexReplay, Count };
 inline U64 Now() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -32,9 +31,6 @@ inline std::array<U64,static_cast<unsigned>(Part::Count)> gpu_part_max{};
 inline Sample gpu_sample{};
 inline U64 gpu_max{};
 inline U64 slow_frames{}, slow_frame_ns_max{};
-struct WindowGap { U64 at{}, ns{}; };
-inline std::array<WindowGap, 16> window_gaps{};
-inline U64 window_gap_count{};
 inline U64 ActiveSession();
 struct GuestReadInfo { bool active{}; U64 address{}, pc{}, lr{}; };
 inline thread_local GuestReadInfo guest_read;
@@ -91,51 +87,6 @@ inline std::array<PresentTrace, 4096> present_traces{};
 inline unsigned submission_trace_count{}, present_trace_count{};
 inline U64 submission_traces_dropped{}, present_traces_dropped{};
 inline U64 replay_batch_count{}, replay_batch_scopes{}, replay_batch_max{};
-inline U64 readback_count{}, readback_pending{}, readback_prioritized{}, readback_deferred_scopes{};
-
-inline U64 visibility_reads{}, visibility_hits{}, visibility_snapshots{};
-enum class VisibilityEvent {
-    CleanMemory, UnsupportedSurface, InvalidCurrentPixel, PendingCandidate,
-    DiscardedCandidate, SurfaceCandidate, SceneCandidate, FrameAgeCandidate,
-    WallAgeCandidate, SameFrameWriteCandidate, HostInvalidateFailure,
-    NoSnapshot, InvalidCachedPixel, SelectedExpired, RingFull, AllocationFailure,
-    HistoryReset, CpuInvalidation, SceneReset, SurfaceReset, FrameRollbackReset,
-    CachedAge, RefreshQueued, RefreshInvalidated, Count
-};
-struct VisibilityEventStats { U64 count{}, max_age_ns{}, max_frame_age{}; };
-inline std::array<VisibilityEventStats, static_cast<unsigned>(VisibilityEvent::Count)> visibility_events{};
-// Aggregate only during an explicit performance capture; no per-read log spam.
-// Candidate counters are per slot inspected, not mutually exclusive read totals.
-inline void RecordVisibilityEvent(VisibilityEvent event, U64 age_ns = 0, U64 frame_age = 0) {
-    if (!pending.load(std::memory_order_relaxed)) return;
-    const auto now = Now();
-    std::scoped_lock lock{mutex};
-    if (!pending || now < begin || now >= end) return;
-    auto& stats = visibility_events[static_cast<unsigned>(event)];
-    ++stats.count;
-    stats.max_age_ns = std::max(stats.max_age_ns, age_ns);
-    stats.max_frame_age = std::max(stats.max_frame_age, frame_age);
-}
-inline void RecordVisibilityDepth(bool read, bool hit, bool snapshot) {
-    if (!pending.load(std::memory_order_relaxed)) return;
-    const auto now = Now();
-    std::scoped_lock lock{mutex};
-    if (!pending || now < begin || now >= end) return;
-    visibility_reads += read;
-    visibility_hits += hit;
-    visibility_snapshots += snapshot;
-}
-
-inline void RecordReadbackPriority(bool queued, bool prioritized, unsigned scopes) {
-    if (!pending.load(std::memory_order_relaxed)) return;
-    const auto now = Now();
-    std::scoped_lock lock{mutex};
-    if (!pending || now < begin || now >= end) return;
-    ++readback_count;
-    readback_pending += queued;
-    readback_prioritized += prioritized;
-    if (prioritized) readback_deferred_scopes += scopes;
-}
 
 inline void RecordReplayBatch(unsigned scopes) {
     if (!pending.load(std::memory_order_relaxed)) return;
@@ -186,22 +137,6 @@ inline void RecordPresent(const PresentTrace& trace) {
 // Called with the capture mutex held. Worker timestamps are atomic; an unfinished
 // tail is explicitly excluded, never waited for. No logging inside queue locks.
 inline void ReportTimeline() {
-    LOG_INFO(Render_Vulkan, "Interpolation visibility depth session={} reads={} cached={} exact_fallback={} snapshots={}; bounded to one guest frame and {}ms; ordinary depth reads remain exact", session, visibility_reads, visibility_hits, visibility_reads - visibility_hits, visibility_snapshots, VisibilityDepth::MaxAgeNs / 1'000'000);
-    constexpr std::array visibility_names{
-        "clean_memory", "unsupported_surface", "invalid_current_pixel", "candidate_pending",
-        "candidate_discarded", "candidate_surface", "candidate_scene", "candidate_frame_age",
-        "candidate_wall_age", "candidate_same_frame_write", "host_invalidate_failure",
-        "no_snapshot", "invalid_cached_pixel", "selected_expired", "ring_full", "allocation_failure",
-        "history_reset", "cpu_invalidation", "scene_reset", "surface_reset", "frame_rollback_reset",
-        "cached_age", "refresh_queued", "refresh_invalidated"};
-    static_assert(visibility_names.size() == visibility_events.size());
-    for (unsigned i = 0; i < visibility_events.size(); ++i) {
-        const auto& stats = visibility_events[i];
-        if (stats.count)
-            LOG_INFO(Render_Vulkan, "Interpolation visibility detail session={} event={} count={} max_age_ms={} max_frame_age={}; candidate counts are per slot, not per read", session, visibility_names[i], stats.count, double(stats.max_age_ns) / 1e6, stats.max_frame_age);
-    }
-    LOG_INFO(Render_Vulkan, "Interpolation readback priority session={} downloads={} pending_replay={} prioritized={} deferred_scopes={}; native depth completes without retiring replay resources",
-             session, readback_count, readback_pending, readback_prioritized, readback_deferred_scopes);
     LOG_INFO(Render_Vulkan, "Interpolation replay batching session={} batches={} scopes={} mean_scopes={} max_scopes={}; scopes are captured world-draw groups, not display frames",
              session, replay_batch_count, replay_batch_scopes,
              replay_batch_count ? double(replay_batch_scopes) / replay_batch_count : 0., replay_batch_max);
@@ -349,10 +284,6 @@ inline void Start(bool replay_enabled,bool presentation_enabled) {
     submission_traces={};submission_trace_count=present_trace_count=0;
     submission_traces_dropped=present_traces_dropped=0;
     replay_batch_count=replay_batch_scopes=replay_batch_max=0;
-    readback_count=readback_pending=readback_prioritized=readback_deferred_scopes=0;
-    visibility_reads=visibility_hits=visibility_snapshots=0;
-    visibility_events={};
-    window_gaps={};window_gap_count=0;
     samples={};gpu_parts={};gpu_part_max={};gpu_sample={};gpu_max=0;slow_frames=slow_frame_ns_max=0;
     previous=intervals=interval_sum=interval_max=0;pending=true;
     LOG_INFO(Render_Vulkan,"Interpolation performance start session={} replay={} present60={} delay_s=3 duration_s=30; CPU nested scopes overlap. GPU timestamps measure completed submission spans, including GPU waits, not utilization; unfinished tail submissions are excluded. Keep scene, resolution and draw distance unchanged for off/on comparison.",session,enabled,present);
@@ -415,22 +346,12 @@ inline void Tick(bool replay_enabled,bool presentation_enabled) {
     }
     const auto now=Now();if(now<begin)return;
     if(now<end) {
-        if(previous){
-            const auto dt=now-previous;++intervals;interval_sum+=dt;interval_max=std::max(interval_max,dt);
-            if(dt>25'000'000) {
-                ++window_gap_count;
-                auto slot=std::min_element(window_gaps.begin(),window_gaps.end(),
-                    [](const auto& a,const auto& b){return a.ns<b.ns;});
-                if(dt>slot->ns)*slot={previous-begin,dt};
-            }
-        }
+        if(previous){const auto dt=now-previous;++intervals;interval_sum+=dt;interval_max=std::max(interval_max,dt);}
         previous=now;return;
     }
     pending=false;
     ReportTimeline();
     LOG_INFO(Render_Vulkan,"Interpolation performance complete session={} replay={} present60={} window_calls={} mean_window_interval_ms={} max_window_interval_ms={}; window callbacks are not display scanout",session,enabled,present,intervals+bool(previous),intervals?double(interval_sum)/intervals/1e6:0.,double(interval_max)/1e6);
-    for(const auto& gap:window_gaps) if(gap.ns)
-        LOG_INFO(Render_Vulkan,"Interpolation window gap session={} start_ms={} duration_ms={} total_over_25ms={}; largest 16 callback gaps, not display scanout",session,double(gap.at)/1e6,double(gap.ns)/1e6,window_gap_count);
     LOG_INFO(Render_Vulkan,"Interpolation performance GPU session={} completed_submissions={} total_ms={} mean_ms={} max_ms={}; submission spans may overlap; not GPU utilization or scanout",session,gpu_sample.calls,double(gpu_sample.ns)/1e6,gpu_sample.calls?double(gpu_sample.ns)/gpu_sample.calls/1e6:0.,double(gpu_max)/1e6);
     for(const auto part : {Part::NativePass,Part::MidpointPass}) {
         const auto& s=gpu_parts[static_cast<unsigned>(part)];
@@ -447,7 +368,7 @@ inline void Tick(bool replay_enabled,bool presentation_enabled) {
     }
     if(wait_sites_dropped)
         LOG_INFO(Render_Vulkan,"Interpolation GPU wait source overflow session={} dropped={}",session,wait_sites_dropped);
-    constexpr std::array names{"draw_total_including_replay","extra_frame_replay_including_skeleton","skeleton_matching_and_interpolation","scheduler_worker_wait","scheduler_gpu_wait","driver_queue_submit","acquire_present_frame","screen_composition","queue_present","native_pass","midpoint_pass","slow_frame","uniform_buffer_reuse_wait","texel_buffer_reuse_wait","vertex_buffer_reuse_wait","upload_buffer_reuse_wait","download_buffer_reuse_wait","cpu_vertex_replay_and_upload","visibility_background_refresh"};
+    constexpr std::array names{"draw_total_including_replay","extra_frame_replay_including_skeleton","skeleton_matching_and_interpolation","scheduler_worker_wait","scheduler_gpu_wait","driver_queue_submit","acquire_present_frame","screen_composition","queue_present","native_pass","midpoint_pass","slow_frame","uniform_buffer_reuse_wait","texel_buffer_reuse_wait","vertex_buffer_reuse_wait","upload_buffer_reuse_wait","download_buffer_reuse_wait","cpu_vertex_replay_and_upload"};
     static_assert(names.size() == samples.size());
     for(unsigned i=0;i<samples.size();++i) {
         const auto& s=samples[i];

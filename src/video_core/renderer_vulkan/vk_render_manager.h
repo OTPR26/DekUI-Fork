@@ -5,8 +5,6 @@
 #pragma once
 
 #include <mutex>
-#include <span>
-#include <vector>
 
 #include "common/math_util.h"
 #include "video_core/renderer_vulkan/vk_common.h"
@@ -55,10 +53,7 @@ public:
 
     class ReplayScope {
     public:
-        // Nonempty writes certifies this capture only writes those private
-        // attachments. Unknown captures retain full ordering at readbacks.
-        ReplayScope(RenderManager& manager_, bool eligible,
-                    std::span<const vk::Image> writes = {});
+        ReplayScope(RenderManager& manager_, bool eligible);
         ~ReplayScope();
         ReplayScope(const ReplayScope&) = delete;
         ReplayScope& operator=(const ReplayScope&) = delete;
@@ -70,7 +65,6 @@ public:
                pass.render_area == vk::Rect2D{{0, 0}, {width, height}};
     }
     u64 PassesStarted() const { return passes_started; }
-    bool CanReadbackBeforeReplay(vk::Image source) const;
 
     /// Returns the renderpass associated with the color-depth format pair
     vk::RenderPass GetRenderpass(VideoCore::PixelFormat color, VideoCore::PixelFormat depth,
@@ -99,8 +93,6 @@ private:
     RenderPass replay_pass{};
     u32 replay_num_draws{};
     u64 passes_started{};
-    std::vector<vk::Image> replay_writes;
-    bool replay_writes_known{};
 };
 
 } // namespace Vulkan

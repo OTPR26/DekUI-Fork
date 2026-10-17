@@ -126,9 +126,6 @@ public:
     /// Get a surface that matches a "texture copy" display transfer config
     SurfaceRect_Tuple GetTexCopySurface(const SurfaceParams& params);
 
-    /// Inspect the dirty owner without downloading, validating or changing it.
-    Surface* GetDirtySurface(PAddr addr, u32 size);
-
     /// Write any cached resources overlapping the region back to memory (if dirty)
     void FlushRegion(PAddr addr, u32 size, SurfaceId flush_surface = {});
 

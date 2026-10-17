@@ -29,6 +29,10 @@ int main(int argc,char** argv) {
         if(bad==4)Set(m,0x775312,0,2);
         const auto before=m.words;Tick(m,bad!=0);
         assert(!ready&&result==-1&&pending==0&&m.words==before);
+        const Availability expected_statuses[]{Availability::Title,Availability::Code,Availability::Context,Availability::SaveMemory,Availability::Health};
+        assert(availability==expected_statuses[bad]);
+        if(bad==1)assert(failed_address==Guards[0].first&&expected_word==Guards[0].second&&actual_word==(Guards[0].second^1)&&actual_readable);
+        if(bad==3)assert(failed_address==0x775384);
     }
     m=Fixture();Reset();Queue(Rupees500);Tick(m,true);
     assert(Get(m,0x775318,2)==500&&m.words[0x775318]>>16==0xa5a5);

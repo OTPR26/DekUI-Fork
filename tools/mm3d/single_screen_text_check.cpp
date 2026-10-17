@@ -47,12 +47,12 @@ int main(int argc,char** argv) {
             assert(m.data[i]==expected);
         }
         auto once=m.data;m.writes=0;Apply(m,Memory::Self,r.id);assert(m.data==once&&m.writes==0);
-        enabled.store(false);
+        enabled.store(false);neutral_enabled.store(false);
         Memory disabled(original);Apply(disabled,Memory::Self,r.id);
         assert(disabled.data==original&&disabled.writes==0);
         Apply(m,Memory::Self,r.id);assert(m.data==original);
         m.writes=0;Apply(m,Memory::Self,r.id);assert(m.writes==0);
-        enabled.store(true);Apply(m,Memory::Self,r.id);assert(m.data==once);
+        enabled.store(true);neutral_enabled.store(true);Apply(m,Memory::Self,r.id);assert(m.data==once);
         // Failure must leave the entire file and neighboring messages untouched.
         for(unsigned scenario=0;scenario<8;++scenario) {
             Memory bad(original);
@@ -71,6 +71,26 @@ int main(int argc,char** argv) {
     }
     };
     check(Replacements,original);
+    // Exercise every live transition: neutral, single-screen, and original.
+    // Both preferences operate independently, including neutral with single-screen off.
+    for(const auto& r:Replacements) {
+        Memory m(original);const auto entry=m.Entry(r.id);
+        const auto offset=*m.Read(entry+12),size=*m.Read(entry+16);
+        const Replacement* basic=nullptr;
+        for(const auto& candidate:SingleScreenReplacements)if(candidate.id==r.id)basic=&candidate;
+        for(unsigned mode:{3,1,0,2,1,3,0,3}) {
+            enabled.store(mode&1);neutral_enabled.store(mode&2);
+            const auto expected=(mode&2)?r.text:((mode&1)&&basic?basic->text:r.original);
+            Apply(m,Memory::Self,r.id);
+            for(U32 i=0;i<original.size();++i) {
+                auto value=original[i];
+                if(i>=offset&&i<offset+size)value=i-offset<expected.size()?expected[i-offset]:0;
+                assert(m.data[i]==value);
+            }
+            m.writes=0;Apply(m,Memory::Self,r.id);assert(m.writes==0);
+        }
+    }
+    enabled.store(true);neutral_enabled.store(true);
     if(argc==5){check(FrenchReplacements,Load(argv[3]));check(SpanishReplacements,Load(argv[4]));}
     Memory untouched(original);
     for(U32 id:{0x887,0x1273,0x191f,0x1f41,0x1f42,0x2ac1,0x5145,0xffff})Apply(untouched,Memory::Self,id);
@@ -82,6 +102,6 @@ int main(int argc,char** argv) {
     }
     assert(CodeMatches(code));assert(Instruction(PC,Word)==(0xef000000|SVC));
     code.words[PC+4]^=1;assert(!CodeMatches(code));
-    std::cout<<"Text replacements: full-file isolation, idempotence, malformed input and code guards passed\n";
+    std::cout<<"Text replacements: independent live toggles, full-file isolation, idempotence, malformed input and code guards passed\n";
     return 0;
 }

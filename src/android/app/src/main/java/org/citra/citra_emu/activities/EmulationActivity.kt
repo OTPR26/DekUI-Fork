@@ -14,6 +14,8 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.InputDevice
 import android.view.KeyEvent
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import android.view.MotionEvent
 import android.view.Window
 import android.view.WindowManager
@@ -63,6 +65,7 @@ import org.citra.citra_emu.viewmodel.EmulationViewModel
 class EmulationActivity : AppCompatActivity() {
     private val preferences: SharedPreferences
         get() = PreferenceManager.getDefaultSharedPreferences(CitraApplication.appContext)
+    private var reattachExistingSession = false
     var isActivityRecreated = false
     private val emulationViewModel: EmulationViewModel by viewModels()
     val settingsViewModel: SettingsViewModel by viewModels()
@@ -101,6 +104,7 @@ class EmulationActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        reattachExistingSession = NativeLibrary.isRunning()
         requestWindowFeature(Window.FEATURE_NO_TITLE)
 
         RefreshRateUtil.enforceRefreshRate(this, sixtyHz = true)
@@ -142,7 +146,9 @@ class EmulationActivity : AppCompatActivity() {
         val navHostFragment =
             supportFragmentManager.findFragmentById(R.id.fragment_container) as NavHostFragment
         val navController = navHostFragment.navController
-        navController.setGraph(R.navigation.emulation_navigation, intent.extras)
+        if (savedInstanceState == null) {
+            navController.setGraph(R.navigation.emulation_navigation, intent.extras)
+        }
 
         isActivityRecreated = savedInstanceState != null
 
@@ -177,6 +183,15 @@ class EmulationActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        // Returning through the launcher or tapping the same game must reconnect
+        // the running session rather than stop it and rebuild the game graph.
+        val sameGame = intent.data != null && intent.data == this.intent.data
+        if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION && NativeLibrary.isRunning() &&
+            (intent.getBooleanExtra("dekui_resume_existing",false) || sameGame)) {
+            reattachExistingSession=true
+            onEmulationReattached()
+            return
+        }
         setIntent(intent)
 
         NativeLibrary.stopEmulation()
@@ -203,6 +218,7 @@ class EmulationActivity : AppCompatActivity() {
     // rotations. Here we set full screen immersive repeatedly in onResume and in
     // onWindowFocusChanged to prevent the unwanted status bar state.
     override fun onResume() {
+        if (reattachExistingSession && NativeLibrary.isRunning()) onEmulationReattached()
         enableFullscreenImmersive()
         if (isEmulationReady) {
             // If emulation is ready then unblock rotation
@@ -296,6 +312,17 @@ class EmulationActivity : AppCompatActivity() {
         }
     }
 
+    /** Restore UI readiness after recreation without replaying the startup toast. */
+    fun onEmulationReattached() {
+        if (!NativeLibrary.isRunning()) return
+        emulationViewModel.setEmulationStarted(true)
+        isEmulationReady=true
+        if (isRotationBlocked) {
+            isRotationBlocked=false
+            applyOrientationSettings()
+        }
+    }
+
     fun onEmulationStarted() {
         emulationViewModel.setEmulationStarted(true)
         isEmulationReady = true
@@ -347,18 +374,89 @@ class EmulationActivity : AppCompatActivity() {
         screenAdjustmentUtil.changeActivityOrientation(orientationOption)
     }
 
+    fun dekuiSwapScreens() { screenAdjustmentUtil.swapScreen() }
+
+    val dekuiTexturePicker = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) lifecycleScope.launch {
+            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { org.citra.citra_emu.utils.DekuiTextureStorage.select(uri) }
+            }
+            android.widget.Toast.makeText(this@EmulationActivity,
+                result.fold({ "Texture folder saved. Applies next launch." }, { it.message ?: "Cannot open texture folder" }),
+                android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private var dekuiEdgeGesture = false
+    private var dekuiEdgeOpened = false
+    private var dekuiEdgeX = 0f
+    private var dekuiEdgeY = 0f
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION && NativeLibrary.isRunning()) {
+            val density = resources.displayMetrics.density
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                dekuiEdgeGesture = !NativeLibrary.isDekuiSettingsOpen() && event.x <= 24f*density
+                dekuiEdgeOpened = false
+                dekuiEdgeX = event.x; dekuiEdgeY = event.y
+            }
+            if (dekuiEdgeGesture) {
+                val dx=event.x-dekuiEdgeX; val dy=event.y-dekuiEdgeY
+                if (!dekuiEdgeOpened && event.actionMasked == MotionEvent.ACTION_MOVE &&
+                    dx>=40f*density && dx>kotlin.math.abs(dy)*1.4f) {
+                    NativeLibrary.openDekuiSettings(); dekuiEdgeOpened=true
+                }
+                if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                    dekuiEdgeGesture=false
+                }
+                return true
+            }
+        }
+        return super.dispatchTouchEvent(event)
+    }
+
+    private var dekuiLeftStickDown = false
+    private var dekuiRightStickDown = false
+    private var dekuiMenuChord = false
+
     // Gets button presses
     @Suppress("DEPRECATION")
     @SuppressLint("GestureBackNavigation")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION &&
+            org.citra.citra_emu.utils.DekuiAndroidMenu.onKey(event)) return true
+
         // TODO: Move this check into native code - prevents crash if input pressed before starting emulation
         if (!NativeLibrary.isRunning()) {
             return false
         }
 
+        if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION &&
+            (event.keyCode == KeyEvent.KEYCODE_BUTTON_THUMBL || event.keyCode == KeyEvent.KEYCODE_BUTTON_THUMBR)) {
+            val down = event.action == KeyEvent.ACTION_DOWN
+            if (event.keyCode == KeyEvent.KEYCODE_BUTTON_THUMBL) dekuiLeftStickDown = down else dekuiRightStickDown = down
+            if (dekuiLeftStickDown && dekuiRightStickDown && !dekuiMenuChord) {
+                dekuiMenuChord = true
+                if (NativeLibrary.isDekuiSettingsOpen()) NativeLibrary.closeDekuiSettings() else NativeLibrary.openDekuiSettings()
+            }
+            if (!dekuiLeftStickDown && !dekuiRightStickDown) dekuiMenuChord = false
+            return true
+        }
+
         if (emulationFragment.isDrawerOpen()) {
             return super.dispatchKeyEvent(event)
         }
+        if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION && event.keyCode == KeyEvent.KEYCODE_BACK) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                if (NativeLibrary.isDekuiSettingsOpen()) NativeLibrary.closeDekuiSettings() else NativeLibrary.openDekuiSettings()
+            }
+            return true
+        }
+        if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION && NativeLibrary.isDekuiSettingsOpen()) {
+            org.citra.citra_emu.utils.DekuiAndroidMenu.navigateKey(event)
+            return true
+        }
+
 
         when (event.action) {
             KeyEvent.ACTION_DOWN -> {
@@ -398,6 +496,14 @@ class EmulationActivity : AppCompatActivity() {
     }
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) {
+            if (org.citra.citra_emu.utils.DekuiAndroidMenu.onMotion(event)) return true
+            if (NativeLibrary.isDekuiSettingsOpen()) {
+                org.citra.citra_emu.utils.DekuiAndroidMenu.navigateMotion(event)
+                return true
+            }
+        }
+
         // TODO: Move this check into native code - prevents crash if input pressed before starting emulation
         if (!NativeLibrary.isRunning() ||
             (event.source and InputDevice.SOURCE_CLASS_JOYSTICK == 0) ||

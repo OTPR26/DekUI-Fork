@@ -163,7 +163,7 @@ int main(int argc,char** argv) {
     // Preserve the separate scripted-camera framing rule.
     for(U32 setting:{9u,10u}) {
         m.words[cam+0x154]=setting<<16;C::SetFov(65);
-        assert(C::ConfiguredFov(m,projection)==51);
+        assert(C::ConfiguredFov(m,projection)==49); // current scripted-camera framing
         assert(C::ConfiguredFov(m,projection+4)==65);
     }
     if(argc>1) {

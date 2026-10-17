@@ -98,6 +98,11 @@ class InputOverlay(context: Context?, attrs: AttributeSet?) :
         }
     }
 
+    private var dekuiTouchDownX = 0f
+    private var dekuiTouchDownY = 0f
+    private var dekuiTouchLastY = 0f
+    private var dekuiTouchScrolling = false
+    private var dekuiScrollbarX = -1f
     private var dekuiGesture = false
     private var dekuiPointer = -1
 
@@ -107,10 +112,37 @@ class InputOverlay(context: Context?, attrs: AttributeSet?) :
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
             dekuiGesture = NativeLibrary.isDekuiSettingsOpen()
             dekuiPointer = if (dekuiGesture) event.getPointerId(0) else -1
+            dekuiTouchDownX=event.x;dekuiTouchDownY=event.y;dekuiTouchLastY=event.y
+            dekuiTouchScrolling=false
+            dekuiScrollbarX=if(dekuiGesture)NativeLibrary.dekuiScrollbarCenter(
+                event.x/width.coerceAtLeast(1),event.y/height.coerceAtLeast(1)) else -1f
         }
         if (!dekuiGesture) return false
         val index = event.findPointerIndex(dekuiPointer)
         val action = event.actionMasked
+        if (action == MotionEvent.ACTION_MOVE && index >= 0) {
+            val dx=event.getX(index)-dekuiTouchDownX
+            val dy=event.getY(index)-dekuiTouchDownY
+            // A scrollbar owns its drag until release; never turn it into a swipe.
+            if (dekuiScrollbarX<0 && !dekuiTouchScrolling && kotlin.math.abs(dy)>12f*resources.displayMetrics.density &&
+                kotlin.math.abs(dy)>kotlin.math.abs(dx)*1.3f) {
+                NativeLibrary.onDekuiTouch(0f,0f,MotionEvent.ACTION_CANCEL)
+                dekuiTouchScrolling=true
+            }
+            if (dekuiTouchScrolling) {
+                NativeLibrary.onDekuiScroll(event.getX(index)/width.coerceAtLeast(1),
+                    event.getY(index)/height.coerceAtLeast(1),
+                    (event.getY(index)-dekuiTouchLastY)/(40f*resources.displayMetrics.density))
+                dekuiTouchLastY=event.getY(index)
+                return true
+            }
+            dekuiTouchLastY=event.getY(index)
+        }
+        if (dekuiTouchScrolling && (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL)) {
+            NativeLibrary.onDekuiTouch(0f,0f,MotionEvent.ACTION_CANCEL)
+            dekuiGesture=false;dekuiPointer=-1;dekuiTouchScrolling=false
+            return true
+        }
         if (action == MotionEvent.ACTION_CANCEL || index < 0) {
             NativeLibrary.onDekuiTouch(0f, 0f, MotionEvent.ACTION_CANCEL)
             dekuiPointer = -1
@@ -119,7 +151,7 @@ class InputOverlay(context: Context?, attrs: AttributeSet?) :
                 event.getPointerId(event.actionIndex) == dekuiPointer)) {
             val nativeAction = if (action == MotionEvent.ACTION_POINTER_UP) MotionEvent.ACTION_UP else action
             NativeLibrary.onDekuiTouch(
-                event.getX(index) / width.coerceAtLeast(1),
+                if(dekuiScrollbarX>=0)dekuiScrollbarX else event.getX(index) / width.coerceAtLeast(1),
                 event.getY(index) / height.coerceAtLeast(1), nativeAction
             )
             if (nativeAction == MotionEvent.ACTION_UP) dekuiPointer = -1
@@ -127,6 +159,7 @@ class InputOverlay(context: Context?, attrs: AttributeSet?) :
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
             dekuiGesture = false
             dekuiPointer = -1
+            dekuiScrollbarX = -1f
         }
         return true
     }

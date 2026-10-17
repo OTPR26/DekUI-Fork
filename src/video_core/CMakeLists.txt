@@ -202,9 +202,6 @@ if (ENABLE_VULKAN)
         shader/generator/spv_fs_shader_gen.cpp
         shader/generator/spv_fs_shader_gen.h
     )
-    if (ENABLE_MM3D_PRESENTATION)
-        target_sources(video_core PRIVATE renderer_vulkan/vk_visibility_depth.cpp renderer_vulkan/vk_visibility_depth.h)
-    endif()
     target_link_libraries(video_core PRIVATE vulkan-headers vma sirit SPIRV glslang)
 endif()
 

@@ -8,7 +8,6 @@
 #include <dynarmic/interface/A32/config.h>
 #include "mm3d/camera_instruction_probe.h"
 #include "mm3d/camera_live.h"
-#include "mm3d/visibility_depth.h"
 
 namespace {
 void Check(bool ok, const char* message) { if(!ok) throw std::runtime_error(message); }
@@ -19,8 +18,6 @@ struct Callbacks : Dynarmic::A32::UserCallbacks {
     Dynarmic::A32::Jit* jit{};
     bool instrument{};
     bool live_camera{};
-    bool visibility{};
-    std::optional<std::uint32_t> cached_depth;
     bool stopped{};
     std::uint64_t ticks{1000};
     template<class T> T Read(std::uint32_t p) {
@@ -36,8 +33,6 @@ struct Callbacks : Dynarmic::A32::UserCallbacks {
     std::uint16_t MemoryRead16(std::uint32_t p) override { return Read<std::uint16_t>(p); }
     std::optional<std::uint32_t> MemoryReadCode(std::uint32_t p) override {
         const auto value=Read<std::uint32_t>(p);
-        if (visibility && (p == 0x1000 || p == 0x1008))
-            return MM3D::VisibilityDepth::Instruction(p == 0x1000 ? MM3D::VisibilityDepth::EntryPC : MM3D::VisibilityDepth::LoadPC, value);
         if(live_camera && (p==0x1004 || p==0x100c))
             return MM3D::CameraLive::ProjectionInstruction(p==0x1004 ? 0x18d414 : 0x18d428,value);
         return value;
@@ -50,12 +45,7 @@ struct Callbacks : Dynarmic::A32::UserCallbacks {
     void MemoryWrite64(std::uint32_t p,std::uint64_t v) override { Write(p,v); }
     void InterpreterFallback(std::uint32_t, size_t) override { throw std::runtime_error("fallback"); }
     void CallSVC(std::uint32_t svc) override {
-        if (visibility && svc == MM3D::VisibilityDepth::FirstSVC) {
-            jit->Regs()[0] = 0;
-        } else if (visibility && svc == MM3D::VisibilityDepth::FirstSVC + 1) {
-            auto& r = jit->Regs();
-            r[0] = cached_depth ? *cached_depth : Read<std::uint32_t>(r[2] + (r[0] << 2));
-        } else if(live_camera && svc==MM3D::CameraLive::ProjectionSVC) {
+        if(live_camera && svc==MM3D::CameraLive::ProjectionSVC) {
             jit->ExtRegs()[0]=MM3D::CameraLive::ProjectionValue(Read<std::uint32_t>(jit->Regs()[4]+0x18),
                 MM3D::CameraLive::desired_fov.load());
         } else { stopped=true; jit->HaltExecution(); }
@@ -64,33 +54,6 @@ struct Callbacks : Dynarmic::A32::UserCallbacks {
     void AddTicks(std::uint64_t n) override { ticks = n>ticks ? 0 : ticks-n; }
     std::uint64_t GetTicksRemaining() override { return ticks; }
 };
-void RunVisibilityDepth() {
-    // Exercise the actual displaced instructions and ensuing BICS/CMP in a
-    // normal JIT block, including fast memory, rather than relying on host flags.
-    for (bool hooked : {false, true}) for (bool cached : {false, true}) {
-        Callbacks cb; cb.visibility = hooked;
-        const std::uint32_t code[]{MM3D::VisibilityDepth::EntryWord, 0xe2800003,
-            MM3D::VisibilityDepth::LoadWord, 0xe3d004ff, 0xe1510000, 0xef000000};
-        std::memcpy(cb.memory.data() + 0x1000, code, sizeof(code));
-        cb.Write<std::uint32_t>(0x200c, 0xa5123456);
-        if (cached) cb.cached_depth = 0x5a654321;
-        auto pages = std::make_unique<std::array<std::uint8_t*, Dynarmic::A32::UserConfig::NUM_PAGE_TABLE_ENTRIES>>();
-        for (unsigned i = 0; i < 4; ++i) (*pages)[i] = cb.memory.data() + i * 0x1000;
-        Dynarmic::A32::UserConfig config; config.callbacks = &cb; config.page_table = pages.get();
-        config.code_cache_size = 16 * 1024 * 1024;
-        Dynarmic::A32::Jit jit(config); cb.jit = &jit;
-        jit.Regs()[0] = 0xdeadbeef; jit.Regs()[1] = 0x300000; jit.Regs()[2] = 0x2000;
-        jit.Regs()[13] = 0x3000; jit.Regs()[14] = 0x87654321; jit.Regs()[15] = 0x1000;
-        jit.SetCpsr(0x60000010);
-        jit.Run();
-        const bool higher = hooked && cached;
-        Check(cb.stopped && jit.Regs()[0] == (higher ? 0x654321U : 0x123456U), "visibility hook returns native/cached depth to the correct register");
-        Check((jit.Cpsr() & 0xf0000000) == (higher ? 0x80000000U : 0x20000000U), "native comparison sees the substituted load with correct flags");
-        Check(jit.Regs()[2] == 0x2000 && jit.Regs()[13] == 0x3000 && jit.Regs()[14] == 0x87654321,
-              "visibility hook preserves base, stack and return address");
-        Check(cb.Read<std::uint32_t>(0x200c) == 0xa5123456, "cached result never overwrites guest memory");
-    }
-}
 void RunLiveCamera() {
     Callbacks cb; cb.live_camera=true;
     const std::uint32_t code[]{0xe5840018,0xed940a06,0xed820a00,0xed940a06,0xed820a01,0xef000000};
@@ -162,6 +125,6 @@ void Run(bool thumb) {
 }
 }
 int main() {
-    try { RunLiveCamera(); RunVisibilityDepth(); Run(false); Run(true); std::cout<<"PASS ARM/Thumb conditional stores, loops, exact PCs, LR/SP, unchanged execution\n"; }
+    try { RunLiveCamera(); Run(false); Run(true); std::cout<<"PASS ARM/Thumb conditional stores, loops, exact PCs, LR/SP, unchanged execution\n"; }
     catch(const std::exception& e) { std::cerr<<e.what()<<'\n'; return 1; }
 }

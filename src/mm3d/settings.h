@@ -60,7 +60,9 @@ struct Settings {
     bool mute_music = false;
     bool disable_low_health_beep = false;
     bool disable_tatl_reminders = false;
+    float walk_speed = 1.f, climb_speed = 1.f, swim_speed = 1.f;
     bool single_screen_text = true;
+    bool controller_neutral_item_prompts = true;
     bool fix_bloom = true;
     bool interpolation_60fps = true;
     bool interpolation_cpu_vertices = true;
@@ -78,6 +80,10 @@ struct Settings {
     bool widescreen = false;
     float camera_zoom_out = 1.f;
     float game_camera_fov = 65.f;
+    float camera_distance = 1.f;
+    bool adult_link_model = false;
+    int adult_link_tunic_color = 0;
+    bool adult_link_master_sword = false;
     float restoration_hud_scale = 1.f;
     MagicBorder::Options magic_border;
     MinigameHud::Options minigame_hud;
@@ -91,6 +97,7 @@ struct Settings {
     float minimap_right_margin = 8.f, minimap_bottom_margin = 8.f;
     std::vector<WidescreenProbe::Draw> fullscreen_draws;
     float scale = 1.f;
+    int android_menu_text_size = 20;
     float opacity = .9f;
     float x = .02f, y = .02f;
     bool Load(const QString& path);

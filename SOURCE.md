@@ -1,3 +1,5 @@
+> Preserved upstream notes. For this fork’s Android release and current limitations, start with [README.md](README.md).
+
 # Source and builds
 
 This repository contains Dekui's application source, tests, setup and packaging
