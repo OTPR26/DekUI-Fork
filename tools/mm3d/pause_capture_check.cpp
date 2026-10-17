@@ -66,6 +66,11 @@ int main(int argc,char** argv) {
         source+="vec4 sampleTexUnit1() { return texture(tex1,texcoord1); }\nvec4 sampleTexUnit2() { return textureLod(tex2, texcoord1,0); }\nvoid main() { color=sampleTexUnit0()+sampleTexUnit1()+sampleTexUnit2(); }\n";
         auto result=MM3D::Atlas::Shader(source);
         assert(result.find("raw.yx / vec2(240.0,400.0)")!=std::string::npos);
+        // Scene-copy alignment is confined to the 2D sampler-zero path;
+        // cubemaps and the other pause samplers must retain their signatures.
+        const auto copy=result.find("if (mm3d_atlas_info.z != 0)");
+        assert((copy!=std::string::npos)==!cube);
+        if(!cube)assert(copy<result.find("vec4 sampleTexUnit1()"));
         std::ofstream("build-macos/pause-capture-"+std::to_string(cube)+".frag")<<result;
     }
     std::cout<<"Pause hooks, capture/upload ownership, fallback, stereo selection and orientation checks passed.\n";

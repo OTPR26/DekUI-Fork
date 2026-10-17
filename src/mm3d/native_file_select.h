@@ -11,17 +11,19 @@ struct HeaderTitle {float x=0,y=0,scale=1;};
 struct Options {
     bool enabled=true;
     float stone_spacing=0.f;
+    float entrance_ease=2.f;
     HeaderBackground header;
     HeaderTitle title;
     std::array<GearMenu::Pose,Count> poses{{{170,32,.65f},{0,35,.55f},{0,32,.55f},{0,35,.55f},{40,0,1.f}}};
 };
 inline std::atomic<bool> enabled{true};
 inline std::atomic<float> stone_spacing{0.f};
+inline std::atomic<float> entrance_ease{2.f};
 inline std::atomic<float> header_x{0},header_y{0},header_scale_x{1},header_scale_y{1};
 inline std::atomic<float> title_x{0},title_y{0},title_scale{1};
 inline std::array<GearMenu::AtomicPose,Count> poses;
 inline void Apply(const Options& o) {
-    enabled=o.enabled;stone_spacing=o.stone_spacing;
+    enabled=o.enabled;stone_spacing=o.stone_spacing;entrance_ease=o.entrance_ease;
     header_x=o.header.x;header_y=o.header.y;header_scale_x=o.header.scale_x;header_scale_y=o.header.scale_y;
     title_x=o.title.x;title_y=o.title.y;title_scale=o.title.scale;
     for(unsigned i=0;i<Count;++i){poses[i].x=o.poses[i].x;poses[i].y=o.poses[i].y;poses[i].scale=o.poses[i].scale;}
@@ -38,12 +40,17 @@ struct Hook {
     float prompt_opacity=1.f;
     std::array<float,3> stone_y{},stone_native_x{};
     bool presentation=false,stone_anchors=false;
+    bool entrance_active=false,entrance_pending=false;
+    U32 entrance_panel=0;
+    float entrance_first_time=0,entrance_last_time=-1;
+    std::array<float,3> stone_slide{};
     float detail_progress=0,files_slide=0,summary_slide=0,actions_slide=0,start_native_x=0;
     std::array<GearMenu::Pose,Count> frame{};
     using Write=NativeInventory::Hook::Write;
     std::vector<std::vector<Write>> frames;
     template<class M> void ReadPresentation(M& m) {
         presentation=false;detail_progress=files_slide=summary_slide=actions_slide=start_native_x=0;
+        entrance_active=entrance_pending=false;stone_slide={};
         auto widgets=m.Read(panel+0x154),count=m.Read(panel+0x158);
         if(!widgets||!count||*count>512||!Pointer(*widgets,*count*4))return;
         bool cards_hidden=false;
@@ -60,7 +67,7 @@ struct Hook {
                 if(!Named(m,*node,names[slot]))continue;
                 if(cards_hidden){stone_native_x[slot]=-320;found|=1u<<slot;continue;}
                 auto wx=m.Read(*node+0xec);if(!wx)return;
-                float x=std::bit_cast<float>(*wx);if(!std::isfinite(x)||x< -306.1f||x>14.1f)return;
+                float x=std::bit_cast<float>(*wx);if(!std::isfinite(x)||x< -306.1f||x>334.1f)return;
                 stone_native_x[slot]=x-14;found|=1u<<slot;
             }
             if(Named(m,*node,"start_g")) {
@@ -74,13 +81,17 @@ struct Hook {
         // Endpoint fallback also handles an inactive/unbound choose-file player.
         detail_progress=std::clamp(-stone_native_x[0]/320.f,0.f,1.f);
         bool entrance=false,selection=false;
+        float entrance_time=0;
         auto players=m.Read(panel+0x14c),n=m.Read(panel+0x150);
         if(players&&n&&*n<=64&&Pointer(*players,*n*4))for(unsigned i=0;i<*n;++i) {
             auto player=m.Read(*players+4*i);if(!player||!Pointer(*player,0x18))continue;
             auto anim=m.Read(*player+0xc),time=m.Read(*player+0x10);
             if(!anim||!time||!Pointer(*anim,0x18))continue;
             auto name=m.Read(*anim+8);if(!name)continue;
-            entrance|=DialogueScale::Name(m,*name,"in_menu_fileselect_ani");
+            if(DialogueScale::Name(m,*name,"in_menu_fileselect_ani")) {
+                const float f=std::bit_cast<float>(*time);
+                if(std::isfinite(f)&&f>=0&&f<=10) {entrance=true;entrance_time=f;}
+            }
             for(unsigned slot=0;slot<3;++slot) {
                 const char* ins[]={"in_f1_to_start","in_f2_to_start","in_f3_to_start"};
                 const char* outs[]={"out_f1_to_start","out_f2_to_start","out_f3_to_start"};
@@ -93,8 +104,27 @@ struct Hook {
                 selection=true;detail_progress=enter?ease:1-ease;
             }
         }
-        // Initial stone arrival is not a file selection. Keep its native motion.
-        if(entrance&&!selection){detail_progress=0;return;}
+        if(entrance&&!selection) {
+            entrance_active=true;detail_progress=0;
+            // The original three tracks run at frames 0..6, 2..8 and 4..10.
+            // Seed the first submitted pose offscreen even when the guest has
+            // already advanced its animation before the first draw.
+            if(entrance_panel!=panel||entrance_last_time<0||entrance_time<entrance_last_time)
+                entrance_first_time=std::min(entrance_time,5.f);
+            entrance_panel=panel;entrance_last_time=entrance_time;
+            float ease=entrance_ease.load();
+            ease=std::isfinite(ease)?std::clamp(ease,1.f,3.f):2.f;
+            const auto& p=frame[Files];
+            // Includes the widened right edge and margin for the plate rim.
+            // Travel is independent of the user-scaled native 320px movement.
+            const float distance=std::max(0.f,448.f-p.x+32.f*p.scale);
+            for(unsigned i=0;i<3;++i) {
+                const float begin=entrance_first_time+2*i,end=6.f+2*i;
+                const float t=std::clamp((entrance_time-begin)/(end-begin),0.f,1.f);
+                stone_slide[i]=distance*std::pow(1-t,ease);
+            }
+            entrance_pending=entrance_time<10;
+        } else {entrance_panel=0;entrance_last_time=-1;}
         files_slide=-(32+std::max(0.f,frame[Files].x+320*frame[Files].scale))*detail_progress;
         summary_slide=-(32+std::max(0.f,frame[Summary].x+400*frame[Summary].scale))*(1-detail_progress);
         actions_slide=(459-std::min(0.f,frame[Actions].x))*(1-detail_progress);
@@ -137,6 +167,7 @@ struct Hook {
             auto child=m.Read(*list+i*4);if(!child)return false;
             auto pose=Mapping(Files);pose.ty+=i*frame_spacing*pose.yy;
             if(presentation)pose.tx-=pose.xx*stone_native_x[i];
+            if(entrance_active)pose.tx+=stone_slide[i];
             if(!helper.Transform(m,*child,writes,seen,pose))return false;
         }
         return true;
@@ -173,6 +204,11 @@ struct Hook {
             auto child=m.Read(*list+i*4);if(!child)return false;
             int role=-1;for(unsigned j=0;j<4;++j)if(Named(m,*child,names[j]))role=j;
             if(role<0||(found&(1u<<role)))return false;found|=1u<<role;
+            if(role==3&&entrance_pending) {
+                auto flags=m.Read(*child+0xd4);
+                if(!flags||!helper.Stage(m,writes,*child+0xd4,*flags&~1u))return false;
+                continue;
+            }
             auto pose=Mapping(role==3?Files:Actions);
             if(role==3&&frame_spacing>0&&stone_anchors) {
                 auto y=m.Read(*child+0xfc);if(!y)return false;

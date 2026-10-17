@@ -120,6 +120,12 @@ int main(int argc, char** argv) {
         Require(MM3D::ToggleOverlay() && MM3D::overlay_visible, "F1 opens");
         Require(MM3D::ToggleOverlay() && !MM3D::overlay_visible, "F1 closes");
         Require(MM3D::guest_frames == 30, "UI cannot advance guest frames");
+        MM3D::OnGuestFrame(1033333);
+        Require(MM3D::guest_frames == 31 && MM3D::guest_frame_time_us == 1033333,
+                "completed guest frame retains emulated submission time");
+        MM3D::ResetGuestFrames();
+        Require(MM3D::guest_frames == 0 && MM3D::guest_frame_time_us == -1,
+                "reset cannot retain another session's cadence timestamp");
         QTemporaryDir directory;
         Require(directory.isValid(), "temporary directory");
         const auto path = directory.filePath("settings.json");
@@ -325,11 +331,13 @@ int main(int argc, char** argv) {
         settings.show_startup_settings_hint=false;
         settings.fullscreen_draws={MM3D::WidescreenProbe::Draw{
             0x89b1ab98da3d9241ULL,0xfedcba9876543210ULL,4,480,400,0,65536,4294967295u}};
+        settings.file_select.entrance_ease=2.75f;
         Require(settings.Save(path), "initial atomic save");
         settings.scale = 1.75;
         Require(settings.Save(path), "atomic replacement");
         MM3D::Settings loaded;
         Require(loaded.Load(path) && loaded.scale == 1.75, "settings roundtrip");
+        Require(loaded.file_select.entrance_ease==2.75f,"file entrance ease persists");
         Require(loaded.double_prices&&loaded.price_multiplier==3,"3x purchase prices persist");
         Require(loaded.classic_double_time,"classic Double Time persists");
         Require(loaded.song_list.panel_color==settings.song_list.panel_color&&loaded.song_list.panel_color_opacity==.75f,"song panel color persists");

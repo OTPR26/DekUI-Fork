@@ -19,6 +19,8 @@
 #include "mm3d/diagnostics.h"
 #include "mm3d/camera_midpoint.h"
 #include "mm3d/cpu_interpolation.h"
+#include "mm3d/cpu_interpolation_capture.h"
+#include "mm3d/link_pose_capture.h"
 #endif
 
 namespace Pica {
@@ -1142,8 +1144,14 @@ void PicaCore::DrawArrays(bool is_indexed) {
     capture_cpu_vertices = cpu_interpolation && primitive_assembler.IsEmpty() &&
         regs.internal.pipeline.use_gs == PipelineRegs::UseGS::No &&
         regs.internal.pipeline.num_vertices <= 65536 &&
-        vs_setup.GetProgramCodeHash() == 0x89b1ab98da3d9241ULL &&
-        vs_setup.GetSwizzleDataHash() == 0x6f0b398b1fc186a9ULL;
+        MM3D::CpuInterpolation::CaptureShader(vs_setup.GetProgramCodeHash(),
+            vs_setup.GetSwizzleDataHash(), regs.internal.pipeline.num_vertices,
+            vs_setup.uniforms.f[10].w.ToFloat32(), MM3D::guest_frames.load(),
+            MM3D::LinkPoseCapture::interpolation_generation.load(),
+            {vs_setup.uniforms.f[94].x.ToFloat32(),vs_setup.uniforms.f[94].y.ToFloat32(),
+             vs_setup.uniforms.f[94].z.ToFloat32(),vs_setup.uniforms.f[94].w.ToFloat32()},
+            {vs_setup.uniforms.f[95].x.ToFloat32(),vs_setup.uniforms.f[95].y.ToFloat32(),
+             vs_setup.uniforms.f[95].z.ToFloat32(),vs_setup.uniforms.f[95].w.ToFloat32()});
     if (capture_cpu_vertices)
         cpu_vertex_replay.Begin(regs.internal.pipeline.num_vertices, primitive_assembler.GetTopology());
 #endif

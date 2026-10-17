@@ -1226,6 +1226,12 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
             if(ImGui::Button("Capture rendered frame pair (3 second delay)"))
                 CameraMidpoint::capture_pair_at_us=InputLatency::Now()+3000000;
             ImGui::TextWrapped("Close F1 and keep rotating the camera. Saves midpoint/native images to the log folder; may briefly hitch during readback.");
+            if(ImGui::Button("Capture moving menu frame pair")) {
+                CameraMidpoint::capture_menu_motion_frame=0;
+                CameraMidpoint::capture_menu_pair_at_us=InputLatency::Now()+3000000;
+            }
+            ImGui::TextWrapped("Close F1, wait 3 seconds, then open Gear. Waits up to 20 seconds for horizontal menu motion and saves one midpoint/native image pair in the log folder. Readback may briefly hitch; use these images to inspect geometry, not frame pacing.");
+            if(CameraMidpoint::capture_menu_pair_at_us.load())ImGui::TextUnformatted("Waiting for menu motion...");
             ImGui::Text("Presented frame pairs: %u",CameraMidpoint::presented_pairs.load());
             ImGui::TextWrapped("%s",CameraMidpoint::StatusText(CameraMidpoint::presentation_status.load()));
             bool native=CameraMidpoint::native_preview.load();
@@ -1642,10 +1648,14 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 if(ImGui::TreeNode(names[i])) {
                     auto& p=o.poses[i];
                     if(i==NativeFileSelect::Files)changed|=ImGui::SliderFloat("Extra spacing",&o.stone_spacing,0.f,80.f,"%.1f",ImGuiSliderFlags_AlwaysClamp);
+                    if(i==NativeFileSelect::Files) {
+                        changed|=ImGui::SliderFloat("Entrance ease-out",&o.entrance_ease,1.f,3.f,"%.2f",ImGuiSliderFlags_AlwaysClamp);
+                        ImGui::TextWrapped("1 is linear. Higher values slow the blocks more as they approach their destination. Applies when entering file select.");
+                    }
                     changed|=ImGui::SliderFloat("X",&p.x,-512.f,512.f,"%.1f",ImGuiSliderFlags_AlwaysClamp);
                     changed|=ImGui::SliderFloat("Y",&p.y,-512.f,512.f,"%.1f",ImGuiSliderFlags_AlwaysClamp);
                     changed|=ImGui::SliderFloat("Scale",&p.scale,.1f,2.f,"%.2fx",ImGuiSliderFlags_AlwaysClamp);
-                    if(ImGui::Button("Reset")){p=NativeFileSelect::Options{}.poses[i];if(i==NativeFileSelect::Files)o.stone_spacing=0;changed=true;}
+                    if(ImGui::Button("Reset")){p=NativeFileSelect::Options{}.poses[i];if(i==NativeFileSelect::Files){o.stone_spacing=0;o.entrance_ease=2;}changed=true;}
                     ImGui::TreePop();
                 }
                 ImGui::PopID();

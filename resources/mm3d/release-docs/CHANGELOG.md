@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Expanded interpolation coverage for actor attachments, held items, particles, water effects, textboxes, inventory screens, file select, map zoom, and HUD animations. Coverage remains incomplete; some effects still animate at 30fps.
+- Select Item retains its native timing with interpolated opening and closing animations.
+
 ## 1.0.0-beta.2
 
 ### Added

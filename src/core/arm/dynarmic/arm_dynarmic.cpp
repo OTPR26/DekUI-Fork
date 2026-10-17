@@ -35,6 +35,8 @@
 #include "mm3d/visibility_depth.h"
 #include "mm3d/native_notebook.h"
 #include "mm3d/native_file_select.h"
+#include "mm3d/file_select_interpolation.h"
+#include "mm3d/file_select_input.h"
 #include "mm3d/file_select_prompt.h"
 #include "mm3d/ocarina_prompt.h"
 #include "mm3d/magic_border.h"
@@ -45,8 +47,10 @@
 #include "mm3d/song_reset.h"
 #include "mm3d/hud_buttons.h"
 #include "mm3d/banners.h"
+#include "mm3d/banner_interpolation.h"
 #include "mm3d/song_effect.h"
 #include "mm3d/native_item_present.h"
+#include "mm3d/inventory_interpolation.h"
 #include "mm3d/inventory_navigation.h"
 #include "mm3d/menu_page_switch.h"
 #include "mm3d/menu_memory.h"
@@ -66,6 +70,7 @@
 #include "mm3d/native_startup.h"
 #include "mm3d/item_preview.h"
 #include "mm3d/dialogue_scale.h"
+#include "mm3d/message_layout.h"
 #include "mm3d/classic_owl_draw.h"
 #include "mm3d/classic_file_marker.h"
 #include "mm3d/widescreen.h"
@@ -1036,13 +1041,36 @@ public:
             switch(swi-MM3D::NativeInventory::FirstSVC) {
             case 0: inventory_hook.Capture(guest,regs[0]); regs[4]=regs[0]; break;
             case 1: MM3D::ScreenShrink::Update(guest); if(MM3D::MenuBackdrop::CodeMatches(guest))menu_backdrop.Pass(guest,regs[0],regs[1]);
-                options_hook.Pass(guest,regs[0],regs[1]); song_reset_hook.Pass(guest,regs[0],regs[1]); double_time_hook.Pass(guest,regs[0],regs[1]); dungeon_map_hook.Pass(guest,regs[0],regs[1]); song_hook.Pass(guest,regs[0],regs[1]); ocarina_hook.Pass(guest,regs[0],regs[1]); item_present_hook.Pass(guest,regs[0],regs[1]); press_hook.Pass(guest,regs[0],regs[1]); inventory_hook.Pass(guest,regs[0],regs[1]); notebook_hook.Pass(guest,regs[0],regs[1]); file_select_hook.Pass(guest,regs[0],regs[1]);
+                options_hook.Pass(guest,regs[0],regs[1]); song_reset_hook.Pass(guest,regs[0],regs[1]); double_time_hook.Pass(guest,regs[0],regs[1]); dungeon_map_hook.Pass(guest,regs[0],regs[1]); song_hook.Pass(guest,regs[0],regs[1]); ocarina_hook.Pass(guest,regs[0],regs[1]); item_present_hook.Pass(guest,regs[0],regs[1]);
+                if(regs[1]==4) MM3D::ItemSlideInterpolation::Publish({MM3D::guest_frames.load(),
+                    MM3D::LinkPoseCapture::interpolation_generation.load(),item_present_hook.panel?item_present_hook.owner:0,
+                    item_present_hook.transition_x,item_present_hook.transition_time,item_present_hook.transition_travel,
+                    item_present_hook.transitioning,item_present_hook.transition_opening});
+                press_hook.Pass(guest,regs[0],regs[1]); inventory_hook.Pass(guest,regs[0],regs[1]); notebook_hook.Pass(guest,regs[0],regs[1]); file_select_hook.Pass(guest,regs[0],regs[1]);
+                if(regs[1]==5) {
+                    // Inspect the submitted queues after routing. A stale page
+                    // pointer alone cannot keep interpolation active after exit.
+                    const u32 menu_owner=inventory_hook.SubmittedInterpolationOwner(guest,regs[0]);
+                    MM3D::InventoryInterpolation::Publish(MM3D::guest_frames.load(),
+                        MM3D::LinkPoseCapture::interpolation_generation.load(),menu_owner,
+                        inventory_hook.SubmittedInterpolationOwner(guest,regs[0],true));
+                }
+                if(regs[1]==5) MM3D::FileSelectInput::Observe(file_select_hook.active &&
+                    file_select_hook.entrance_pending);
+                if(regs[1]==5) MM3D::FileSelectInterpolation::Publish({MM3D::guest_frames.load(),
+                    MM3D::LinkPoseCapture::interpolation_generation.load(),
+                    file_select_hook.active?file_select_hook.panel:options_hook.panel,
+                    {file_select_hook.files_slide,file_select_hook.summary_slide,file_select_hook.actions_slide},
+                    file_select_hook.presentation,file_select_hook.stone_slide});
                 if(regs[1]==5&&file_select_hook.route_status!=file_select_hook.last_route_status) {
                     LOG_INFO(Core_ARM11,"MM3D FileSelect: active={} stage={} panel={:08x} summary={:08x} popup={:08x}",
                         file_select_hook.active,file_select_hook.route_status,file_select_hook.panel,file_select_hook.summary,file_select_hook.popup);
                     file_select_hook.last_route_status=file_select_hook.route_status;
                 }
-                banner_hook.Pass(guest,regs[0],regs[1]); regs[4]=regs[0]; break;
+                banner_hook.Pass(guest,regs[0],regs[1]);
+                if(regs[1]==0) MM3D::BannerInterpolation::Publish(MM3D::guest_frames.load(),
+                    MM3D::LinkPoseCapture::interpolation_generation.load(),banner_hook.owner);
+                regs[4]=regs[0]; break;
             case 2: classic_save_hook.BeginCycleDraw(guest,regs[4]); minigame_hook.Begin(guest,regs[4]); hud_buttons_hook.Begin(guest,regs[4]); song_reset_hook.Begin(guest,regs[4]); banner_hook.Begin(guest,regs[4],MM3D::Widescreen::Active()); double_time_hook.Begin(guest,regs[4]); dungeon_map_hook.Begin(guest,regs[4]); song_hook.Begin(guest,regs[4]); item_present_hook.Begin(guest,regs[4]); loading_icon_hook.Begin(guest,regs[4]); press_hook.Begin(guest,regs[4]); inventory_hook.Begin(guest,regs[4],MM3D::Widescreen::Active()); notebook_hook.Begin(guest,regs[4],MM3D::Widescreen::Active()); file_select_hook.Begin(guest,regs[4],MM3D::Widescreen::Active());
                 if(MM3D::ClassicSaving::enabled && classic_save_hook.cycle) {
                     static std::vector<u32> traced_layouts;
@@ -1121,6 +1149,10 @@ public:
                 regs[2]=double_time_hook.ShadeRoot(guest,regs[4],regs[2],
                     regs[2]!=regs[4]+8?regs[2]:regs[13]);
                 if(regs[2]!=regs[4]+8)regs[13]=regs[2];
+                if(MM3D::CameraMidpoint::present_60.load())
+                    MM3D::MessageInterpolation::Publish(MM3D::guest_frames.load(),
+                        MM3D::LinkPoseCapture::interpolation_generation.load(),
+                        MM3D::MessageLayout::Read(guest,regs[4]));
                 break;
             case 3:
                 if(const auto sp=double_time_hook.shade_scratch.End(guest))regs[13]=sp;

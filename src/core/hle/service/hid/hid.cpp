@@ -28,6 +28,7 @@
 #include "mm3d/input_latency.h"
 #include "mm3d/classic_saving.h"
 #include "mm3d/ocarina_input.h"
+#include "mm3d/file_select_input.h"
 #endif
 
 SERVICE_CONSTRUCT_IMPL(Service::HID::Module)
@@ -169,6 +170,7 @@ void Module::UpdatePadCallback(std::uintptr_t user_data, s64 cycles_late) {
 #ifdef ENABLE_MM3D_PRESENTATION
         MM3D::OcarinaInput::Filter(state.hex);
         MM3D::ClassicSaving::FilterArrivalPad(state.hex,circle_pad_x,circle_pad_y);
+        MM3D::FileSelectInput::Filter(state.hex,circle_pad_x,circle_pad_y);
 #endif
 
         mem->pad.current_state.hex = state.hex;
@@ -214,7 +216,7 @@ void Module::UpdatePadCallback(std::uintptr_t user_data, s64 cycles_late) {
 
         system.Movie().HandleTouchStatus(touch_entry);
 #ifdef ENABLE_MM3D_PRESENTATION
-        if(MM3D::ClassicSaving::ResumeNoticeArmed()) {
+        if(MM3D::ClassicSaving::ResumeNoticeArmed() || MM3D::FileSelectInput::Blocked()) {
             touch_entry.x=0;touch_entry.y=0;touch_entry.valid.Assign(0);
         }
 #endif
@@ -264,6 +266,7 @@ void Module::UpdatePadCallback(std::uintptr_t user_data, s64 cycles_late) {
 #ifdef ENABLE_MM3D_PRESENTATION
         MM3D::OcarinaInput::Filter(state.hex);
         MM3D::ClassicSaving::FilterArrivalPad(state.hex,circle_pad_x,circle_pad_y);
+        MM3D::FileSelectInput::Filter(state.hex,circle_pad_x,circle_pad_y);
 #endif
 
         const DirectionState direction = GetStickDirectionState(circle_pad_x, circle_pad_y);
@@ -322,7 +325,7 @@ void Module::UpdatePadCallback(std::uintptr_t user_data, s64 cycles_late) {
 
         system.Movie().HandleTouchStatus(touch_entry);
 #ifdef ENABLE_MM3D_PRESENTATION
-        if(MM3D::ClassicSaving::ResumeNoticeArmed()) {
+        if(MM3D::ClassicSaving::ResumeNoticeArmed() || MM3D::FileSelectInput::Blocked()) {
             touch_entry.x=0;touch_entry.y=0;touch_entry.valid.Assign(0);
         }
 #endif

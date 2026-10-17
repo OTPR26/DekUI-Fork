@@ -15,7 +15,45 @@ using Quaternion = std::array<double,4>; // w,x,y,z
 inline std::atomic<bool> enabled{false}, native_preview{false}, present_60{false};
 inline std::atomic<bool> suppress_transform_feedback{false};
 inline std::atomic<std::uint64_t> capture_pair_at_us{};
+// Explicit local diagnostic: wait for horizontal menu motion, not a camera
+// pair produced while the inventory is still closed or stationary.
+inline std::atomic<std::uint64_t> capture_menu_pair_at_us{}, capture_menu_motion_frame{};
 inline std::atomic<unsigned> generation{0}, copied_draws{0}, rejected_draws{0}, fallback_draws{0}, presented_pairs{0};
+// Native memory fills establish the scene background before any geometry. Keep
+// only same-frame, whole-target RGBA8 clears; depth/partial/old fills must not
+// supply a color for an unrelated replay target.
+struct ColorClears {
+    struct Fill { std::uint32_t start{},end{},rgba{}; };
+    std::array<Fill,16> fills{};
+    std::optional<std::uint64_t> frame;
+    void Reset() { fills={};frame.reset(); }
+    void Invalidate(std::uint32_t start,std::uint64_t end) {
+        for(auto& fill:fills)
+            if(start<fill.end && fill.start<end)fill={};
+    }
+    void Observe(std::uint64_t current,std::uint32_t start,std::uint32_t end,
+                 std::uint32_t rgba,unsigned bytes) {
+        if(frame!=current) { Reset();frame=current; }
+        if(end<=start)return;
+        Invalidate(start,end);
+        if(bytes!=4)return;
+        for(auto& fill:fills)if(fill.end==0) { fill={start,end,rgba};return; }
+        // A full tracker may lose a clear, but cannot retain an overwritten one.
+    }
+    std::array<float,4> Background(std::uint64_t current,std::uint32_t address,
+                                   unsigned width,unsigned height,bool rgba8) const {
+        if(frame==current && rgba8 && width && height) {
+            const std::uint64_t end=std::uint64_t(address)+std::uint64_t(width)*height*4;
+            for(const auto& fill:fills)if(fill.start==address && fill.end==end) {
+                // PICA RGBA8 is stored with R in the high byte. Private scene
+                // coverage stays opaque; the native clear's alpha is not HUD coverage.
+                return {float((fill.rgba>>24)&255)/255.f,float((fill.rgba>>16)&255)/255.f,
+                        float((fill.rgba>>8)&255)/255.f,1.f};
+            }
+        }
+        return {0,0,0,1};
+    }
+};
 inline Matrix Identity() { Matrix m{}; for(unsigned i=0;i<4;++i)m[i][i]=1; return m; }
 inline Matrix Multiply(const Matrix& a,const Matrix& b) {
     Matrix r{};
@@ -95,15 +133,16 @@ inline bool SameLens(const Matrix& a,const Matrix& b) {
 inline bool WorldProjection(const Matrix& p) {
     return Near(p,p,0) && p[3]==std::array<double,4>{0,0,-1,0};
 }
-// Captured opaque night sky dome. It precedes the scene's background flash,
-// despite using the same opaque blend/depth state as foreground geometry.
-inline bool OpaqueSkyDome(unsigned vertices,const Matrix& projection,const Matrix& model) {
-    if(vertices!=288 || !WorldProjection(projection) || !Near(model,model,0) ||
+// Captured untextured sky dome. It precedes the scene background cover despite
+// using opaque depth state. First-person camera movement can offset its center
+// (over 12 units in the winter capture), so translation cannot identify it.
+// Require its mesh count, sky clip range, texture state and 320-unit rigid basis.
+inline bool OpaqueSkyDome(unsigned vertices,const Matrix& projection,const Matrix& model,unsigned textures) {
+    if(vertices!=288 || textures!=0 || !WorldProjection(projection) || !Near(model,model,0) ||
        std::abs(projection[2][2]-1.0000892877578735)>1e-6 ||
        std::abs(projection[2][3]-5.000446796417236)>1e-5)return false;
     auto rotation=model;
     for(unsigned i=0;i<3;++i) {
-        if(std::abs(model[i][3])>.05)return false;
         for(unsigned j=0;j<3;++j)rotation[i][j]/=320.;
     }
     return Rigid(rotation);
@@ -171,17 +210,56 @@ inline std::optional<std::array<double,2>> GradualWorldWobble(const Matrix& a,co
     if(scale[0]==1. || scale[1]==1.)return {};
     return scale;
 }
+// Double Time and Inverted Time distort both lens axes and add tiny off-center
+// terms. Their captured clipping ranges distinguish this from underwater wobble.
+// Keep arbitrary skew/aspect changes and large jumps subject to the cut guard.
+inline bool GradualTimeSkipDistortion(const Matrix& a,const Matrix& b) {
+    const auto captured=[](const Matrix& p) {
+        const bool shape=WorldProjection(p) && p[0][1]>0 && p[1][0]<0 &&
+            std::abs(p[0][0])<1e-8 && std::abs(p[1][1])<1e-8 &&
+            std::abs(p[0][3])<1e-8 && std::abs(p[1][3])<1e-8 &&
+            std::abs(p[0][2])<=.00002 && std::abs(p[1][2])<=.0001 &&
+            std::abs(p[2][0])<1e-8 && std::abs(p[2][1])<1e-8;
+        if(!shape)return 0u;
+        if(p[2][2]>=1.00015 && p[2][2]<=1.00027 &&
+           std::abs(p[2][3]-5.001250267028809)<.000002)return 1u;
+        // Inverted Time uses the same kind of distortion with a different
+        // near/far range. Keep the two families separate across transitions.
+        if(p[2][2]>=1.00032 && p[2][2]<=1.00040 &&
+           std::abs(p[2][3]-5.001953601837158)<.000002)return 2u;
+        return 0u;
+    };
+    const auto kind=captured(a);
+    if(!kind || captured(b)!=kind)return false;
+    if(a[0][2]==0 && a[1][2]==0 && b[0][2]==0 && b[1][2]==0)return false;
+    for(unsigned r=0;r<2;++r) {
+        const double ratio=b[r][1-r]/a[r][1-r];
+        const double angle=std::abs(std::atan(1./std::abs(a[r][1-r]))-
+                                    std::atan(1./std::abs(b[r][1-r])))*360./3.141592653589793;
+        if(ratio<.87 || ratio>1.13 || angle>8)return false;
+    }
+    return true;
+}
 // Provenance for the native end-of-day scene-copy quad. Only bypass copies
 // derived from the scene captured in this guest frame, never arbitrary textures.
 struct SceneCopies {
     std::uint64_t frame{};
     std::array<std::uint32_t,8> addresses{};
     std::array<std::uint32_t,8> previous_addresses{};
-    void Begin(std::uint64_t current,std::uint32_t address) {
+    // The closing-day copy occupies the last 400 rows of a 512x512 RGBA8
+    // texture. Its sampler base precedes the actual copy by 112 tiled rows.
+    // The visible 480 columns may be copied in 8-row tile bands, skipping
+    // the remaining 32 columns. Track this separately; do not promote arbitrary
+    // containing textures (or this alias) to exact/previous-frame provenance.
+    static constexpr std::uint32_t SceneBytes=512*400*4,PaddingBytes=512*112*4;
+    std::uint32_t padded_source{},padded_destination{};
+    void Begin(std::uint64_t current,std::uint32_t address,
+               unsigned width=0,unsigned height=0,bool rgba8=false) {
         if(frame!=current){
             previous_addresses=current==frame+1?addresses:std::array<std::uint32_t,8>{};
-            frame=current;addresses={};
+            frame=current;addresses={};padded_destination=0;
         }
+        padded_source=width==512 && height==400 && rgba8?address:0;
         Add(address);
     }
     bool PreviousContains(std::uint64_t current,std::uint32_t address) const {
@@ -197,11 +275,53 @@ struct SceneCopies {
             std::find(addresses.begin(),addresses.end(),address)!=addresses.end();
     }
     void Transfer(std::uint64_t current,std::uint32_t source,std::uint32_t destination) {
+        padded_destination=0;
         const bool known=Contains(current,source);
         for(auto& entry:addresses)if(entry==destination)entry=0;
         if(known)Add(destination);
     }
+    void TextureTransfer(std::uint64_t current,std::uint32_t source,std::uint32_t destination,
+                         std::uint32_t size,unsigned input_width,unsigned input_gap,
+                         unsigned output_width,unsigned output_gap,bool succeeded) {
+        // Widths/gaps are bytes, size has the PICA 16-byte alignment applied.
+        // Gaps are ignored by the native transfer when its width spans size.
+        const bool contiguous=size==SceneBytes && (!input_gap || input_width>=size) &&
+            (!output_gap || output_width>=size);
+        // Captured native copy: 50 bands of 480x8 RGBA8 pixels, each with
+        // a 32x8-pixel gap. Both ends retain the same 512-pixel tiled stride.
+        // NormalizedShrinkMesh samples only inside these copied 480 columns.
+        const bool visible_rect=size==480*400*4 && input_width==480*8*4 &&
+            input_gap==32*8*4 && output_width==input_width && output_gap==input_gap;
+        const bool complete=succeeded && source==padded_source && Contains(current,source) &&
+            (contiguous || visible_rect) && destination &&
+            std::uint64_t(destination)+SceneBytes<=0x100000000ULL;
+        Transfer(current,succeeded?source:0,destination);
+        if(complete)padded_destination=destination;
+    }
+    void InvalidatePadded(std::uint32_t start,std::uint64_t end) {
+        if(padded_destination && start<std::uint64_t(padded_destination)+SceneBytes &&
+           padded_destination<end)padded_destination=0;
+    }
+    bool PaddedTextureContains(std::uint64_t current,std::uint32_t base,
+                               unsigned width,unsigned height,bool rgba8) const {
+        return frame==current && base && padded_destination && rgba8 && width==512 && height==512 &&
+            std::uint64_t(base)+PaddingBytes==padded_destination;
+    }
 };
+inline bool NormalizedShrinkMesh(const Matrix& projection,const Matrix& model,
+                                 const std::array<float,4>& uv) {
+    Matrix p{};p[0]={0,-1./120,0,1};p[1]={-1./200,0,0,1};
+    p[2]={0,0,1./1800,1./3};p[3]={0,0,0,1};
+    auto m=Identity();m[2][3]=-1200;
+    // Verified native shrink mesh UVs stop one texel short of the scene edge.
+    // Stereo mode uses 239/512 horizontally, mono uses twice that value.
+    for(float value:uv)if(!std::isfinite(value))return false;
+    constexpr float epsilon=.00001f;
+    return Near(projection,p,.00001) && Near(model,m,.00001) &&
+        std::abs(uv[0])<epsilon && std::abs(uv[1])<epsilon &&
+        (std::abs(uv[2]-478.f/512)<epsilon || std::abs(uv[2]-239.f/512)<epsilon) &&
+        std::abs(uv[3]-399.f/512)<epsilon;
+}
 inline bool TransformationFeedback(const Matrix& projection,const Matrix& model,
                                    bool previous_scene,unsigned vertices,unsigned textures) {
     if(!previous_scene || vertices!=4 || textures!=1)return false;
@@ -287,14 +407,26 @@ class PresentationClock {
     std::int64_t time{};
     unsigned stable{};
     bool paired{};
+    bool guest_timed{};
 public:
-    void Reset() { frame.reset();stable=0;paired=false; }
-    Presentation Next(std::uint64_t next,std::int64_t now,bool eligible) {
+    void Reset() { frame.reset();stable=0;paired=false;guest_timed=false; }
+    Presentation Next(std::uint64_t next,std::int64_t now,bool eligible,
+                      std::optional<std::int64_t> guest_ms=std::nullopt) {
         if(frame && *frame==next)return paired?Presentation::Skip:Presentation::Native;
-        const auto elapsed=now-time;
-        const bool continuous=frame && next==*frame+1 && elapsed>=25 && elapsed<=50;
-        stable=continuous && eligible?stable+1:0;
-        frame=next;time=now;paired=eligible && stable>=2;
+        const auto timestamp=guest_ms.value_or(now);
+        const auto elapsed=timestamp-time;
+        const bool continuous=frame && next==*frame+1 && guest_timed==guest_ms.has_value() &&
+            elapsed>=25 && elapsed<=50;
+        // Cadence describes the guest frames, including frames whose private
+        // replay is incomplete. A pause/menu transition can temporarily lose
+        // its midpoint while continuing at 30 Hz; requiring two more eligible
+        // frames afterward hides most of a short opening/closing animation.
+        // Use completed-buffer emulated timestamps when available. Host waits
+        // (notably the pause backdrop capture) do not change the game's rate.
+        // Eligibility still gates every pair; a guest 60 Hz interval, frame
+        // gap, guest-time stall/rewind or clock-source change resets cadence.
+        stable=continuous?std::min(stable+1,2u):0;
+        frame=next;time=timestamp;guest_timed=guest_ms.has_value();paired=eligible && stable>=2;
         return paired?Presentation::Pair:Presentation::Native;
     }
 };
@@ -304,9 +436,11 @@ inline std::atomic<unsigned> camera_cpu_mismatch{},camera_lens_change{},camera_c
 class History {
     Matrix current{}, projection{}, camera_delta{};
     std::array<double,2> midpoint_lens_scale{1,1};
+    std::array<std::array<double,4>,2> midpoint_lens_offset{};
     Matrix Project(const Matrix& p) const {
         auto midpoint=p;
-        for(unsigned i=0;i<2;++i)for(unsigned j=0;j<4;++j)midpoint[i][j]*=midpoint_lens_scale[i];
+        for(unsigned i=0;i<2;++i)for(unsigned j=0;j<4;++j)
+            midpoint[i][j]=midpoint[i][j]*midpoint_lens_scale[i]+midpoint_lens_offset[i][j];
         return Multiply(midpoint,camera_delta);
     }
     std::uint64_t frame{};
@@ -343,7 +477,8 @@ public:
         const bool frame_ok=seen && next_frame==frame+1 && now>=time && now-time<=200;
         const auto lens_scale=GradualLensScale(projection,p);
         const auto wobble=GradualWorldWobble(projection,p);
-        const bool lens_ok=SameLens(projection,p) || lens_scale.has_value() || wobble.has_value();
+        const bool time_skip=GradualTimeSkipDistortion(projection,p);
+        const bool lens_ok=SameLens(projection,p) || lens_scale.has_value() || wobble.has_value() || time_skip;
         if(!frame_ok)++camera_gap;
         else if(!lens_ok)++camera_lens_change;
         bool continuous=frame_ok && lens_ok;
@@ -361,9 +496,12 @@ public:
             // Original vertices are in current view space. Change only the host
             // projection: P * V_mid * C_current * view_vertex.
             camera_delta=Multiply(InverseRigid(Midpoint(current,camera)),camera);
-            for(unsigned r=0;r<2;++r)
-                midpoint_lens_scale[r]=lens_scale?(1.+1. / *lens_scale)*.5:
+            for(unsigned r=0;r<2;++r) {
+                midpoint_lens_scale[r]=time_skip?1.:lens_scale?(1.+1. / *lens_scale)*.5:
                     wobble?(1.+1. / (*wobble)[r])*.5:1.;
+                for(unsigned c=0;c<4;++c)
+                    midpoint_lens_offset[r][c]=time_skip?(projection[r][c]-p[r][c])*.5:0.;
+            }
         }
         current=camera;projection=p;frame=next_frame;time=now;seen=true;
         return ready?std::optional<Matrix>(Project(p)):std::nullopt;

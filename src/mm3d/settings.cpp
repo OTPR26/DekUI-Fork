@@ -141,6 +141,7 @@ bool Settings::Load(const QString& path) {
     file_select_prompt.spacing=value("file_select_prompt_spacing",22.0f,0.0f,60.0f);
     file_select_prompt.icon_scale=value("file_select_prompt_icon_scale",1.0f,0.5f,2.0f);
     file_select.stone_spacing=value("file_select_stone_spacing",0.f,0.f,80.f);
+    file_select.entrance_ease=value("file_select_entrance_ease",2.f,1.f,3.f);
     file_select.enabled=object.value("file_select_native").toBool(true);
     file_select.header.x=value("file_select_header_x",0.f,-512.f,512.f);
     file_select.header.y=value("file_select_header_y",0.f,-512.f,512.f);
@@ -525,6 +526,7 @@ bool Settings::Save(const QString& path) const {
     object.insert("file_select_prompt_spacing",file_select_prompt.spacing);
     object.insert("file_select_prompt_icon_scale",file_select_prompt.icon_scale);
     object.insert("file_select_stone_spacing",file_select.stone_spacing);
+    object.insert("file_select_entrance_ease",file_select.entrance_ease);
     object.insert("file_select_native",file_select.enabled);
     object.insert("file_select_header_x",file_select.header.x);
     object.insert("file_select_header_y",file_select.header.y);

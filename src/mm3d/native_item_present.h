@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 #include "mm3d/native_inventory.h"
+#include "mm3d/item_slide_interpolation.h"
 
 namespace MM3D::NativeItemPresent {
 using namespace NativeInventory;
@@ -38,7 +39,8 @@ struct Hook {
     U32 panel=0,owner=0,background=0,cursor=0,touch=0,pass=~0u;
     unsigned background_draw=0;
     bool transitioning=false;
-    float transition_x=0;
+    float transition_x=0,transition_time=0,transition_travel=0;
+    bool transition_opening=false;
     bool upper_background=false;
     std::array<U32,20> icons{};
     unsigned cursor_part=Panel,cursor_slot=0;
@@ -76,7 +78,9 @@ struct Hook {
             if(top>=240||bottom<=0||l>=427||r<=0)continue;
             right=std::max(right,r);
         }
-        transition_x=-(32+right)*(opening?1-f/6.f:f/6.f);
+        // Keep the original six-frame linear motion in both directions.
+        transition_time=f;transition_travel=32+right;transition_opening=opening;
+        transition_x=ItemSlideInterpolation::Offset(opening,f,transition_travel);
         transitioning=true;
     }
     template<class M> bool Move(M& m,U32 node,unsigned part,std::vector<Write>& writes,std::vector<U32>& seen,int slot=-1) {

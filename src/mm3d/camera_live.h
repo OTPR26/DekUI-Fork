@@ -132,7 +132,11 @@ class Engine {
         auto left=m.Read(s.base+4),right=m.Read(s.base+8),top=m.Read(s.base+12),bottom=m.Read(s.base+16);
         if(!left||!right||!top||!bottom || *left!=0 || *right!=400 || *top!=0 || *bottom!=240) return false;
         if(!f(0x18,s.fov)||!f(0x4c,s.auxiliary_fov)||!f(0x1c,s.near_plane)||!f(0x20,s.far_plane)) return false;
-        if(s.fov<10 || s.fov>120 || s.auxiliary_fov<10 || s.auxiliary_fov>120 ||
+        // Scripted cameras can use nearly the full perspective range. The Song
+        // of Time fall reaches about 175 degrees; a gameplay-only 120-degree
+        // ceiling invalidated its snapshot and disabled midpoint rendering.
+        // This validates native camera data, not the user's configurable FOV.
+        if(s.fov<=0 || s.fov>=180 || s.auxiliary_fov<=0 || s.auxiliary_fov>=180 ||
            s.near_plane<=0 || s.far_plane<=s.near_plane) return false;
         for(unsigned i=0;i<3;++i)
             if(!f(0x28+4*i,s.eye[i])||!f(0x34+4*i,s.target[i]) ||

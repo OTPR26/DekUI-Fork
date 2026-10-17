@@ -8,10 +8,13 @@
 #include "mm3d/item_preview.h"
 #include "mm3d/native_notebook.h"
 #include "mm3d/native_file_select.h"
+#include "mm3d/file_select_input.h"
 #include "mm3d/file_select_prompt.h"
 #include "mm3d/ocarina_prompt.h"
 #include "mm3d/items_map_prompt.h"
 #include "mm3d/menu_help.h"
+#include "mm3d/menu_tabs.h"
+#include "mm3d/cpu_interpolation_capture.h"
 #include "mm3d/world_map_prompt.h"
 #include "mm3d/magic_border.h"
 #include "mm3d/minigame_hud.h"
@@ -24,6 +27,7 @@
 #include "mm3d/song_effect.h"
 #include "mm3d/dungeon_map.h"
 #include "mm3d/inventory_shadow.h"
+#include "mm3d/message_layout.h"
 #include "mm3d/native_item_present.h"
 #include "mm3d/inventory_navigation.h"
 #include "mm3d/native_startup.h"
@@ -260,7 +264,14 @@ void BannerChecks(){
         assert(*q.Read(queues[3]+0x84)==menu&&*q.Read(queues[3]+0x88)==other);
         auto routed=q.words;router.Pass(q,manager,0);assert(q.words==routed);
         q.words=original;q.Queue(queues[3],{banner,other});auto gameplay=q.words;
-        router.Pass(q,manager,0);assert(q.words==gameplay);
+        router.Pass(q,manager,0);assert(q.words==gameplay&&router.owner==banner);
+        MM3D::BannerInterpolation::Publish(700,90,router.owner);
+        assert(MM3D::CpuInterpolation::CaptureShader(0x9b343fea686d98e0ULL,
+            0xac22b79e29209c01ULL,96,-93,700,90));
+        q.Queue(queues[3],{other});router.Pass(q,manager,0);assert(!router.owner);
+        MM3D::BannerInterpolation::Publish(701,90,router.owner);
+        assert(!MM3D::CpuInterpolation::CaptureShader(0x9b343fea686d98e0ULL,
+            0xac22b79e29209c01ULL,96,-93,701,90));
         q.words=original;q.Queue(queues[0],std::vector<U32>(32,back));auto full=q.words;
         router.Pass(q,manager,0);assert(*q.Read(queues[0]+0x844)==32&&*q.Read(queues[3]+0x844)==2);
         q.words=original;q.words.erase(queues[0]+0x84);auto invalid=q.words;
@@ -1703,6 +1714,61 @@ void GearTransitionChecks() {
         }
     }
     m.words[anim+8]=m.String("blink_picture_anim");h.ReadGearTransition(m);assert(!h.gear_slide_active&&h.gear_slide_x==0);
+    {
+        // Reproduce the captured extents: Gear's right edge is 158.63px,
+        // while Masks travels 266.9px over eight 60 Hz submissions.
+        const std::array<float,8> saved{x.load(),scale.load(),masks_x.load(),masks_scale.load(),
+            background_pose.x.load(),background_pose.y.load(),background_pose.scale.load(),shadow_width.load()};
+        const bool saved_background=background_enabled.load();
+        x=-21.1f;scale=.7f;masks_x=0;masks_scale=1;
+        background_enabled=true;background_pose.x=-42.97f;background_pose.y=75.5f;background_pose.scale=.6f;shadow_width=1;
+        auto compact=options;compact.poses[MM3D::GearMenu::Panel]={0,32,.5f};
+        compact.poses[MM3D::GearMenu::Right]={400,32,.5f};MM3D::GearMenu::Apply(compact);
+        const auto reference=HorizontalSlideDistance(true);assert(reference&&std::abs(*reference-266.9f)<.001f);
+        namespace I=MM3D::InventoryInterpolation;
+        I::History history;I::Values u{};I::Tev tev{};
+        u[0]={1,0,-1.f/120,0};u[1]={1,0,0,-1.f/200};
+        u[10]={0,3,94,1};u[11]={158.63f,0,0,-100};u[12]={75.5f,0,40,0};u[13]={0,1,0,0};
+        u[94]={0,.25f,0,.125f};u[95]={0,.5f,.0625f,0};
+        for(unsigned i=0;i<6;++i)tev[i]={i==0?0x0ee00ee0u:i==1?0x0e3f0e3fu:0x0eef0eefu,
+            0,i<2?0x10001u:0u,0xffffffffu,0};
+        m.words[anim+8]=m.String("in_menu_collect_anim");
+        float previous=0;
+        for(unsigned step=0;step<4;++step) {
+            const float remaining=.75f-.25f*step;
+            m.words[left+0xec]=std::bit_cast<U32>(-264*remaining);
+            m.words[right+0xec]=std::bit_cast<U32>(64*remaining);
+            const auto native=m.words;h.ReadGearTransition(m);
+            assert(h.gear_slide_active&&native==m.words);
+            u[11][0]=158.63f+h.gear_slide_x;
+            const auto midpoint=history.Apply(100+step,{100,200,1,42},u,6,tev);
+            if(!step)assert(!midpoint&&u[11][0]<0); // Missing history is entirely offscreen.
+            else {
+                assert(midpoint);
+                // Every displayed step, including entry across X=0, matches
+                // Masks' native 60 Hz displacement; no invented prior pose.
+                assert(std::abs(midpoint->values[11][0]-previous-*reference/8)<.001f);
+                assert(std::abs(u[11][0]-midpoint->values[11][0]-*reference/8)<.001f);
+            }
+            previous=u[11][0];
+        }
+        assert(std::abs(previous-158.63f)<.001f); // Same settled position and final guest frame.
+        m.words[anim+8]=m.String("out_menu_collect_anim");
+        for(unsigned step=0;step<=3;++step) {
+            const float remaining=float(step)/3;
+            m.words[left+0xec]=std::bit_cast<U32>(-264*remaining);
+            m.words[right+0xec]=std::bit_cast<U32>(64*remaining);h.ReadGearTransition(m);
+            const float current=158.63f+h.gear_slide_x;
+            if(step)assert(std::abs(previous-current-*reference/4)<.001f);
+            previous=current;
+        }
+        assert(previous<0);
+        masks_scale=std::numeric_limits<float>::quiet_NaN();h.ReadGearTransition(m);
+        assert(!h.gear_slide_active&&h.gear_slide_x==0);
+        x=saved[0];scale=saved[1];masks_x=saved[2];masks_scale=saved[3];
+        background_pose.x=saved[4];background_pose.y=saved[5];background_pose.scale=saved[6];shadow_width=saved[7];
+        background_enabled=saved_background;MM3D::GearMenu::Apply(options);
+    }
 }
 void FileSelectPresentationChecks() {
     namespace F=MM3D::NativeFileSelect;Memory m;F::Hook h;
@@ -1726,6 +1792,74 @@ void FileSelectPresentationChecks() {
         assert(h.Mapping(F::Summary).tx+400*.8f<=-32);
         assert(h.Mapping(F::Files).tx==100);
     }
+    // The first submitted entrance frame can already be at time 1. Preserve
+    // the native stagger/endpoints while seeding all three plates offscreen.
+    for(unsigned i=0;i<3;++i)m.words[m.words[widgets+4*i]+0xec]=std::bit_cast<U32>(334.f);
+    F::entrance_ease=2;
+    m.words[player+0x10]=std::bit_cast<U32>(1.f);h.ReadPresentation(m);
+    assert(h.entrance_active&&h.entrance_pending&&h.presentation);
+    for(float dx:h.stone_slide)assert(h.frame[F::Files].x+14*h.frame[F::Files].scale+dx>413.34f);
+    const auto first=h.stone_slide;
+    const auto group=m.Widget("null_plate_g");std::vector<U32> roots,plates;
+    for(unsigned i=0;i<3;++i) {
+        const auto root=m.words[widgets+4*i],plate=m.Layout("FilePlate",334,46+52*i);
+        m.words[root+0x20]=plate;roots.push_back(root);plates.push_back(plate);
+    }
+    m.Children(group,roots);
+    const auto native=m.words;std::vector<Hook::Write> writes;std::vector<U32> seen;
+    assert(h.Stones(m,group,writes,seen));
+    for(auto w:writes)m.Write(w.address,w.after);
+    for(auto plate:plates)assert(std::bit_cast<float>(m.words[plate+8+0xec])>413.34f);
+    for(auto it=writes.rbegin();it!=writes.rend();++it)m.Write(it->address,it->before);
+    assert(m.words==native);
+    const auto cursors=m.Widget("cursor_g");std::vector<U32> cursor_nodes;
+    for(const char* name:{"cursor_option_g","cursor_copy_del_g","cursor_start_g","cursor_plate_g"})
+        cursor_nodes.push_back(m.Widget(name));
+    m.Children(cursors,cursor_nodes);writes.clear();seen.clear();
+    assert(h.Cursors(m,cursors,writes,seen));
+    const U32 cursor_flags=cursor_nodes[3]+0xd4;
+    assert(std::any_of(writes.begin(),writes.end(),[&](const auto& w){
+        return w.address==cursor_flags && !(w.after&1u);
+    }));
+    h.ReadPresentation(m);assert(h.stone_slide==first); // Repeated draw doesn't advance time.
+    MM3D::FileSelectInterpolation::Publish({100,4,h.panel,{0,0,0},true,first});
+    m.words[player+0x10]=std::bit_cast<U32>(2.f);h.ReadPresentation(m);
+    assert(h.stone_slide[0]<first[0]&&h.stone_slide[1]==first[1]&&h.stone_slide[2]==first[2]);
+    MM3D::FileSelectInterpolation::Publish({101,4,h.panel,{0,0,0},true,h.stone_slide});
+    const auto motion=MM3D::FileSelectInterpolation::Motion(101,4,h.panel);
+    const float dx=h.stone_slide[0]-first[0];
+    assert(std::find(motion.begin(),motion.end(),dx)!=motion.end());
+    float previous=h.stone_slide[0],previous_step=first[0]-previous;
+    for(float f:{3.f,4.f,5.f,6.f}) {
+        m.words[player+0x10]=std::bit_cast<U32>(f);h.ReadPresentation(m);
+        const float step=previous-h.stone_slide[0];
+        assert(step>=0&&step<previous_step);previous=h.stone_slide[0];previous_step=step;
+    }
+    assert(h.stone_slide[0]==0&&h.stone_slide[1]>0&&h.stone_slide[2]>0&&h.entrance_pending);
+    m.words[player+0x10]=std::bit_cast<U32>(8.f);h.ReadPresentation(m);
+    assert(h.stone_slide[0]==0&&h.stone_slide[1]==0&&h.stone_slide[2]>0&&h.entrance_pending);
+    m.words[player+0x10]=std::bit_cast<U32>(10.f);h.ReadPresentation(m);
+    assert((h.stone_slide==std::array<float,3>{}&&!h.entrance_pending));
+    writes.clear();seen.clear();assert(h.Cursors(m,cursors,writes,seen));
+    assert(std::none_of(writes.begin(),writes.end(),[&](const auto& w){
+        return w.address==cursor_flags && !(w.after&1u);
+    }));
+    for(float ease:{1.f,3.f}) {
+        F::entrance_ease=ease;m.words[player+0x10]=std::bit_cast<U32>(1.f);h.ReadPresentation(m);
+        m.words[player+0x10]=std::bit_cast<U32>(3.5f);h.ReadPresentation(m);
+        const float expected=first[0]*std::pow(.5f,ease);
+        assert(std::abs(h.stone_slide[0]-expected)<.001f);
+    }
+    F::entrance_ease=2;
+    // Gate both digital navigation/selection and analog navigation, and never
+    // keep input blocked after completion, a missing layout, or stale state.
+    namespace Input=MM3D::FileSelectInput;
+    U32 buttons=0xffffffff;short ax=100,ay=-100;
+    Input::Observe(true,1000);Input::Filter(buttons,ax,ay,1100);
+    assert(!buttons&&!ax&&!ay&&Input::Blocked(1100));
+    Input::Observe(false,1101);buttons=17;ax=50;ay=25;Input::Filter(buttons,ax,ay,1102);
+    assert(buttons==17&&ax==50&&ay==25&&!Input::Blocked(1102));
+    Input::Observe(true,1200);assert(!Input::Blocked(1450));Input::Observe(false);
     for(unsigned i=0;i<3;++i)m.words[m.words[widgets+4*i]+0xec]=std::bit_cast<U32>(14.f);
     for(unsigned slot=0;slot<3;++slot)for(bool entering:{true,false}) {
         m.words[anim+8]=m.String((std::string(entering?"in_f":"out_f")+std::to_string(slot+1)+"_to_start").c_str());
@@ -2460,7 +2594,162 @@ void CutsceneFovChecks() {
     m.words[game+0xa78]=4<<16;assert(C::ConfiguredFov(m,projection)==65);
     C::desired_fov=45;
 }
+void SharedMessageChecks() {
+    namespace L=MM3D::MessageLayout;namespace I=MM3D::MessageInterpolation;
+    Memory m;auto layout=m.Layout("MessageWindow",0,0,0x500),all=m.Widget("all"),plate=m.Widget("plate"),pane=m.Widget("window_plate");
+    m.Children(layout+8,{all});m.Children(all,{plate});m.Children(plate,{pane});
+    auto geo=m.Alloc(0x7c);m.words[pane+0x28]=geo;m.words[geo+4]=6;m.words[layout+0x3f4]=42;
+    const auto put=[&](U32 at,float f){m.words[at]=std::bit_cast<U32>(f);};
+    put(plate+0x134,1);put(pane+0x134,1);
+    for(unsigned r=0;r<3;++r)put(pane+0xe0+r*16+r*4,.7f);
+    put(pane+0xec,200);put(pane+0xfc,160);put(pane+0x10c,3.5f);
+    put(geo+0x14,-200);put(geo+0x18,-50);put(geo+0x20,400);put(geo+0x24,100);
+    put(geo+0x28,.25f);put(geo+0x2c,.5f);put(geo+0x30,.5f);put(geo+0x34,.25f);
+    put(pane+0x110,1);put(pane+0x120,1);
+    const auto before=m.words;const auto panels=L::Read(m,layout);
+    assert(panels.size()==1&&m.words==before);
+    assert((panels[0].source==I::Source{layout,pane,geo,42}));
+    const auto& p=panels[0];
+    const std::array<std::array<float,4>,3> expected{{{60,0,0,280},{125,0,70,0},{3.5f,.7f,0,0}}};
+    for(unsigned r=0;r<3;++r)for(unsigned c=0;c<4;++c)
+        assert(I::Near(p.transform[r][c],expected[r][c]));
+    I::Values a{};a[10]={0,3,94,-93};a[8]={.2f,.9f,.4f,.8f};a[93]={1,.5f,.2f,.6f};
+    for(unsigned r=0;r<3;++r)a[11+r]=p.transform[r];
+    for(unsigned r=0;r<2;++r)a[94+r]=p.uv[r];
+    I::Publish(100,777,panels);
+    auto owner=I::SourceFor(100,777,a);assert(owner&&*owner==p.source);
+    assert(I::SourceFor(101,777,a)&&!I::SourceFor(102,777,a)&&!I::SourceFor(100,778,a));
+    // Native float32 transforms are rounded on upload to the PICA float24
+    // mantissa. Ownership must survive that conversion, but not another pane.
+    auto rounded=a;
+    for(unsigned r:{11u,12u,13u,94u,95u})for(float& f:rounded[r])
+        f=std::bit_cast<float>(std::bit_cast<U32>(f)&~127u);
+    assert(I::SourceFor(100,777,rounded)==owner);
+    assert(!I::Recognized(a)&&I::OwnedPlate(a)); // Unlisted style accepted by native ownership.
+    I::History history;const I::Key key{1,2,777};
+    assert(!history.Apply(100,key,a,owner));
+    auto b=a;b[11][0]+=10;b[11][3]+=40;b[12][2]+=10;b[8][0]+=.1f;b[93][3]+=.2f;
+    auto half=history.Apply(101,key,b,owner);
+    assert(half&&I::Near((*half)[1][0],65)&&I::Near((*half)[1][3],300)&&I::Near((*half)[4][3],.7f));
+    auto unrelated=a;unrelated[11][0]+=1;assert(!I::SourceFor(100,777,unrelated));
+    unrelated=a;unrelated[95][1]+=.25f;assert(!I::SourceFor(100,777,unrelated));
+    auto changed=p.source;changed[3]++;assert(!history.Apply(102,key,b,changed));
+    history.Reset();history.Apply(100,key,a,owner);b=a;b[95][1]+=.25f;
+    assert(!history.Apply(101,key,b,owner)); // Atlas regions never blend.
+    auto duplicate=panels;duplicate[0].source[1]++;
+    I::Publish(100,777,duplicate);assert(!I::SourceFor(100,777,a));
+    I::Publish(1,778,panels);assert(!I::SourceFor(100,777,a));
+    m.words[plate+0xd4]&=~1u;assert(L::Read(m,layout).empty());m.words=before;
+    m.words[geo+4]=3;assert(L::Read(m,layout).empty());m.words=before;
+    m.Children(pane,{plate});assert(L::Read(m,layout).empty());m.words=before;
+    put(pane+0xec,std::numeric_limits<float>::quiet_NaN());assert(L::Read(m,layout).empty());m.words=before;
+    const auto other=m.Layout("Other",0,0,0x500);assert(L::Read(m,other).empty());
+    // Indicators are siblings of plate. Their transforms match independently,
+    // while text geometry remains excluded from snapshots.
+    const auto wait=m.Widget("waitIcon"),arrow=m.Widget("branchArrow"),text=m.Widget("text");
+    m.Children(all,{plate,wait,arrow,text});
+    for(auto node:{wait,arrow,text}) {
+        for(unsigned off=0;off<0x140;off+=4)
+            if(off!=0x10)m.words[node+off]=m.words[pane+off];
+    }
+    const auto glyph=m.Alloc(0x7c);m.words[glyph+4]=3;m.words[text+0x28]=glyph;
+    put(wait+0xfc,210);put(arrow+0xec,40);
+    const auto icons=L::Read(m,layout);assert(icons.size()==3);
+    I::Publish(200,888,icons);
+    for(const auto& icon:icons) {
+        auto u=a;
+        for(unsigned r=0;r<3;++r)u[11+r]=icon.transform[r];
+        for(unsigned r=0;r<2;++r)u[94+r]=icon.uv[r];
+        assert(I::SourceFor(200,888,u)==icon.source);
+    }
+    m.words[wait+0xd4]&=~1u;assert(L::Read(m,layout).size()==2);
+    auto icon=a;icon[10][3]=1;icon[93]={100,200,300,400};
+    I::History icon_history;
+    assert(!I::Recognized(icon)&&I::OwnedPlate(icon));
+    assert(!icon_history.Apply(200,key,icon,icons[1].source));
+    auto next_icon=icon;next_icon[12][0]+=2;next_icon[93][0]=900;
+    const auto icon_half=icon_history.Apply(201,key,next_icon,icons[1].source);
+    assert(icon_half&&I::Near((*icon_half)[2][0],icon[12][0]+1));
+    assert((*icon_half)[4]==next_icon[93]); // Inactive color register is untouched.
+    next_icon[94][1]+=.0625f;
+    assert(!icon_history.Apply(202,key,next_icon,icons[1].source)); // Sprite changes never blend.
+    assert(MM3D::CpuInterpolation::CaptureShader(0x9b343fea686d98e0ULL,0xac22b79e29209c01ULL,6,1,200,888));
+    assert(!I::Active(202,888)&&!I::Active(200,889));
+
+
+}
+
 int main(int argc,char** argv) {
+    SharedMessageChecks();
+    {
+        // Captured low/scaled Gear tabs must start hidden but be visible
+        // during the first opening step, not only its final one or two steps.
+        const float selected_top=219.36f,unselected_top=225.3f;
+        const float travel=std::max(MM3D::MenuTabs::SlideClearance(19.7f,.62f,true),
+                                    MM3D::MenuTabs::SlideClearance(21.3f,.64f,false));
+        assert(selected_top+travel>=241.99f && unselected_top+travel>=242.f);
+        assert(selected_top+.75f*travel<240.f);
+        assert(unselected_top+.5f*travel<240.f);
+        assert(selected_top+travel/3.f<240.f && unselected_top+travel/3.f<240.f);
+        // Selected tabs need enough clearance for the lifted face and rim at
+        // every supported scale, including a tab moved above the defaults.
+        for(float scale:{.25f,1.f,2.f})for(float y:{-40.f,0.f,20.f}) {
+            const float top=204.f+y-7.f*scale;
+            assert(std::abs(top+MM3D::MenuTabs::SlideClearance(y,scale,true)-242.f)<.001f);
+        }
+        assert(MM3D::MenuTabs::SlideClearance(100.f,1.f,false)==0.f);
+        MM3D::MenuTabs::SlideTiming timing;
+        assert(timing.Apply(1,1)==1);
+        const auto entering=timing.Apply(1,.5f);
+        assert(entering<.5f && entering>.4f);
+        assert(timing.Apply(1,.5f)==entering); // Repeated draw keeps direction.
+        assert(timing.Apply(1,0)==0);
+        const auto exiting=timing.Apply(1,.5f);
+        assert(exiting>.5f && exiting<.6f);
+        assert(timing.Apply(1,.5f)==exiting);
+        assert(timing.Apply(1,1)==1);
+        assert(timing.Apply(2,.5f)==entering); // New page starts opening.
+    }
+    {
+        Memory m;Hook hook;
+        const auto manager=m.Alloc(0x24);
+        std::array<U32,6> queues{};
+        for(unsigned i=0;i<6;++i){queues[i]=m.Alloc(0x848);m.words[manager+8+4*i]=queues[i];}
+        const auto world=m.Layout("UpWorldMapHud"),background=m.Layout("UpWorldMapBG"),
+            title=m.Layout("SubMenuTitle"),gear=m.Layout("MenuCollect");
+        m.Queue(queues[2],{world,title});
+        const auto before=m.words;
+        assert(hook.SubmittedInterpolationOwner(m,manager)==world);
+        assert(m.words==before); // Ownership inspection cannot mutate guest state.
+        assert(hook.SubmittedInterpolationOwner(m,manager,true)==world);
+        MM3D::InventoryInterpolation::Publish(42,3,hook.SubmittedInterpolationOwner(m,manager),
+            hook.SubmittedInterpolationOwner(m,manager,true));
+        assert(MM3D::InventoryInterpolation::Owner(42,3,true)==world);
+        assert(MM3D::InventoryInterpolation::Owner(43,3,true)==world);
+        assert(!MM3D::InventoryInterpolation::Owner(44,3,true));
+        assert(!MM3D::InventoryInterpolation::Owner(42,4,true));
+        assert(MM3D::CpuInterpolation::CaptureShader(0x9b343fea686d98e0ULL,
+            0xac22b79e29209c01ULL,24,1,42,3)); // Map banner retains CPU replay inputs.
+        m.Queue(queues[2],{background,title});
+        assert(!hook.SubmittedInterpolationOwner(m,manager));
+        MM3D::InventoryInterpolation::Publish(43,3,hook.SubmittedInterpolationOwner(m,manager));
+        assert(!MM3D::InventoryInterpolation::Owner(43,3,true));
+        assert(!MM3D::CpuInterpolation::CaptureShader(0x9b343fea686d98e0ULL,
+            0xac22b79e29209c01ULL,24,1,43,3));
+        m.Queue(queues[2],{gear}); // Wrong queue cannot leak into the next queue's scan.
+        assert(!hook.SubmittedInterpolationOwner(m,manager));
+        m.Queue(queues[2],{world});m.words[queues[2]+0x844]=2;
+        assert(!hook.SubmittedInterpolationOwner(m,manager)); // Inconsistent queue rejected.
+        m.Queue(queues[2],{});
+        m.Queue(queues[3],{gear});
+        assert(hook.SubmittedInterpolationOwner(m,manager)==gear);
+        assert(!hook.SubmittedInterpolationOwner(m,manager,true));
+        m.Queue(queues[3],{});m.Queue(queues[5],{m.Layout("MenuMapDungeon")});
+        assert(hook.SubmittedInterpolationOwner(m,manager)!=0);
+        assert(!hook.SubmittedInterpolationOwner(m,manager,true));
+        m.Queue(queues[5],{});m.Queue(queues[1],{world});
+        assert(!hook.SubmittedInterpolationOwner(m,manager)); // No stale or background-only owner.
+    }
     if(argc>1){
         namespace H=MM3D::HudButtons;
         std::ifstream f(argv[1],std::ios::binary);Memory code;
@@ -3068,6 +3357,14 @@ int main(int argc,char** argv) {
         if(draw>=24)assert(std::bit_cast<float>(gm.words[gright+0xec])==background_pose.x.load());
         if(draw<24)assert(gm.words[gright+0x128]==0);
         gh.End(gm);assert(gm.words==before_bg);
+    }
+    {
+        const auto saved_hook=gh;
+        gm.words=gear_original;gh.gear_slide_x=-600;
+        gh.BackgroundPass(gm,gmanager);
+        assert(gh.routed_background==gbg);
+        assert(std::abs(gh.frame_background.x-(std::clamp(background_pose.x.load(),-400.f,400.f)-600))<.001f);
+        gh=saved_hook;gm.words=before_bg;
     }
     gh.pass=5; // Inspect the already-routed bottom emission without submitting twice.
     auto gear_routed=gm.words;gh.Begin(gm,gl);assert(gm.words[gb[1]+0xd4]==14);

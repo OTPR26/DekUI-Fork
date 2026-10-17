@@ -1,6 +1,7 @@
 // Copyright 2026 MM3D presentation contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <iostream>
+#include <limits>
 #include <map>
 #include <stdexcept>
 #include "mm3d/camera_live.h"
@@ -43,6 +44,36 @@ int main() {
           "CPU camera snapshot publishes its sample time and direct eye/target readings");
     Check(m.writes==0,"timestamped camera sampling is read-only");
     Check(engine.Tick(m,55.f).active && m.writes==0,"inspection does not modify camera state");
+    {
+        Memory scripted;
+        constexpr U32 base=0x08001000;
+        // Actual vertical lens terms from the Song of Time falling sequence.
+        // Reconstruct their native FOV without changing any projection values.
+        for(const float lens : {2.423694849f,.9494589567f,.5159825087f,
+                               .1044527665f,.04366129637f,.06434336305f}) {
+            const float fov=2.f*std::atan(1.f/lens)*180.f/3.14159265358979323846f;
+            scripted.Float(base+0x18,fov);scripted.Float(base+0x4c,fov);
+            scripted.Float(base+0xd0,lens);
+            const auto snapshot=engine.Tick(scripted,45.f);
+            Check(snapshot.valid,"Song of Time wide-angle camera remains available for interpolation");
+            Check(std::abs(snapshot.matrix_fov-fov)<.001f && snapshot.fov==fov,
+                  "native cutscene FOV is reported without clamping");
+        }
+        Check(scripted.writes==0,"wide-angle snapshot validation is read-only");
+        for(const U32 offset : {0x18u,0x4cu}) {
+            for(const float invalid : {0.f,-1.f,180.f,181.f,
+                    std::numeric_limits<float>::infinity(),std::numeric_limits<float>::quiet_NaN()}) {
+                scripted.Camera(base);scripted.Float(base+offset,invalid);
+                Check(!engine.Tick(scripted,45.f).valid,"degenerate and nonfinite FOV still rejected");
+            }
+        }
+        scripted.Camera(base);scripted.Float(base+0x18,175.f);
+        scripted.Float(base+0x1c,0.f);
+        Check(!engine.Tick(scripted,45.f).valid,"wide-angle camera still requires valid clipping");
+        scripted.Camera(base);scripted.Float(base+0x18,175.f);
+        scripted.Float(base+0xd0,-.04366129637f);
+        Check(!engine.Tick(scripted,45.f).valid,"wide-angle camera still requires positive projection");
+    }
     m.words[CameraPointer]=0;
     Check(engine.Tick(m,55.f).active,"projection hook does not wait for published camera");
     m.words[0x18d414]=0;
