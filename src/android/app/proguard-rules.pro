@@ -28,3 +28,6 @@
 -assumenosideeffects class android.util.Log {
     public static int v(...);
 }
+
+# Stable entry point for isolated settings-persistence instrumentation checks.
+-keep class org.citra.citra_emu.utils.DekuiPresentationStore { *; }

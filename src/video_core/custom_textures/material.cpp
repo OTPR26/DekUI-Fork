@@ -7,6 +7,10 @@
 #include "common/texture.h"
 #include "core/frontend/image_interface.h"
 #include "video_core/custom_textures/material.h"
+#ifdef ENABLE_MM3D_PRESENTATION
+#include "mm3d/tunic_color.h"
+#include "mm3d/sword_icon.h"
+#endif
 
 namespace VideoCore {
 
@@ -88,6 +92,16 @@ void CustomTexture::LoadPNG(std::span<const u8> input, bool flip_png) {
         Common::FlipRGBA8Texture(data, width, height);
     }
     format = CustomPixelFormat::RGBA8;
+#ifdef ENABLE_MM3D_PRESENTATION
+    if(type==MapType::Color)
+        for(const auto hash:hashes)if(MM3D::TunicColor::Texture(hash)) {
+            MM3D::TunicColor::Apply(hash,data);break;
+        }
+    if(type==MapType::Color)
+        for(const auto hash:hashes)if(MM3D::SwordIcon::Texture(hash)) {
+            MM3D::SwordIcon::Apply(hash,data,width,height,!flip_png);break;
+        }
+#endif
 }
 
 void CustomTexture::LoadDDS(std::span<const u8> input) {

@@ -36,6 +36,18 @@ object DekuiAndroidSetup {
                     ?.takeIf { it.isDirectory } ?: throw IOException("Cannot create $name")
             val config = directory(root, "config")
             val targetRoot = directory(config, "mm3d-local")
+            if (isPrivateStorage(context)) {
+                java.io.File(context.filesDir,"dekui/config/mm3d-local/menu-font.otf").delete()
+                val font=java.io.File(context.filesDir,"dekui/config/mm3d-local/menu-font.ttf")
+                if (!font.isFile || font.length()==0L) {
+                    val atomic=android.util.AtomicFile(font)
+                    val output=atomic.startWrite()
+                    try {
+                        context.resources.openRawResource(org.citra.citra_emu.R.font.dekui_sans_regular).use { it.copyTo(output) }
+                        atomic.finishWrite(output)
+                    } catch(error: Exception) { atomic.failWrite(output);throw error }
+                }
+            }
             val legacy = root.findFile("dekui")?.findFile("presentation.json")
             fun copy(asset: String, parent: DocumentFile, name: String) {
                 val children = context.assets.list(asset) ?: throw IOException("Missing $asset")

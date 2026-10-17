@@ -40,9 +40,6 @@ public:
     /// Draw the current batch of triangles
     virtual void DrawTriangles() = 0;
 
-    /// Called on the emulation thread before the top-screen guest frame advances.
-    virtual void EndGuestFrame() {}
-
     /// Notify rasterizer that all caches should be flushed to 3DS memory
     virtual void FlushAll() = 0;
 

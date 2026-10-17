@@ -29,6 +29,15 @@ constexpr std::size_t MAX_UPLOADS_PER_TICK = 8;
 
 using namespace Common::Literals;
 
+std::string TextureLoadPath(u64 title_id) {
+#ifdef ANDROID
+    if (title_id == 0x0004000000125500ULL && FileUtil::Exists("/@textures/")) {
+        return "/@textures/";
+    }
+#endif
+    return fmt::format("{}textures/{:016X}/", GetUserPath(FileUtil::UserPath::LoadDir), title_id);
+}
+
 bool IsPow2(u32 value) {
     return value != 0 && (value & (value - 1)) == 0;
 }
@@ -100,6 +109,7 @@ void CustomTexManager::FindCustomTextures() {
         skip_mipmap = true;
     }
 
+    LOG_INFO(Render, "Custom texture source {}: {} files", TextureLoadPath(title_id), textures.size());
     custom_textures.reserve(textures.size());
     for (const FileUtil::FSTEntry& file : textures) {
         if (file.isDirectory) {
@@ -175,8 +185,7 @@ bool CustomTexManager::ParseFilename(const FileUtil::FSTEntry& file, CustomTextu
 void CustomTexManager::PrepareDumping(u64 title_id) {
     // If a pack exists in the load folder that uses the old hash, dump textures using the old hash.
     // This occurs either if a configuration file doesn't exist or that file sets the old hash.
-    const std::string load_path =
-        fmt::format("{}textures/{:016X}/", GetUserPath(FileUtil::UserPath::LoadDir), title_id);
+    const std::string load_path = TextureLoadPath(title_id);
     if (FileUtil::Exists(load_path) && !ReadConfig(title_id, true)) {
         use_new_hash = false;
     }
@@ -313,9 +322,8 @@ bool CustomTexManager::Decode(Material* material, std::function<bool()>&& upload
 }
 
 bool CustomTexManager::ReadConfig(u64 title_id, bool options_only) {
-    const std::string load_path =
-        fmt::format("{}textures/{:016X}/", GetUserPath(FileUtil::UserPath::LoadDir), title_id);
-    if (!FileUtil::Exists(load_path)) {
+    const std::string load_path = TextureLoadPath(title_id);
+    if (!load_path.starts_with("/@textures/") && !FileUtil::Exists(load_path)) {
         FileUtil::CreateFullPath(load_path);
     }
 
@@ -372,9 +380,8 @@ bool CustomTexManager::ReadConfig(u64 title_id, bool options_only) {
 }
 
 std::vector<FileUtil::FSTEntry> CustomTexManager::GetTextures(u64 title_id) {
-    const std::string load_path =
-        fmt::format("{}textures/{:016X}/", GetUserPath(FileUtil::UserPath::LoadDir), title_id);
-    if (!FileUtil::Exists(load_path)) {
+    const std::string load_path = TextureLoadPath(title_id);
+    if (!load_path.starts_with("/@textures/") && !FileUtil::Exists(load_path)) {
         FileUtil::CreateFullPath(load_path);
     }
 
@@ -382,6 +389,20 @@ std::vector<FileUtil::FSTEntry> CustomTexManager::GetTextures(u64 title_id) {
     std::vector<FileUtil::FSTEntry> textures;
     FileUtil::ScanDirectoryTree(load_path, texture_dir, 64);
     FileUtil::GetAllFilesFromNestedEntries(texture_dir, textures);
+#ifdef ANDROID
+    if (load_path == "/@textures/") {
+        FileUtil::FSTEntry overrides_dir;
+        std::vector<FileUtil::FSTEntry> overrides;
+        const auto private_path = fmt::format("{}textures/{:016X}/",
+                                             GetUserPath(FileUtil::UserPath::LoadDir), title_id);
+        FileUtil::ScanDirectoryTree(private_path, overrides_dir, 64);
+        FileUtil::GetAllFilesFromNestedEntries(overrides_dir, overrides);
+        for (const auto& file : overrides) {
+            std::erase_if(textures, [&](const auto& entry) { return entry.virtualName == file.virtualName; });
+            textures.push_back(file);
+        }
+    }
+#endif
     return textures;
 }
 

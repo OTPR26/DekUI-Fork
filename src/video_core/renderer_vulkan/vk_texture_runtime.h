@@ -5,7 +5,6 @@
 #pragma once
 
 #include <span>
-#include <atomic>
 #include "video_core/rasterizer_cache/framebuffer_base.h"
 #include "video_core/rasterizer_cache/rasterizer_cache_base.h"
 #include "video_core/rasterizer_cache/surface_base.h"
@@ -139,11 +138,6 @@ public:
     /// Maps an internal staging buffer of the provided size for pixel uploads/downloads
     VideoCore::StagingData FindStaging(u32 size, bool upload);
 
-#ifdef ENABLE_MM3D_PRESENTATION
-    /// Queue a private depth snapshot, without waiting or changing guest memory.
-    void QueueVisibilityDepth(Surface& surface, vk::Buffer buffer);
-#endif
-
     /// Attempts to reinterpret a rectangle of source to another rectangle of dest
     bool Reinterpret(Surface& source, Surface& dest, const VideoCore::TextureCopy& copy);
 
@@ -186,8 +180,6 @@ class Surface : public VideoCore::SurfaceBase {
 
 public:
 #ifdef ENABLE_MM3D_PRESENTATION
-    inline static std::atomic<u64> next_visibility_id{1};
-    u64 mm3d_visibility_id = next_visibility_id.fetch_add(1);
     // Owned by this surface; a recreated surface never inherits a cached digest.
     u64 mm3d_hash_tick{}, mm3d_hash_key{};
     std::string mm3d_hash;

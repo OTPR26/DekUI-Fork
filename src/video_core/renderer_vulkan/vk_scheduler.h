@@ -71,21 +71,6 @@ public:
     void FlushReplay();
     bool ReplayLimitReached() const { return replay_chunks.size() >= 16; }
 
-    // A read-only download of a resource not written by pending replay may run
-    // first. The private fence does NOT retire the resource tick: deferred draws
-    // still own every buffer/descriptor until a normal submission drains them.
-    class NativeReadbackScope {
-    public:
-        NativeReadbackScope(Scheduler& scheduler, bool independent);
-        ~NativeReadbackScope();
-        NativeReadbackScope(const NativeReadbackScope&) = delete;
-        NativeReadbackScope& operator=(const NativeReadbackScope&) = delete;
-    private:
-        Scheduler* scheduler{};
-    };
-    bool ReadingBeforeReplay() const { return native_readback; }
-    bool ReadbackPriorityEnabled() const { return readback_priority_enabled; }
-
     class NativeDrawScope {
     public:
         explicit NativeDrawScope(Scheduler& scheduler_, bool eligible = true) {
@@ -119,7 +104,7 @@ public:
             }
             return;
         }
-        if (!native_draw_depth && !drain_replay && !native_readback && HasReplay()) FlushReplay();
+        if (!native_draw_depth && !drain_replay && HasReplay()) FlushReplay();
         if (chunk->Record(command)) {
             return;
         }
@@ -266,19 +251,12 @@ private:
 
     void AllocateWorkerCommandBuffers();
 
-    void WaitWorkerCommands();
-    void FinishNativeReadback(std::source_location caller);
-
     void SubmitExecution(vk::Semaphore signal_semaphore, vk::Semaphore wait_semaphore,
                          std::shared_ptr<MM3D::InterpolationTimeline::Submission> trace = {});
 
     void AcquireNewChunk();
 
 private:
-    vk::Device device;
-    vk::Queue graphics_queue;
-    vk::UniqueFence readback_fence;
-    bool readback_priority_enabled{}, native_readback{};
 #ifdef ENABLE_MM3D_PRESENTATION
     struct TimingSlot {
         u64 tick{}, session{};

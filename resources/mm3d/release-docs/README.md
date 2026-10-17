@@ -27,7 +27,7 @@ A custom fork of Azahar is used as the backing engine.
 - Pause menu background image adapts to resolution (3DS/emulators default to 240p)
 - Correct bloom lighting at higher resolutions
 - Custom texture support
-- French and Spanish support with translations for custom button prompts and new dialogue
+- French and Spanish translations for custom button prompts and new dialogue
 - Many other minor changes in camera and HUD elements
 
 ## Screenshots
@@ -57,7 +57,7 @@ A custom fork of Azahar is used as the backing engine.
 
 ## Planned features
 
-- Android support
+- Randomizer support
 - Graphical enhancements (depth of field, ambient occlusion)
 - Further improvements to 60fps interpolation (the aim is perfection)
 - Further UI polishing/redesign and bug fixing

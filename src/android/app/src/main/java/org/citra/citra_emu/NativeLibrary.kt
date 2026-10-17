@@ -110,6 +110,13 @@ object NativeLibrary {
 
     // Presentation-only entry points return false in ordinary Azahar builds.
     external fun pollDekuiSettings(): IntArray?
+
+    external fun updateDekuiAndroidUi(bindings: Array<String>, textures: String, status: String,
+        capture: Int, touch: Boolean, opacity: Int, scale: Int, haptics: Boolean)
+    external fun dekuiScrollbarCenter(x: Float, y: Float): Float
+    external fun onDekuiMenuKey(key: Int, down: Boolean)
+    external fun onDekuiScroll(x: Float, y: Float, amount: Float)
+
     external fun closeDekuiSettings()
     external fun hasDekuiSettings(): Boolean
     external fun openDekuiSettings(): Boolean
@@ -766,7 +773,9 @@ object NativeLibrary {
 
     @Keep
     @JvmStatic
-    fun openContentUri(path: String, openMode: String): Int = if (FileUtil.isNativePath(path)) {
+    fun openContentUri(path: String, openMode: String): Int = if (org.citra.citra_emu.utils.DekuiTextureStorage.handles(path)) {
+        org.citra.citra_emu.utils.DekuiTextureStorage.open(path, openMode)
+    } else if (FileUtil.isNativePath(path)) {
         CitraApplication.documentsTree.openContentUri(path, openMode)
     } else {
         FileUtil.openContentUri(path, openMode)
@@ -774,7 +783,9 @@ object NativeLibrary {
 
     @Keep
     @JvmStatic
-    fun getFilesName(path: String): Array<String?> = if (FileUtil.isNativePath(path)) {
+    fun getFilesName(path: String): Array<String?> = if (org.citra.citra_emu.utils.DekuiTextureStorage.handles(path)) {
+        org.citra.citra_emu.utils.DekuiTextureStorage.names(path)
+    } else if (FileUtil.isNativePath(path)) {
         CitraApplication.documentsTree.getFilesName(path)
     } else {
         FileUtil.getFilesName(path)
@@ -870,7 +881,9 @@ object NativeLibrary {
 
     @Keep
     @JvmStatic
-    fun getSize(path: String): Long = if (FileUtil.isNativePath(path)) {
+    fun getSize(path: String): Long = if (org.citra.citra_emu.utils.DekuiTextureStorage.handles(path)) {
+        org.citra.citra_emu.utils.DekuiTextureStorage.size(path)
+    } else if (FileUtil.isNativePath(path)) {
         CitraApplication.documentsTree.getFileSize(path)
     } else {
         FileUtil.getFileSize(path)
@@ -886,7 +899,9 @@ object NativeLibrary {
 
     @Keep
     @JvmStatic
-    fun fileExists(path: String): Boolean = if (FileUtil.isNativePath(path)) {
+    fun fileExists(path: String): Boolean = if (org.citra.citra_emu.utils.DekuiTextureStorage.handles(path)) {
+        org.citra.citra_emu.utils.DekuiTextureStorage.exists(path)
+    } else if (FileUtil.isNativePath(path)) {
         CitraApplication.documentsTree.exists(path)
     } else {
         FileUtil.exists(path)
@@ -894,7 +909,9 @@ object NativeLibrary {
 
     @Keep
     @JvmStatic
-    fun isDirectory(path: String): Boolean = if (FileUtil.isNativePath(path)) {
+    fun isDirectory(path: String): Boolean = if (org.citra.citra_emu.utils.DekuiTextureStorage.handles(path)) {
+        org.citra.citra_emu.utils.DekuiTextureStorage.isDirectory(path)
+    } else if (FileUtil.isNativePath(path)) {
         CitraApplication.documentsTree.isDirectory(path)
     } else {
         FileUtil.isDirectory(path)
@@ -1105,4 +1122,8 @@ object NativeLibrary {
         const val RELEASED = 0
         const val PRESSED = 1
     }
+    /** Texture identifiers for locally generated model replacements: raw and legacy. */
+    @JvmStatic external fun dekuiDecodeTextureRgba(data: ByteArray, width: Int, height: Int, format: Int): ByteArray?
+    @JvmStatic external fun dekuiTextureHashes(data: ByteArray, width: Int, height: Int, format: Int): LongArray
+
 }

@@ -86,7 +86,16 @@ class MainActivity :
     override fun onCreate(savedInstanceState: Bundle?) {
         if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) {
             super.onCreate(savedInstanceState)
-            startActivity(android.content.Intent(this, org.citra.citra_emu.activities.DekuiLaunchActivity::class.java))
+            if (org.citra.citra_emu.NativeLibrary.isRunning()) {
+                startActivity(android.content.Intent(this, org.citra.citra_emu.activities.EmulationActivity::class.java).apply {
+                    action=android.content.Intent.ACTION_VIEW
+                    data=android.net.Uri.fromFile(java.io.File(filesDir,"dekui-game/game.cci"))
+                    putExtra("dekui_resume_existing",true)
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                })
+            } else {
+                startActivity(android.content.Intent(this, org.citra.citra_emu.activities.DekuiLaunchActivity::class.java))
+            }
             finish()
             return
         }

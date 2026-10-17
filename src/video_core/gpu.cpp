@@ -281,7 +281,6 @@ void GPU::SetBufferSwap(u32 screen_id, const Service::GSP::FrameBufferInfo& info
 
     if (screen_id == 0) {
         MicroProfileFlip();
-        impl->rasterizer->EndGuestFrame();
         impl->system.perf_stats->EndGameFrame();
         right_eye_disabler->ReportEndFrame();
     }

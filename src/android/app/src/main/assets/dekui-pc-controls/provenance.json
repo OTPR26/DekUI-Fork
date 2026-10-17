@@ -1,0 +1,11 @@
+{
+  "source": "Gaming PC installed gameplay patch, verified against user-owned USA Rev1 dump",
+  "patch_sha256": "3e6c33866138b14c024312dc33561759cf173dddd303bba16cb91dae0dc2db6f",
+  "baseline_patch_sha256": "23adab85ddc9922a2e1c54749854db5e03fcce7316709c1332fe1a9366d10e11",
+  "patched_gameplay_sha256": "4f37a8158551d2175657eccd9748cf664d0f2f268754b9212e53ebbc5d2bdb7a",
+  "changed_gameplay_bytes": 238,
+  "changed_gameplay_ranges": [
+    "0x7cfba8..0x7cfbac",
+    "0x7cfbb4..0x7cfcbc"
+  ]
+}

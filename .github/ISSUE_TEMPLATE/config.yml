@@ -1,1 +1,5 @@
-blank_issues_enabled: false
+blank_issues_enabled: true
+contact_links:
+  - name: Android setup and known limitations
+    url: https://github.com/OTPR26/DekUI-Fork/blob/android/docs/android/SETUP.md
+    about: Read the setup instructions before reporting an issue.

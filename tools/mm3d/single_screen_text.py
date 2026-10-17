@@ -9,7 +9,8 @@ ROOT = Path(__file__).resolve().parents[2]
 SPEC = ROOT / 'resources/mm3d/text/single-screen.json'
 # Commands present in the reviewed messages. Unknown commands fail closed.
 ARGS = {0:0, 1:0, 2:0, 0x25:1, 0x27:0, 0x28:0, 0x29:1,
-        0x2b:1, 0x31:1, 0x3a:1}
+        0x2b:1, 0x31:1, 0x3a:1, 0x1e:0, 0x26:1, 0x2c:0,
+        0x2f:1, 0x33:0, 0x34:0, 0x35:0, 0x36:0, 0x37:0}
 ICONS = {'A':1, 'B':2, 'X':3, 'Y':4, 'L':5, 'R':6, 'Dpad':0x0a, 'Stick':0x11}
 
 def decode(raw):
@@ -24,6 +25,20 @@ def decode(raw):
             if raw[i]!=0:raise ValueError('Bad control alignment')
             i+=1
         command=struct.unpack_from('<H',raw,i)[0];i+=2
+        if command==0x20:
+            arg=struct.unpack_from('<H',raw,i)[0];i+=2
+            end=raw.index(0,i);one=raw[i:end];i=end+1
+            end=raw.index(0,i);two=raw[i:end];i=end+1
+            if i&1:
+                if raw[i]!=0:raise ValueError('Bad plural alignment')
+                i+=1
+            result.append((command,arg,one,two));continue
+        if command==0x32:
+            if i!=4:
+                if raw[i:i+2]!=b'\0\0':raise ValueError('Bad sound alignment')
+                i+=2
+            result.append((command,struct.unpack_from('<I',raw,i)[0]));i+=4
+            continue
         if command not in ARGS:raise ValueError(f'Unsupported command {command:x}')
         n=ARGS[command];values=struct.unpack_from('<'+'H'*n,raw,i);i+=2*n
         result.append((command,*values))
@@ -39,7 +54,14 @@ def encode(tokens):
         if isinstance(token,str):result.extend(token.encode('utf-8'));continue
         result.append(127)
         if len(result)&1:result.append(0)
-        result.extend(struct.pack('<'+'H'*len(token),*token))
+        result.extend(struct.pack('<H',token[0]))
+        if token[0]==0x20:
+            result.extend(struct.pack('<H',token[1])+token[2]+b'\0'+token[3]+b'\0')
+            if len(result)&1:result.append(0)
+        elif token[0]==0x32:
+            if len(result)!=4:result.extend(b'\0\0')
+            result.extend(struct.pack('<I',token[1]))
+        else:result.extend(struct.pack('<'+'H'*(len(token)-1),*token[1:]))
     return bytes(result)
 
 def markup(text):
@@ -48,6 +70,7 @@ def markup(text):
         if not part:continue
         if part=='\n':tokens.append((1,))
         elif part.startswith('{Color:'):tokens.append((0x3a,int(part[7:-1])))
+        elif part.startswith('{Icon:'):tokens.append((0x25,int(part[6:-1])))
         elif part.startswith('{'):tokens.append((0x25,ICONS[part[1:-1]]))
         else:tokens.append(part)
     return tokens
@@ -68,6 +91,21 @@ def fnv(data):
     for b in data:value=((value^b)*0x100000001b3)&0xffffffffffffffff
     return value
 
+def visual_runs(tokens):
+    """Never join text across timing, choice, dynamic-value or layout commands."""
+    start=None
+    for i,t in enumerate(tokens+[(0,)]):
+        visual=isinstance(t,str) or t[0] in (1,0x25,0x3a)
+        if visual and start is None:start=i
+        if not visual and start is not None:
+            yield start,i,tokens[start:i]
+            start=None
+
+def show_run(tokens):
+    return ''.join(t if isinstance(t,str) else '\n' if t[0]==1 else
+                   '{Color:'+str(t[1])+'}' if t[0]==0x3a else
+                   '{Icon:'+str(t[1])+'}' for t in tokens)
+
 def compile_messages(data,spec):
     originals=messages(data,spec.get('language',2) if isinstance(spec.get('language',2),int) else 2);edited={}
     for edit in spec['edits']:
@@ -79,6 +117,21 @@ def compile_messages(data,spec):
         end=start+1
         while end<len(tokens) and not (isinstance(tokens[end],tuple) and tokens[end][0] in (0,2,0x2b,0x31)):end+=1
         tokens[start:end]=([prefix] if prefix else [])+markup(edit['text'])
+    grouped={}
+    for edit in spec.get('neutral_runs',[]):grouped.setdefault(int(edit['id'],16),[]).append(edit)
+    for mid,edits in grouped.items():
+        tokens=edited.setdefault(mid,decode(originals[mid]))
+        runs=list(visual_runs(tokens))
+        if len({e['run'] for e in edits})!=len(edits):raise ValueError('Duplicate run')
+        for edit in sorted(edits,key=lambda e:e['run'],reverse=True):
+            start,end,old=runs[edit['run']]
+            if show_run(old)!=edit['original']:raise ValueError(f'{mid:04x}: reviewed source changed')
+            new=markup(edit['text'])
+            if sum(t==(1,) for t in new)>sum(t==(1,) for t in old):
+                raise ValueError(f'{mid:04x}: extra line breaks')
+            if edit['text'].startswith('\n\n') or '\n\n' in edit['text']:
+                raise ValueError(f'{mid:04x}: extra paragraph')
+            tokens[start:end]=new
     result=[]
     for mid,tokens in sorted(edited.items()):
         raw=originals[mid];out=encode(tokens)
@@ -101,8 +154,13 @@ def header(rows):
 
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('gmsg',type=Path);p.add_argument('--header',type=Path);p.add_argument('--review',type=Path);a=p.parse_args()
-    rows=compile_messages(a.gmsg.read_bytes(),json.loads(SPEC.read_text()))
-    if a.header:a.header.write_text(header(rows))
+    spec=json.loads(SPEC.read_text())
+    rows=compile_messages(a.gmsg.read_bytes(),spec)
+    if a.header:
+        basic=compile_messages(a.gmsg.read_bytes(),dict(spec,neutral_runs=[]))
+        extra=header(basic)
+        extra=extra[extra.index('inline constexpr'):].replace(' Replacements',' SingleScreenReplacements')
+        a.header.write_text(header(rows)+'\nnamespace MM3D::SingleScreenText {\n'+extra)
     if a.review:
         def show(tokens):
             return ''.join(t if isinstance(t,str) else '\n' if t[0]==1 else '\n\n' if t[0]==2 else '{'+next((k for k,v in ICONS.items() if v==t[1]),str(t[1]))+'}' if t[0]==0x25 else '' for t in tokens)

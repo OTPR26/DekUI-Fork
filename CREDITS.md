@@ -1,3 +1,5 @@
+> Preserved upstream notes. For this fork’s Android release and current limitations, start with [README.md](README.md).
+
 # Credits and licenses
 
 Dekui builds on the work of these projects and their contributors:

@@ -1,7 +1,5 @@
 name: Dekui Linux / Steam Deck
 on:
-  push:
-    branches: [main, develop]
   workflow_dispatch:
 concurrency:
   group: mm3d-deck-${{ github.ref }}

@@ -10,8 +10,12 @@ object DekuiSettingsBridge {
     var saveFailed = false
         private set
 
+    var androidAction = 0
+        private set
+
     fun poll(): Int {
         val update = NativeLibrary.pollDekuiSettings()
+        androidAction = update?.getOrNull(8) ?: 0
         if (update != null && update[0] >= 0) pending = update
         pending?.let { values ->
             val settings = listOf<AbstractSetting>(

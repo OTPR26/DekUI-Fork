@@ -12,6 +12,7 @@
 
 namespace MM3D::SingleScreenText {
 inline std::atomic_bool enabled{true};
+inline std::atomic_bool neutral_enabled{true};
 using U32=std::uint32_t;
 constexpr U32 PC=0x7d1498,Word=0xe5903004,SVC=0xfffe90;
 inline U32 Instruction(U32 pc,U32 word){return pc==PC&&word==Word?0xef000000|SVC:word;}
@@ -27,6 +28,8 @@ inline bool Pointer(U32 p,U32 n=4){return p>=0x100000&&n<=0x1000000&&p<=0x400000
 template<class M> bool Apply(M& m,U32 self,U32 id) {
     bool active=enabled.load();
     bool return_notice=false;
+    const Replacement* screen_replacement=nullptr;
+    for(const auto& r:SingleScreenReplacements)if(r.id==id){screen_replacement=&r;break;}
     Replacement localized{};
     auto return_text=ClassicOwlReturnText;
     auto return_hash=ClassicOwlReturnHash;
@@ -58,6 +61,10 @@ template<class M> bool Apply(M& m,U32 self,U32 id) {
             if(!replacement)return false;
         }
     }
+    const bool english_prompt=language==2&&id!=0x0c01;
+    const Replacement* selected=english_prompt?
+        (neutral_enabled.load()?replacement:(active?screen_replacement:nullptr)):
+        (active?replacement:nullptr);
     auto count=m.Read(*base+8);
     if(!count||!*count||*count>20000||16+*count*20>*size)return false;
     U32 lo=0,hi=*count;
@@ -70,7 +77,7 @@ template<class M> bool Apply(M& m,U32 self,U32 id) {
         auto offset=m.Read(entry+12),length=m.Read(entry+16);
         if(!offset||!length||*length!=replacement->size||replacement->text.size()>*length||
            (*offset&1)||*offset<16+*count*20||*offset>*size||*length>*size-*offset)return false;
-        const auto text=return_notice?return_text:(active?replacement->text:replacement->original);
+        const auto text=return_notice?return_text:(selected?selected->text:replacement->original);
         const U32 start=*base+*offset,end=start+*length;
         std::uint64_t hash=0xcbf29ce484222325ULL;
         struct Write {U32 at,value;};std::vector<Write> writes;
@@ -101,8 +108,10 @@ template<class M> bool Apply(M& m,U32 self,U32 id) {
             if(hash==desired)return true;
             writes.push_back({entry+8,after_flags});
         } else {
-            if(hash==(active?replacement->edited_hash:replacement->hash))return true;
-            if(hash!=(active?replacement->hash:replacement->edited_hash))return false;
+            const auto desired=selected?selected->edited_hash:replacement->hash;
+            if(hash==desired)return true;
+            const bool known_screen=english_prompt&&screen_replacement&&hash==screen_replacement->edited_hash;
+            if(hash!=replacement->hash&&hash!=replacement->edited_hash&&!known_screen)return false;
         }
         for(const auto& w:writes)m.Write(w.at,w.value);
         return true;

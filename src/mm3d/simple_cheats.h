@@ -38,8 +38,12 @@ inline constexpr std::array<Ammo,7> Ammunition{{
 }};
 inline std::atomic<U32> pending{0}, continuous{0};
 inline std::atomic<bool> ready{false};
+enum class Availability { Waiting, Title, Code, Context, Health, SaveMemory, Available };
+inline std::atomic<Availability> availability{Availability::Waiting};
+inline std::atomic<U32> failed_address{0}, expected_word{0}, actual_word{0};
+inline std::atomic<bool> actual_readable{false};
 inline std::atomic<int> result{0}; // 0 idle, 1 applied, -1 not in a supported save.
-inline void Reset(){pending=0;continuous=0;ready=false;result=0;}
+inline void Reset(){pending=0;continuous=0;ready=false;result=0;availability=Availability::Waiting;failed_address=0;expected_word=0;actual_word=0;actual_readable=false;}
 inline void Queue(Action a){if(a<Count)pending.fetch_or(1u<<a);}
 inline constexpr std::array<std::pair<U32,U32>,7> Guards{{
     {0x4bfab4,0xe92d4ff0},{0x4bfabc,0xe1a04000},{0x4bfdbc,0x7752d8},
@@ -94,11 +98,37 @@ template<class M> void Apply(M& m,Action action) {
 }
 template<class M> void Tick(M& m,bool supported_title) {
     const U32 requests=pending.exchange(0);
-    bool supported=supported_title&&CodeMatches(m)&&InGame(m);
+    // Report exactly which read-only compatibility check blocks the menu.
+    Availability status=Availability::Available;
+    failed_address=0;expected_word=0;actual_word=0;actual_readable=false;
+    if(!supported_title)status=Availability::Title;
+    if(status==Availability::Available)for(auto [at,expected]:Guards) {
+        const auto actual=m.Read(at);
+        if(actual!=std::optional<U32>(expected)) {
+            failed_address=at;expected_word=expected;actual_readable=actual.has_value();
+            actual_word=actual.value_or(0);status=Availability::Code;break;
+        }
+    }
+    if(status==Availability::Available) {
+        const auto context=m.Read(0x72f5c0);
+        const auto game=context&&*context>=0x100000&&*context<=0x3ffff000&&!(*context&3)
+            ?m.Read(*context+0x16c):std::optional<U32>{};
+        const auto state=game&&*game>=0x100000&&*game<=0x3ffff000&&!(*game&3)
+            ?m.Read(*game+0x13c):std::optional<U32>{};
+        if(!state||(*state&65535)!=0x0402)status=Availability::Context;
+        else {
+            const auto health=Get(m,0x775312,2);
+            if(!health||*health<16||*health>320)status=Availability::Health;
+        }
+    }
     // Preflight every save word used by these cheats before making any writes.
-    if(supported)for(U32 at=0x775300;at<=0x7753d0;at+=4)if(!m.Read(at)){supported=false;break;}
-    if(supported&&!m.Read(0x7751fc))supported=false;
-    ready=supported;
+    if(status==Availability::Available)for(U32 at=0x775300;at<=0x7753d0;at+=4)
+        if(!m.Read(at)){failed_address=at;status=Availability::SaveMemory;break;}
+    if(status==Availability::Available&&!m.Read(0x7751fc)) {
+        failed_address=0x7751fc;status=Availability::SaveMemory;
+    }
+    const bool supported=status==Availability::Available;
+    availability=status;ready=supported;
     if(!supported){if(requests)result=-1;return;}
     for(unsigned i=0;i<Count;++i)if(requests&(1u<<i))Apply(m,Action(i));
     const U32 held=continuous.load();

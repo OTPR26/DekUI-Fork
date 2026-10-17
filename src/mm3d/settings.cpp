@@ -312,7 +312,11 @@ bool Settings::Load(const QString& path) {
     dialogue_indicator_y=value("dialogue_indicator_y",0.f,-64.f,64.f);
     double_prices = object.value("double_prices").toBool(false);
     price_multiplier = std::clamp(object.value("price_multiplier").toInt(2),2,3);
+    walk_speed=value("walk_speed",1.f,.5f,3.f);
+    climb_speed=value("climb_speed",1.f,.5f,3.f);
+    swim_speed=value("swim_speed",1.f,.5f,3.f);
     single_screen_text = object.value("single_screen_text").toBool(true);
+    controller_neutral_item_prompts = object.value("controller_neutral_item_prompts").toBool(true);
     fix_bloom = object.value("fix_bloom").toBool(true);
     interpolation_60fps = object.value("interpolation_60fps").toBool(true);
     interpolation_cpu_vertices = object.value("interpolation_cpu_vertices").toBool(true);
@@ -324,6 +328,10 @@ bool Settings::Load(const QString& path) {
     indicator = object.value("indicator").toBool(true);
     widescreen = object.value("widescreen").toBool(false);
     camera_zoom_out = value("camera_zoom_out", 1.f, 1.f, 1.5f);
+    adult_link_model = object.value("adult_link_model").toBool(false);
+    adult_link_tunic_color = std::clamp(object.value("adult_link_tunic_color").toInt(0),0,6);
+    adult_link_master_sword = object.value("adult_link_master_sword").toBool(false);
+    camera_distance = value("camera_distance",1.f,.5f,3.f);
     game_camera_fov = value("game_camera_fov", 65.f, 45.f, 70.f);
     restoration_hud_scale = value("restoration_hud_scale", 1.f, .5f, 1.5f);
     const OptionsMenu::Options options_defaults;
@@ -384,6 +392,7 @@ bool Settings::Load(const QString& path) {
             fullscreen_draws.push_back(rule);
     }
     scale = value("scale", 1, .5f, 2.f);
+    android_menu_text_size = int(value("android_menu_text_size",20,0,40));
     opacity = value("opacity", .9f, .2f, 1.f);
     x = value("x", .02f, 0.f, .75f);
     y = value("y", .02f, 0.f, .9f);
@@ -395,8 +404,8 @@ bool Settings::Save(const QString& path) const {
     QSaveFile file(path); // atomic replacement; no direct-write fallback
     if (!file.open(QIODevice::WriteOnly)) return false;
     QJsonObject object{{"version", 1}, {"accurate_hle_audio",accurate_hle_audio}, {"damage_multiplier",damage_multiplier}, {"disable_heart_drops",disable_heart_drops}, {"disable_rupee_drops",disable_rupee_drops}, {"disable_fairy_drops",disable_fairy_drops}, {"disable_magic_drops",disable_magic_drops}, {"disable_ammo_pickups",disable_ammo_pickups}, {"lose_rupees_on_death",lose_rupees_on_death}, {"world_ends_on_death",world_ends_on_death}, {"double_prices",double_prices}, {"price_multiplier",price_multiplier}, {"inventory_panel_x",inventory_menu.x}, {"inventory_panel_y",inventory_menu.y}, {"inventory_panel_scale",inventory_menu.scale}, {"dialogue_scale",dialogue_scale}, {"dialogue_y",dialogue_y}, {"dialogue_background_width",dialogue_background_width}, {"dialogue_indicator_x",dialogue_indicator_x}, {"dialogue_indicator_y",dialogue_indicator_y}, {"indicator", indicator}, {"show_performance", show_performance}, {"show_startup_settings_hint", show_startup_settings_hint},
-        {"scale", scale}, {"opacity", opacity}, {"x", x}, {"y", y},
-        {"single_screen_text", single_screen_text}, {"fix_bloom", fix_bloom}, {"interpolation_60fps", interpolation_60fps}, {"red_potion_hearts", red_potion_hearts}, {"blue_potion_hearts", blue_potion_hearts}, {"bottled_fairy_hearts", bottled_fairy_hearts}, {"widescreen", widescreen}, {"camera_zoom_out", camera_zoom_out}, {"game_camera_fov", game_camera_fov}, {"restoration_hud_scale", restoration_hud_scale}, {"minigame_hud_x",minigame_hud.x},{"minigame_hud_y",minigame_hud.y},{"minigame_hud_scale",minigame_hud.scale},{"magic_shadow_enabled",magic_border.shadow_enabled},{"magic_shadow_size",magic_border.shadow_size},{"magic_shadow_opacity",magic_border.shadow_opacity},{"magic_border_enabled",magic_border.enabled},{"magic_border_thickness",magic_border.thickness},{"magic_border_r",magic_border.color[0]},{"magic_border_g",magic_border.color[1]},{"magic_border_b",magic_border.color[2]}, {"magic_bar_y", magic_bar_y}, {"magic_bar_height", magic_bar_height}, {"dpad_y", dpad_y},
+        {"scale", scale}, {"android_menu_text_size",android_menu_text_size}, {"opacity", opacity}, {"x", x}, {"y", y},
+        {"walk_speed",walk_speed},{"climb_speed",climb_speed},{"swim_speed",swim_speed}, {"single_screen_text", single_screen_text}, {"controller_neutral_item_prompts", controller_neutral_item_prompts}, {"fix_bloom", fix_bloom}, {"interpolation_60fps", interpolation_60fps}, {"red_potion_hearts", red_potion_hearts}, {"blue_potion_hearts", blue_potion_hearts}, {"bottled_fairy_hearts", bottled_fairy_hearts}, {"widescreen", widescreen}, {"camera_zoom_out", camera_zoom_out}, {"game_camera_fov", game_camera_fov}, {"camera_distance",camera_distance}, {"adult_link_model",adult_link_model}, {"adult_link_tunic_color",adult_link_tunic_color}, {"adult_link_master_sword",adult_link_master_sword}, {"restoration_hud_scale", restoration_hud_scale}, {"minigame_hud_x",minigame_hud.x},{"minigame_hud_y",minigame_hud.y},{"minigame_hud_scale",minigame_hud.scale},{"magic_shadow_enabled",magic_border.shadow_enabled},{"magic_shadow_size",magic_border.shadow_size},{"magic_shadow_opacity",magic_border.shadow_opacity},{"magic_border_enabled",magic_border.enabled},{"magic_border_thickness",magic_border.thickness},{"magic_border_r",magic_border.color[0]},{"magic_border_g",magic_border.color[1]},{"magic_border_b",magic_border.color[2]}, {"magic_bar_y", magic_bar_y}, {"magic_bar_height", magic_bar_height}, {"dpad_y", dpad_y},
         {"minimap", minimap}, {"minimap_scale", minimap_scale}, {"minimap_opacity", minimap_opacity},
         {"minimap_right_margin", minimap_right_margin}, {"minimap_bottom_margin", minimap_bottom_margin}};
     for(const auto& f:SubmenuHeader::Fields) object.insert(f.key,submenu_header.*f.member);

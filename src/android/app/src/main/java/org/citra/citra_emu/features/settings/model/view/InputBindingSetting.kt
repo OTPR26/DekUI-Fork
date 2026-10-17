@@ -620,6 +620,60 @@ class InputBindingSetting(val abstractSetting: AbstractSetting, titleId: Int) :
          * @param useAxisDpad true if the d-pad should be mapped as axis (HAT_X/HAT_Y),
          *   false if it should be mapped as individual button keycodes (DPAD_UP/DOWN/LEFT/RIGHT)
          */
+        /** Odin profile matching the PC's physical button positions. Installed once on first launch. */
+        fun applyDekuiOdinBindings() {
+            val buttons = xboxFaceButtonMappings + dpadButtonMappings + listOf(
+                DefaultButtonMapping(Settings.KEY_BUTTON_L, KeyEvent.KEYCODE_BUTTON_L2, NativeLibrary.ButtonType.TRIGGER_L),
+                DefaultButtonMapping(Settings.KEY_BUTTON_R, KeyEvent.KEYCODE_BUTTON_R2, NativeLibrary.ButtonType.TRIGGER_R),
+                DefaultButtonMapping(Settings.KEY_BUTTON_ZL, KeyEvent.KEYCODE_BUTTON_L1, NativeLibrary.ButtonType.BUTTON_ZL),
+                DefaultButtonMapping(Settings.KEY_BUTTON_ZR, KeyEvent.KEYCODE_BUTTON_R1, NativeLibrary.ButtonType.BUTTON_ZR),
+                DefaultButtonMapping(Settings.KEY_BUTTON_START, KeyEvent.KEYCODE_BUTTON_SELECT, NativeLibrary.ButtonType.BUTTON_START),
+                DefaultButtonMapping(Settings.KEY_BUTTON_SELECT, KeyEvent.KEYCODE_BUTTON_START, NativeLibrary.ButtonType.BUTTON_SELECT)
+            )
+            applyBindings(buttons, stickAxisMappings + dpadAxisMappings + listOf(
+                DefaultAxisMapping(Settings.KEY_BUTTON_L, MotionEvent.AXIS_LTRIGGER, NativeLibrary.ButtonType.TRIGGER_L, 0, false),
+                DefaultAxisMapping(Settings.KEY_BUTTON_R, MotionEvent.AXIS_RTRIGGER, NativeLibrary.ButtonType.TRIGGER_R, 0, false)
+            ))
+        }
+
+        /** Snapshot of the Gaming PC's active SDL profile, translated to Android key/axis IDs. */
+        fun applyDekuiPcSnapshotBindings() {
+            val prefs = PreferenceManager.getDefaultSharedPreferences(CitraApplication.appContext)
+            val guestCodes = (700..718).toSet() + setOf(719,720,771,772,773,774,780)
+            val bindingKeys = Settings.buttonKeys + Settings.triggerKeys + Settings.dPadButtonKeys +
+                Settings.circlePadKeys + Settings.cStickKeys + Settings.dPadAxisKeys
+            val editor = prefs.edit()
+            // Remove stale routes to these game controls, while retaining hotkey bindings.
+            for ((key,value) in prefs.all) {
+                if (key in bindingKeys || bindingKeys.any { key.startsWith("${INPUT_MAPPING_PREFIX}_ReverseMapping_$it") }) {
+                    editor.remove(key)
+                } else if (key.startsWith("${INPUT_MAPPING_PREFIX}_HostAxis_")) {
+                    if (value is Set<*>) {
+                        editor.putStringSet(key,value.filterIsInstance<String>()
+                            .filterNot { it.toIntOrNull() in guestCodes }.toSet())
+                    } else if (value is Int && value in guestCodes) {
+                        editor.remove(key)
+                        editor.remove(key.removeSuffix("_GuestButton")+"_GuestOrientation")
+                        editor.remove(key.removeSuffix("_GuestButton")+"_Inverted")
+                    }
+                }
+            }
+            check(editor.commit()) { "Cannot clear previous game bindings" }
+            val buttons = nintendoFaceButtonMappings + dpadButtonMappings + listOf(
+                DefaultButtonMapping(Settings.KEY_BUTTON_L, KeyEvent.KEYCODE_BUTTON_L2, NativeLibrary.ButtonType.TRIGGER_L),
+                DefaultButtonMapping(Settings.KEY_BUTTON_R, KeyEvent.KEYCODE_BUTTON_R2, NativeLibrary.ButtonType.TRIGGER_R),
+                DefaultButtonMapping(Settings.KEY_BUTTON_ZL, KeyEvent.KEYCODE_BUTTON_L1, NativeLibrary.ButtonType.BUTTON_ZL),
+                DefaultButtonMapping(Settings.KEY_BUTTON_ZR, KeyEvent.KEYCODE_BUTTON_R1, NativeLibrary.ButtonType.BUTTON_ZR),
+                DefaultButtonMapping(Settings.KEY_BUTTON_START, KeyEvent.KEYCODE_BUTTON_SELECT, NativeLibrary.ButtonType.BUTTON_START),
+                DefaultButtonMapping(Settings.KEY_BUTTON_SELECT, KeyEvent.KEYCODE_BUTTON_START, NativeLibrary.ButtonType.BUTTON_SELECT),
+                DefaultButtonMapping(Settings.KEY_BUTTON_HOME, KeyEvent.KEYCODE_BUTTON_MODE, NativeLibrary.ButtonType.BUTTON_HOME)
+            )
+            applyBindings(buttons,stickAxisMappings+dpadAxisMappings+listOf(
+                DefaultAxisMapping(Settings.KEY_BUTTON_L, MotionEvent.AXIS_LTRIGGER, NativeLibrary.ButtonType.TRIGGER_L,0,false),
+                DefaultAxisMapping(Settings.KEY_BUTTON_R, MotionEvent.AXIS_RTRIGGER, NativeLibrary.ButtonType.TRIGGER_R,0,false)
+            ))
+        }
+
         fun applyAutoMapBindings(isNintendoLayout: Boolean, useAxisDpad: Boolean) {
             val faceButtons = if (isNintendoLayout) {
                 nintendoFaceButtonMappings
@@ -664,7 +718,8 @@ class InputBindingSetting(val abstractSetting: AbstractSetting, titleId: Int) :
             editor.putString(mapping.settingKey, "Axis ${mapping.hostAxis}$dir")
             @Suppress("ktlint:standard:max-line-length")
             val reverseKey =
-                "${INPUT_MAPPING_PREFIX}_ReverseMapping_${mapping.settingKey}_${mapping.orientation}"
+                if (mapping.settingKey in Settings.triggerKeys) "${INPUT_MAPPING_PREFIX}_ReverseMapping_${mapping.settingKey}"
+                else "${INPUT_MAPPING_PREFIX}_ReverseMapping_${mapping.settingKey}_${mapping.orientation}"
             editor.putString(reverseKey, axisKey)
         }
 

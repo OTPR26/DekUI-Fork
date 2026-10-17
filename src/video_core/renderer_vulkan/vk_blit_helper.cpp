@@ -524,10 +524,7 @@ bool BlitHelper::DepthToBuffer(Surface& source, vk::Buffer buffer,
     scheduler.Record([this, descriptor_set, copy, src_image = source.Image(),
                       extent = source.RealExtent(false)](vk::CommandBuffer cmdbuf) {
         const vk::ImageMemoryBarrier pre_barrier = {
-            // The latest depth may come from a transfer clear/copy, and earlier
-            // readbacks or fragment sampling must finish before the transition.
-            .srcAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite |
-                             vk::AccessFlagBits::eTransferWrite | vk::AccessFlagBits::eShaderRead,
+            .srcAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite,
             .dstAccessMask = vk::AccessFlagBits::eShaderRead,
             .oldLayout = vk::ImageLayout::eGeneral,
             .newLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal,
@@ -545,9 +542,7 @@ bool BlitHelper::DepthToBuffer(Surface& source, vk::Buffer buffer,
         const vk::ImageMemoryBarrier post_barrier = {
             .srcAccessMask = vk::AccessFlagBits::eShaderRead,
             .dstAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite |
-                             vk::AccessFlagBits::eDepthStencilAttachmentRead |
-                             vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eTransferRead |
-                             vk::AccessFlagBits::eTransferWrite,
+                             vk::AccessFlagBits::eDepthStencilAttachmentRead,
             .oldLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal,
             .newLayout = vk::ImageLayout::eGeneral,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -562,10 +557,7 @@ bool BlitHelper::DepthToBuffer(Surface& source, vk::Buffer buffer,
             },
         };
         cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eEarlyFragmentTests |
-                                   vk::PipelineStageFlagBits::eLateFragmentTests |
-                                   vk::PipelineStageFlagBits::eTransfer |
-                                   vk::PipelineStageFlagBits::eFragmentShader |
-                                   vk::PipelineStageFlagBits::eComputeShader,
+                                   vk::PipelineStageFlagBits::eLateFragmentTests,
                                vk::PipelineStageFlagBits::eComputeShader,
                                vk::DependencyFlagBits::eByRegion, {}, {}, pre_barrier);
 
@@ -587,7 +579,6 @@ bool BlitHelper::DepthToBuffer(Surface& source, vk::Buffer buffer,
         cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
                                vk::PipelineStageFlagBits::eEarlyFragmentTests |
                                    vk::PipelineStageFlagBits::eLateFragmentTests |
-                                   vk::PipelineStageFlagBits::eFragmentShader |
                                    vk::PipelineStageFlagBits::eTransfer,
                                vk::DependencyFlagBits::eByRegion, {}, {}, post_barrier);
     });

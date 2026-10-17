@@ -104,25 +104,3 @@ imgui.ini
 *.CIA
 *.CXI
 *.SAV
-
-# Private working notes and local generated inputs are never release source.
-/HANDOFF.md
-/DEVELOPMENT.md
-/Project
-/--visibility-depth
-/artifacts/
-/assets/
-/resources/mm3d/project-restoration/romfs/message/
-
-# Release binaries and source archives belong in release assets.
-*.zip
-*.7z
-*.tar.gz
-*.AppImage
-*.exe
-# Never publish local games or user data.
-*.cci
-*.3ds
-user/
-game/
-.DS_Store

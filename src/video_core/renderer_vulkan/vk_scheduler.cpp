@@ -2,9 +2,8 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
-#include <cstdlib>
-#include <limits>
 #include <mutex>
+#include <cstdlib>
 #include <string_view>
 #ifdef ENABLE_MM3D_PRESENTATION
 #include "mm3d/interpolation_performance.h"
@@ -54,19 +53,13 @@ void Scheduler::CommandChunk::ExecuteAll(vk::CommandBuffer cmdbuf) {
 }
 
 Scheduler::Scheduler(const Instance& instance)
-    : device{instance.GetDevice()}, graphics_queue{instance.GetGraphicsQueue()},
-      master_semaphore{MakeMasterSemaphore(instance)},
+    : master_semaphore{MakeMasterSemaphore(instance)},
       command_pool{instance, master_semaphore.get()}, use_worker_thread{true} {
 #ifdef ENABLE_MM3D_PRESENTATION
     const char* replay_option = std::getenv("DEKUI_BATCH_INTERPOLATION");
     // Batch interpolation by default; retain an explicit diagnostic opt-out.
     replay_batching_enabled = !replay_option || std::string_view{replay_option} != "0";
     LOG_INFO(Render_Vulkan, "Guarded interpolation batching enabled={}", replay_batching_enabled);
-#ifndef HAVE_LIBRETRO
-    const char* readback_option = std::getenv("DEKUI_DEPTH_READBACK_PRIORITY");
-    readback_priority_enabled = !readback_option || std::string_view{readback_option} != "0";
-#endif
-    LOG_INFO(Render_Vulkan, "Native depth readback priority enabled={}", readback_priority_enabled);
     timing_device=instance.GetDevice();
     const auto physical=instance.GetPhysicalDevice();
     timing_bits=physical.getQueueFamilyProperties()[instance.GetGraphicsQueueFamilyIndex()].timestampValidBits;
@@ -90,23 +83,6 @@ Scheduler::Scheduler(const Instance& instance)
 
 Scheduler::~Scheduler() = default;
 
-Scheduler::NativeReadbackScope::NativeReadbackScope(Scheduler& owner, bool independent) {
-    if (independent && owner.readback_priority_enabled && owner.HasReplay() &&
-        !owner.capture_replay && !owner.drain_replay && !owner.native_draw_depth &&
-        !owner.native_readback) {
-        scheduler = &owner;
-        scheduler->native_readback = true;
-    }
-#ifdef ENABLE_MM3D_PRESENTATION
-    MM3D::InterpolationPerformance::RecordReadbackPriority(
-        owner.HasReplay(), scheduler != nullptr, owner.queued_replay_scopes);
-#endif
-}
-
-Scheduler::NativeReadbackScope::~NativeReadbackScope() {
-    if (scheduler) scheduler->native_readback = false;
-}
-
 void Scheduler::SetReplayBatchingEnabled(bool enabled) {
     FlushReplay();
     replay_batching_enabled = enabled;
@@ -127,7 +103,6 @@ void Scheduler::EndReplayCapture() {
 
 void Scheduler::FlushReplay() {
     if (drain_replay || !HasReplay()) return;
-    ASSERT_MSG(!native_readback, "Resource mutation/submission inside native readback");
     // Capture scopes contain only immutable draw state, not resource allocation,
     // stream-buffer mapping, readbacks or submission. Those happen beforehand.
     ASSERT_MSG(!capture_replay, "Resource operation inside deferred replay capture");
@@ -164,11 +139,6 @@ void Scheduler::FlushSkippedFrame() {
 }
 
 void Scheduler::Finish(vk::Semaphore signal, vk::Semaphore wait, std::source_location caller) {
-    if (native_readback) {
-        ASSERT(!signal && !wait);
-        FinishNativeReadback(caller);
-        return;
-    }
     // When finishing, we need to wait for the submission to have executed on the device.
     const u64 presubmit_tick = CurrentTick();
 #ifdef ENABLE_MM3D_PRESENTATION
@@ -182,69 +152,8 @@ void Scheduler::Finish(vk::Semaphore signal, vk::Semaphore wait, std::source_loc
 #endif
 }
 
-void Scheduler::FinishNativeReadback([[maybe_unused]] std::source_location caller) {
-    ASSERT(native_readback && !capture_replay && !drain_replay);
-    if (!readback_fence) readback_fence = device.createFenceUnique({});
-    device.resetFences(*readback_fence);
-    state = StateFlags::AllDirty;
-    // Close only the native pass. Replay commands (including their open pass)
-    // remain captured, in the SAME unretired resource tick.
-    on_submit();
-#ifdef ENABLE_MM3D_PRESENTATION
-    const auto trace = MM3D::InterpolationPerformance::BeginFinish(this, CurrentTick(), caller);
-    MM3D::InterpolationPerformance::WaitSiteScope wait_site{caller};
-    MM3D::InterpolationPerformance::Scope wait_timing{MM3D::InterpolationPerformance::Part::GpuWait};
-    const auto tick = CurrentTick();
-    const auto phase = timing_phase;
-#endif
-    Record([this
-#ifdef ENABLE_MM3D_PRESENTATION
-            , trace, tick, phase
-#endif
-           ](vk::CommandBuffer cmdbuf) {
-#ifdef ENABLE_MM3D_PRESENTATION
-        if (trace) trace->worker = MM3D::InterpolationPerformance::Now();
-#endif
-        std::scoped_lock lock{submit_mutex};
-#ifdef ENABLE_MM3D_PRESENTATION
-        if (trace) trace->locked = MM3D::InterpolationPerformance::Now();
-        if (timing_slot >= 0) {
-            cmdbuf.writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe, *timing_pool,
-                                  static_cast<u32>(timing_slot) * 2 + 1);
-            timing_slots[timing_slot].phase = phase;
-            timing_slots[timing_slot].tick = tick;
-            timing_slots[timing_slot].trace = trace;
-        }
-        MM3D::InterpolationPerformance::Scope timing{MM3D::InterpolationPerformance::Part::Submit};
-#endif
-        cmdbuf.end();
-        // No master-semaphore signal: it would prematurely release resources
-        // referenced by replay. A dedicated fence covers just this readback.
-        graphics_queue.submit(vk::SubmitInfo{.commandBufferCount = 1,
-                                            .pCommandBuffers = &cmdbuf}, *readback_fence);
-#ifdef ENABLE_MM3D_PRESENTATION
-        if (trace) trace->submitted = MM3D::InterpolationPerformance::Now();
-#endif
-    });
-    if (use_worker_thread) {
-        chunk->MarkSubmit();
-        WaitWorkerCommands();
-    } else {
-        AllocateWorkerCommandBuffers();
-    }
-    while (device.waitForFences(*readback_fence, true, std::numeric_limits<u64>::max()) !=
-           vk::Result::eSuccess) {}
-#ifdef ENABLE_MM3D_PRESENTATION
-    if (trace) trace->completed = MM3D::InterpolationPerformance::Now();
-#endif
-}
-
 void Scheduler::WaitWorker() {
     FlushReplay();
-    WaitWorkerCommands();
-}
-
-void Scheduler::WaitWorkerCommands() {
     if (!use_worker_thread) {
         return;
     }
