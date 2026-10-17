@@ -11,6 +11,7 @@ GROUPS = {
     'songs': ('song_', 'ocarina_prompt', 'ocarina_icon_scale'),
     'file_select': ('file_select_',),
     'item_selection': ('item_present_',),
+    'gear_photo': ('gear_6_',),
 }
 
 
