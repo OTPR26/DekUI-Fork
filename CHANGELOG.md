@@ -1,3 +1,96 @@
+## 1.0.0
+
+### Added
+- **New difficulty options**
+  - **Fast Time**
+    - Use the faster first-cycle clock speed for all cycles
+  - **Time Penalty on Death**
+    - Dying advances time by six hours.
+- **Cutscene FOV slider**
+  - Adjustable from 45° to 70°. Values above 49° are not recommended, as it may reveal missing geometry.
+- **Disable Fog**
+  - Removes atmospheric fog effects. Not recommended, as fog is used for atmospheric effect.
+
+### Improved
+
+- &nbsp;&nbsp;&nbsp;&nbsp;**Extensive 60 FPS interpolation improvements**
+  - Improved animations across characters, bosses, objects, particles, environmental effects, cutscenes, HUD elements, and menus.
+  - Fixed numerous previously missed animations and visual artifacts.
+  - Expanded particle interpolation, particularly in CPU mode.
+
+  <details>
+    
+  <summary><b>&nbsp;Detailed interpolation improvements</b></summary>
+  
+  > &nbsp;&nbsp;&nbsp;&nbsp;**Actors, Bosses & Objects**
+  >
+  > - Postman's cap and bag, Carpenter's carried wood, and Milk Road worker's pickaxe.
+  > - Tingle's balloon, Madame Aroma's mesh, and Business Scrub animations.
+  > - Captain Keeta's head, Dodongo's body materials, and Gabora's head.
+  > - Twinmold's body segments and tails.
+  > - Giant Link's skeleton, hands, and arms.
+  > - Majora's Mask's hanging strands and Majora's Wrath's whip and tentacle chains.
+  > - The four giants' previously missed leg meshes.
+  > - Gyorg's smaller fish.
+
+  > &nbsp;&nbsp;&nbsp;&nbsp;**Particles & Environmental Effects**
+  >
+  > - Falling water droplets, ripples, bubbles, and flowing water.
+  > - Waterfall textures, foam, runoff, and pool surfaces.
+  > - Great Bay Temple's pipes, water jets, and water-wheel effects.
+  > - Gyorg's water deformation and splash effects.
+  > - Leaves, snow, moths, dust, sparks, and explosions.
+
+  > &nbsp;&nbsp;&nbsp;&nbsp;**Songs, Cutscenes & Screen Effects**
+  >
+  > - Epona's Song scrolling effects.
+  > - Song of Time's falling sequence.
+  > - Lens distortion during time-manipulation songs.
+  > - Moon approach effects and swirling purple layers.
+
+  > &nbsp;&nbsp;&nbsp;&nbsp;**HUD, Textboxes & Menus**
+  >
+  > - Textbox opening and closing animations.
+  > - Magic-meter and heart animations.
+  > - Location banners and credits scrolling.
+  > - Items, Masks, Gear, and world-map transitions.
+  > - File-select and confirmation-window animations.
+
+  </details>
+
+- **Menu and interface improvements**
+  - Moved the Moon's mask-selection interface onto the main screen, originally left out as an oversight.
+  - Improved file-select transitions and file-stone entrance animations.
+  - Improved Schedule and Event Notes scrollbar coverage and spacing.
+
+- **Pictograph handling**
+  - The "A Choose" prompt now becomes fully opaque when a photo is available to view.
+
+### Fixed
+- Fixed game reverting 30fps during day closing in effect when using interpolation.
+- Fixed rapid screen flashes while in first-person view in certain outdoor areas.
+- Fixed Lens of Truth revealing elements at widescreen edges.
+- Fixed some bushes flickering or disappearing after nearby bushes were cut.
+- Fixed saved Pictograph photos incorrectly replacing the paused game background when going to Gear screen.
+- Fixed newly learned character portrait highlights.
+- Fixed Schedule and Event Notes layout inconsistencies, including footer spacing and new-entry badges.
+
+### Other Changes
+- Removed the interpolation work-in-progress notice from settings.
+
+Thank you to everyone for enjoying the mod so much! I am planning to 
+take an extended break from this mod as I am happy with where it's at. 
+That means I will not be working on an Android or a Switch port. 
+
+However, as this repo is open source and LLM's are readily available, I encourage 
+anyone interested in ports for these devices to fork this repository 
+and submit pull requests to allow the building of them. 
+
+There will likely be one or two smaller updates on the way to continue addressing performance
+improvements, crashes, and other issues users run into.
+
+---
+
 ## 1.0.0-beta.2
 
 ### Added
@@ -63,6 +156,8 @@
 ### Coming Soon
 - Further interpolation optimizations and improvements.
 - Android support.
+
+---
 
 ## 1.0.0-beta.1 (2026-10-02)
 
