@@ -103,3 +103,10 @@ Link; Adult Link's saved color/sword preferences are retained.
 
 Selection applies on the next game launch. Structural conversion and Adult
 Link regression checks pass; in-game validation of this prototype is pending.
+
+Dark Link eye overlay: the original material depends on actor-driven vertex
+colors and constant-color slot 1. Its MM3D replacement directly samples the
+original red RGBA texture, with alpha testing, independent of those tints.
+Body and equipment material shading remain unchanged.
+Dark Link source group 0 is the held sword (bone 16 -> native bone 17);
+group 1 is the shield and must not populate regular sword slots.

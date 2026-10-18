@@ -103,7 +103,7 @@ object DekuiModelConverter {
         // Dark Link shares Adult Link's skeleton but has its own mesh/material profile.
         // Groups 2/3 are source shadow geometry; 5/7 are alternate body/head meshes.
         // Native sword_a/b/c slots are 12/14/16; slot 18 is the separate Great Fairy item.
-        val (hands,removed)=handPlan(a,mm,if(dark)7 else 22);val eqGroups=if(dark)mapOf(1 to listOf(12,14,16))else if(master)mapOf(16 to listOf(12,14,16),31 to listOf(5,6,7),42 to listOf(13,15,17))else emptyMap()
+        val (hands,removed)=handPlan(a,mm,if(dark)7 else 22);val eqGroups=if(dark)mapOf(0 to listOf(12,14,16))else if(master)mapOf(16 to listOf(12,14,16),31 to listOf(5,6,7),42 to listOf(13,15,17))else emptyMap()
         val equipment=a.meshes.filter{(it[3].toInt()and 255)in eqGroups&&(it[2].toInt()and 255)!=(if(dark)7 else 22)}.associate{h(it,0)to eqGroups.getValue(it[3].toInt()and 255)}
         val baseSelected=a.meshes.filter{(it[3].toInt()and 255)in (if(dark)setOf(4,6)else setOf(45,46))||h(it,0)in hands};val selected=baseSelected+a.meshes.filter{h(it,0)in equipment}
         val baseMats=baseSelected.map{it[2].toInt()and 255}.distinct().sorted();val usedMats=baseMats+(selected.map{it[2].toInt()and 255}.toSet()-baseMats.toSet()).sorted();val matMap=usedMats.mapIndexed{i,v->v to mm.materials.size+i}.toMap()
@@ -113,7 +113,24 @@ object DekuiModelConverter {
         fun textures(mats:List<Int>)=mats.flatMap{mi->(0..2).map{s(a.materials[mi],16+it*24)}}.filter{it>=0}.toSet()
         val baseTex=textures(baseMats).sorted();val usedTex=baseTex+(textures(usedMats)-baseTex.toSet()).sorted();val texMap=usedTex.mapIndexed{i,v->v to mm.tex.size+i}.toMap();val texData=Buf(mm.chunks.getValue("textures"));val tex=mm.tex.map{it.copyOf()}.toMutableList()
         for(ti in usedTex){val t=a.tex[ti].copyOf();val old=u(t,16);put(t,16,texData.align(128));texData.add(slice(a.chunks.getValue("textures"),old,u(t,0)));tex.add(t)}
-        for(mi in usedMats){val ma=a.materials[mi].copyOf();for(j in 0..2){val at=16+j*24;val ti=s(ma,at);if(ti>=0)put(ma,at,texMap.getValue(ti),2)};for(j in 0 until u(ma,0x120))put(ma,0x124+2*j,h(ma,0x124+2*j)+combBase,2);materials.add(ma+mm.materials[1].copyOfRange(0x15c,0x168)+ByteArray(4).apply{put(this,0,(if(dark)0xdad10000.toInt()else 0xada10000.toInt())+mi)})};combiners.add(a.combiners)
+        for(mi in usedMats){val ma=a.materials[mi].copyOf();
+            for(j in 0..2){val at=16+j*24;val ti=s(ma,at);if(ti>=0)put(ma,at,texMap.getValue(ti),2)};for(j in 0 until u(ma,0x120))put(ma,0x124+2*j,h(ma,0x124+2*j)+combBase,2);materials.add(ma+mm.materials[1].copyOfRange(0x15c,0x168)+ByteArray(4).apply{put(this,0,(if(dark)0xdad10000.toInt()else 0xada10000.toInt())+mi)})};combiners.add(a.combiners)
+        if(dark){
+            // The eye overlay's OoT3D combiner depends on actor-driven vertex/tint
+            // colors. Sample its original red RGBA texture directly in MM3D.
+            check(combiners.size%40==0)
+            val eye=materials[matMap.getValue(4)]
+            put(eye,0x120,1);put(eye,0x124,combiners.size/40,2)
+            val direct=ByteArray(40)
+            for(at in listOf(0,2))put(direct,at,0x1e01,2) // REPLACE
+            for(at in listOf(4,6))put(direct,at,1,2)
+            for(at in listOf(8,10))put(direct,at,0x8579,2)
+            for(at in listOf(12,14,16,24,26,28))put(direct,at,0x84c0,2) // TEXTURE0
+            for(at in listOf(18,20,22))put(direct,at,0x0300,2)
+            for(at in listOf(30,32,34))put(direct,at,0x0302,2)
+            combiners.add(direct)
+            eye[0x130]=1;eye[0x131]=127;put(eye,0x132,0x0204,2) // alpha > 0.5
+        }
         val shapes=mm.shapes.map{it.copyOf()}.toMutableList();val meshes=mutableListOf<ByteArray>();val templates=mm.meshes.associateBy{it[3].toInt()and 255};val swordGroups=setOf(5,6,7,12,13,14,15,16,17)
         for((i,me)in mm.meshes.withIndex()){val vis=me[3].toInt()and 255;if(vis in 28..33||i in removed)continue;if((master||dark)&&vis in (if(dark)setOf(12,14,16)else swordGroups)&&(me[2].toInt()and 255) !in setOf(2,3))continue;meshes.add(me.copyOf())}
         for(si in meshes.map{h(it,0)}.distinct().sorted()){val g=geometry(mm,si);require(g.prims.all{it.mode in 0..1});val at=buffers[0].align(4);buffers[0].add(floats(Array(g.pos.size){v->DoubleArray(3){g.pos[v][it]/height}}));descriptor(at).copyInto(shapes[si],0x24)}
