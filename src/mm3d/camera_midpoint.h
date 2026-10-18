@@ -309,7 +309,7 @@ class History {
         for(unsigned i=0;i<2;++i)for(unsigned j=0;j<4;++j)midpoint[i][j]*=midpoint_lens_scale[i];
         return Multiply(midpoint,camera_delta);
     }
-    std::uint64_t frame{};
+    std::uint64_t frame{}, context{};
     std::int64_t time{};
     bool seen{}, ready{};
 public:
@@ -317,8 +317,13 @@ public:
     // Reacquisition must not blank a valid native scene. Never interpolate when
     // the CPU camera is unavailable/mismatched, or across cuts/projection changes.
     Matrix Preview(std::uint64_t next_frame,std::int64_t now,const Matrix& camera,
-                   const Matrix& p,bool cpu_matches,bool comparison,bool& fallback) {
+                   const Matrix& p,bool cpu_matches,bool comparison,bool& fallback,
+                   std::uint64_t camera_context=0,bool native_aiming=false) {
         fallback=true;
+        // Aiming has a separate view/weapon pipeline. Render its native scene
+        // at the normal presentation cadence; reacquire history after takeover.
+        if(native_aiming){Reset();context=camera_context;return p;}
+        if(cpu_matches&&context!=camera_context){Reset();context=camera_context;}
         // A rejected draw must not erase the validated world camera from this
         // frame (e.g. auxiliary title geometry). It still renders natively and
         // never advances history. If a whole frame lacks a matching camera,

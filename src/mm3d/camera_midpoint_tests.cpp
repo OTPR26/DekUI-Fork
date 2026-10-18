@@ -1264,6 +1264,21 @@ int main() {
     mixed_cameras.Preview(5,133,auxiliary,p,false,false,fallback);
     mixed_cameras.Preview(6,165,auxiliary,p,true,false,fallback);
     Check(fallback,"validated camera cut still falls back after auxiliary draw");
+    History aiming;
+    const std::uint64_t free_context=0x081004080001001full, bow_context=0x081004080001000cull;
+    aiming.Preview(1,0,a,p,true,false,fallback,free_context,false);
+    aiming.Preview(2,33,b,p,true,false,fallback,free_context,false);
+    Check(!fallback,"ordinary gameplay still interpolates");
+    for(unsigned i=3;i<8;++i) {
+        const auto output=aiming.Preview(i,i*33,b,p,true,false,fallback,bow_context,true);
+        Check(fallback&&Near(output,p,0),"aiming renders native projection even with blendable camera motion");
+    }
+    aiming.Preview(8,264,a,p,true,false,fallback,free_context,false);
+    Check(fallback,"leaving aim discards bow camera history");
+    aiming.Preview(9,297,b,p,true,false,fallback,free_context,false);
+    Check(!fallback,"normal interpolation resumes after reacquisition");
+    aiming.Preview(10,330,a,p,true,false,fallback,free_context+0x100000000ull,false);
+    Check(fallback,"active subcamera handover invalidates history even with matching lens");
     std::cout<<"PASS camera midpoint math, wrapped rotation, history and cut rejection\n";
  } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}
 }
