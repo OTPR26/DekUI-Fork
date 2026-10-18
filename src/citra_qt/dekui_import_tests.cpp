@@ -66,16 +66,28 @@ int main(int argc, char** argv) {
         Check(
             image.save(pack + QStringLiteral("/tex1_8x8_") + hash + QStringLiteral("_3_mip0.png")),
             "png fixture");
+        // The ordinary pack may be on another volume. Never publish into its symlink.
+        const QString external = root + QStringLiteral("/external-pack");
+        Write(external + QStringLiteral("/sentinel"), "external-pack");
+        QDir().mkpath(root + QStringLiteral("/user/load/textures"));
+        #ifndef Q_OS_WIN
+        Check(QFile::link(external, root + QStringLiteral("/user/load/textures/0004000000125500")),
+              "texture directory symlink fixture");
+#else
+        QDir().mkpath(root + QStringLiteral("/user/load/textures/0004000000125500"));
+#endif
         Stage(root, QStringLiteral(".dark-link-test"));
         MM3D::DesktopImport::Finalize(
             root + QStringLiteral("/user/load/mm3d-models/.dark-link-test"), root, pack, true);
         Check(QFileInfo::exists(
                   root +
                   QStringLiteral(
-                      "/user/load/textures/0004000000125500/dark-link-generated/tex1_8x8_") +
+                      "/user/load/mm3d-model-textures/0004000000125500/dark-link-generated/tex1_8x8_") +
                   hash + QStringLiteral("_3_mip0.png")),
               "matching HD texture missing");
         Check(QFileInfo::exists(save), "save replaced");
+        Check(QDir(external).entryList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot) ==
+                  QStringList{QStringLiteral("sentinel")}, "external pack modified");
         Check(!QFileInfo::exists(old), "new model did not publish");
         const auto backups = QDir(root + QStringLiteral("/user/load/mm3d-models"))
                                  .entryList({QStringLiteral("dark-link-backup-*")}, QDir::Dirs);

@@ -485,11 +485,11 @@ void Finalize(const QString& suppliedStage, const QString& root, const QString& 
     const QString target = parent + QStringLiteral("/") + id,
                   stamp = QString::number(QDateTime::currentMSecsSinceEpoch()),
                   backup = target + QStringLiteral("-backup-") + stamp;
-    const QString textures = root + QStringLiteral("/user/load/textures/0004000000125500"),
+    const QString textures = root + QStringLiteral("/user/load/mm3d-model-textures/0004000000125500"),
                   textureTarget =
                       textures + QStringLiteral("/") + id + QStringLiteral("-generated"),
                   textureBackup =
-                      textures + QStringLiteral("/.") + id + QStringLiteral("-backup-") + stamp;
+                      parent + QStringLiteral("/.") + id + QStringLiteral("-textures-backup-") + stamp;
     Require(QDir().mkpath(textures), QStringLiteral("Cannot create texture directory"));
     Require(QDir().mkpath(stage + QStringLiteral("/texture-overrides")),
             QStringLiteral("Cannot stage generated textures"));
