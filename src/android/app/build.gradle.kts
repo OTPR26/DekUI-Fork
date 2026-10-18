@@ -26,6 +26,8 @@ val abiFilter = listOf("arm64-v8a", "x86_64")
 // Opt-in compile experiment. The normal Azahar Android baseline stays intact.
 // Game asset reconstruction/deployment is still a separate local setup step.
 val dekuiPresentation = providers.gradleProperty("dekuiPresentation").orNull == "true"
+val dekuiReleaseVersion = if (dekuiPresentation)
+    file("../../../resources/mm3d/release-version.txt").readText().trim() else ""
 val dekuiQtRoot = providers.gradleProperty("dekuiQtRoot").orNull
 val dekuiQtHost = providers.gradleProperty("dekuiQtHost").orNull
 if (dekuiPresentation) {
@@ -103,7 +105,7 @@ android {
         minSdk = 29
         targetSdk = 37
         versionCode = autoVersion
-        versionName = if (dekuiPresentation) "1.0.0-beta.2-android.34" else getGitVersion()
+        versionName = if (dekuiPresentation) dekuiReleaseVersion else getGitVersion()
 
         ndk {
             //noinspection ChromeOsAbiSupport
@@ -213,7 +215,7 @@ android {
         register("performance") {
             initWith(getByName("release"))
             applicationIdSuffix = ".debug"
-            versionNameSuffix = "-performance"
+            versionNameSuffix = if (dekuiPresentation) "" else "-performance"
             signingConfig = signingConfigs.getByName("debug")
             isDebuggable = false
             isJniDebuggable = false
@@ -247,7 +249,7 @@ android {
         register("vanilla") {
             isDefault = true
             dimension = "version"
-            versionNameSuffix = "-vanilla"
+            versionNameSuffix = if (dekuiPresentation) "" else "-vanilla"
         }
         register("googlePlay") {
             dimension = "version"
