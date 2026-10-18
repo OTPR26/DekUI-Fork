@@ -1,13 +1,20 @@
-name: DekUI Fork Linux / Steam Deck
+name: DekUI Fork Linux
 on:
   workflow_dispatch:
+    inputs:
+      architecture:
+        description: Desktop CPU architecture
+        type: choice
+        options: [all, x64, arm64]
+        default: all
 concurrency:
-  group: mm3d-deck-${{ github.ref }}
+  group: mm3d-deck-${{ github.ref }}-${{ inputs.architecture }}
   cancel-in-progress: true
 permissions:
   contents: read
 jobs:
   deck:
+    if: inputs.architecture != 'arm64'
     runs-on: ubuntu-24.04
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -72,4 +79,58 @@ jobs:
         with:
           name: DekUI-Fork-${{ steps.release.outputs.version }}-Source-${{ github.sha }}
           path: artifacts/DekUI-Fork-${{ steps.release.outputs.version }}-Source.tar.gz
+          if-no-files-found: error
+
+  linux-arm64:
+    if: inputs.architecture != 'x64'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache-linux-arm64
+      CCACHE_MAXSIZE: 2G
+      CCACHE_COMPILERCHECK: content
+      EXTRA_PLATFORM_PLUGINS: libqwayland-egl.so;libqwayland-generic.so
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          submodules: recursive
+          fetch-depth: 1
+      - name: Verify architecture and revision
+        run: |
+          test "$(uname -m)" = aarch64
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git log -1 --format='%H %s' >> "$GITHUB_STEP_SUMMARY"
+      - name: Install native ARM64 dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build clang ccache pkg-config python3 \
+            qt6-base-dev qt6-base-private-dev qt6-multimedia-dev qt6-tools-dev qt6-tools-dev-tools qt6-wayland \
+            libsdl2-dev libasound2-dev libpulse-dev libudev-dev libusb-1.0-0-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libx11-dev libxext-dev libxrandr-dev \
+            libxi-dev libxcursor-dev libxinerama-dev libwayland-dev libxkbcommon-dev \
+            libxcb-cursor0 patchelf file libfuse2t64
+      - uses: actions/cache@v5
+        with:
+          path: .ccache-linux-arm64
+          key: linux-arm64-ccache-v1-${{ github.sha }}
+          restore-keys: linux-arm64-ccache-v1-
+      - name: Build, test, check ARM64 payload and package
+        run: |
+          set -o pipefail
+          bash tools/mm3d/linux/build-arm64.sh 2>&1 | tee linux-arm64-build.log
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: DekUI-Fork-Linux-arm64-Diagnostics-${{ github.sha }}
+          path: |
+            linux-arm64-build.log
+            build-linux-arm64/CMakeFiles/CMakeConfigureLog.yaml
+            build-linux-arm64/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v7
+        with:
+          name: DekUI-Fork-Linux-arm64-${{ github.sha }}
+          path: artifacts/DekUI-Fork-*-Linux-arm64*
           if-no-files-found: error
