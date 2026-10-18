@@ -4680,8 +4680,8 @@ void GMainWindow::OnSwitchDiskResources(VideoCore::LoadCallbackStage stage, std:
 
 void GMainWindow::UpdateWindowTitle() {
 #ifdef ENABLE_MM3D_GAME_FOLDER
-    setWindowTitle(QStringLiteral("Dekui"));
-    if(render_window)render_window->setWindowTitle(QStringLiteral("Dekui"));
+    setWindowTitle(QStringLiteral("DekUI Fork"));
+    if(render_window)render_window->setWindowTitle(QStringLiteral("DekUI Fork"));
     return;
 #endif
     const QString full_name = QString::fromUtf8(Common::g_build_fullname);
@@ -4859,7 +4859,7 @@ int LaunchQtFrontend(int argc, char* argv[]) {
     QCoreApplication::setOrganizationDomain(QStringLiteral("azahar_emu.org"));
     QCoreApplication::setApplicationName(QStringLiteral("Azahar"));
 #ifdef ENABLE_MM3D_GAME_FOLDER
-    QCoreApplication::setApplicationName(QStringLiteral("Dekui"));
+    QCoreApplication::setApplicationName(QStringLiteral("DekUI Fork"));
     QGuiApplication::setDesktopFileName(QStringLiteral("io.github.tgacquin.dekui"));
 #else
     QGuiApplication::setDesktopFileName(QStringLiteral("org.azahar_emu.Azahar"));

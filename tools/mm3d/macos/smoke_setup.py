@@ -10,7 +10,7 @@ def check(package):
     with tempfile.TemporaryDirectory(prefix='Dekui setup smoke ') as tmp:
         subprocess.run(['ditto', '-x', '-k', str(package.resolve()), tmp], check=True)
         root = Path(tmp) / 'dekui'
-        python = root / 'Dekui.app/Contents/Resources/runtime/python/bin/python3'
+        python = root / 'DekUI Fork.app/Contents/Resources/runtime/python/bin/python3'
         subprocess.run([str(python), '-E', '-s', '-B', str(root / 'tools/mm3d/package_setup_check.py')], cwd=tmp, check=True, timeout=30)
         helper = root / 'tools/mm3d/graphical_setup.py'
         env = os.environ.copy()
@@ -26,7 +26,7 @@ def check(package):
         if (root / 'user').exists():
             raise RuntimeError('Invalid input unexpectedly created user data')
         # Load the actual deployed binary and Qt platform plugin, without a ROM.
-        app = root / 'Dekui.app'
+        app = root / 'DekUI Fork.app'
         env.update(QT_QPA_PLATFORM='cocoa', HOME=str(root / 'smoke-home'))
         result = subprocess.run([str(app / 'Contents/MacOS/azahar'), '-v'],
                                 cwd=tmp, env=env, capture_output=True, text=True, timeout=30)

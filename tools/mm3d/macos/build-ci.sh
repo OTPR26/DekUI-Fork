@@ -17,7 +17,7 @@ ctest --test-dir build-macos -C Release --output-on-failure
 cmake --build build-macos --target bundle --parallel 3
 python3 tools/mm3d/macos_python.py build-macos/python-runtime.tar.gz
 release_version=$(python3 tools/mm3d/release_version.py)
-package_path="artifacts/Dekui-${release_version}-macOS-arm64.zip"
+package_path="artifacts/DekUI-Fork-${release_version}-macOS-arm64.zip"
 python3 tools/mm3d/package_macos.py build-macos/bundle/azahar.app "$package_path" \
   --python-archive build-macos/python-runtime.tar.gz
 python3 tools/mm3d/macos/smoke_setup.py "$package_path"

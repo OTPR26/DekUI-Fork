@@ -1,4 +1,4 @@
-name: Dekui Linux / Steam Deck
+name: DekUI Fork Linux / Steam Deck
 on:
   workflow_dispatch:
 concurrency:
@@ -62,14 +62,14 @@ jobs:
           key: deck-ccache-v1-${{ github.sha }}-${{ github.run_id }}
       - uses: actions/upload-artifact@v7
         with:
-          name: Dekui-${{ steps.release.outputs.version }}-Linux-x86_64-${{ github.sha }}
-          path: artifacts/Dekui-${{ steps.release.outputs.version }}-Linux-x86_64.tar.gz
+          name: DekUI-Fork-${{ steps.release.outputs.version }}-Linux-x86_64-${{ github.sha }}
+          path: artifacts/DekUI-Fork-${{ steps.release.outputs.version }}-Linux-x86_64.tar.gz
           if-no-files-found: error
       - name: Archive matching source
         timeout-minutes: 15
-        run: python3 tools/mm3d/package_source.py artifacts/Dekui-${{ steps.release.outputs.version }}-Source.tar.gz
+        run: python3 tools/mm3d/package_source.py artifacts/DekUI-Fork-${{ steps.release.outputs.version }}-Source.tar.gz
       - uses: actions/upload-artifact@v7
         with:
-          name: Dekui-${{ steps.release.outputs.version }}-Source-${{ github.sha }}
-          path: artifacts/Dekui-${{ steps.release.outputs.version }}-Source.tar.gz
+          name: DekUI-Fork-${{ steps.release.outputs.version }}-Source-${{ github.sha }}
+          path: artifacts/DekUI-Fork-${{ steps.release.outputs.version }}-Source.tar.gz
           if-no-files-found: error

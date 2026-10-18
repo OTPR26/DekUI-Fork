@@ -18,5 +18,5 @@ cmake --build build-deck --target bundle --parallel 4
 mapfile -t images < <(find build-deck/bundle -maxdepth 1 -name '*.AppImage')
 test "${#images[@]}" -eq 1
 release_version=$(python3 tools/mm3d/release_version.py)
-python3 tools/mm3d/package_deck.py "${images[0]}" "artifacts/Dekui-${release_version}-Linux-x86_64.tar.gz"
+python3 tools/mm3d/package_deck.py "${images[0]}" "artifacts/DekUI-Fork-${release_version}-Linux-x86_64.tar.gz"
 df -h .
