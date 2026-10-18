@@ -1194,7 +1194,13 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 }
                 if(model==2) {
                     const auto path=FileUtil::GetUserPath(FileUtil::UserPath::LoadDir)+"mm3d-models/dark-link/romfs/actors/zelda2_link_child_new.gar.lzs";
-                    if(!FileUtil::Exists(path))help_text("Dark Link is not installed. Generate Dark Link from your OoT3D ROM in startup Settings > Mods before starting the game.");
+                    if(!FileUtil::Exists(path)) {
+#ifdef ANDROID
+                        help_text("Dark Link is not installed. Generate Dark Link from your OoT3D ROM in startup Settings > Mods before starting the game.");
+#else
+                        help_text("Dark Link is not installed. Import your generated Dark Link folder into load/mm3d-models/dark-link/ in this game folder's user directory.");
+#endif
+                    }
                     help_text("Original OoT3D Dark Link model, red eyes and sword, with imported adult voice clips. Uses normal MM3D abilities and equipped shields. Restart the game after changing models.");
                 }
                 if(model==1) {
@@ -1214,15 +1220,30 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                             state.settings.adult_link_tunic_color=color;
                             state.settings.adult_link_master_sword=master;
                             changed=true;
-                        } else state.status="Model not generated: return to startup Settings > Mods and generate from your OoT3D ROM";
+                        } else {
+#ifdef ANDROID
+                            state.status="Model not generated: return to startup Settings > Mods and generate from your OoT3D ROM";
+#else
+                            state.status="Model not installed: import your generated Adult Link variants into load/mm3d-models/adult-link/";
+#endif
+                        }
                     }
-                    if(!available(state.settings.adult_link_tunic_color,state.settings.adult_link_master_sword))
+                    if(!available(state.settings.adult_link_tunic_color,state.settings.adult_link_master_sword)) {
+#ifdef ANDROID
                         help_text("The selected model is not installed. Return to startup Settings > Mods and generate the mod from your OoT3D ROM.");
+#else
+                        help_text("The selected model variant is not installed. Import the matching generated variant into load/mm3d-models/adult-link/variants/.");
+#endif
+                    }
                     help_text("On: OoT3D Master Sword and sheath. Off: Kokiri sword and sheath. Changes appearance only; sword damage stays unchanged.");
                 }
                 if(changed)state.status=state.settings.Save(state.directory+"presentation.json")?
                     "Mods saved; restart the game to apply":"Mods save FAILED";
+#ifdef ANDROID
                 help_text("Generate Adult Link or Dark Link from your own OoT3D ROM and texture pack in startup Settings > Mods. Regenerate after updating to import voices. Restart the game after changing mods. Adult Link keeps MM3D movement and transformation forms. Facial expressions and mask fitting are unfinished.");
+#else
+                help_text("Import generated Adult Link or Dark Link files from your own OoT3D ROM into this game folder's user/load/mm3d-models directory, including voices and icon files. Desktop ROM generation is not integrated yet. Restart after changing models. Normal MM3D abilities and transformation forms remain available; facial expressions and mask fitting are unfinished.");
+#endif
                 end_page();
             }
             if(begin_page("Graphics")) {
