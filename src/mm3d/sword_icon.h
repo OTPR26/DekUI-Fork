@@ -1,17 +1,27 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <span>
 #include <vector>
 namespace MM3D::SwordIcon {
 struct Image {unsigned width{},height{};std::vector<std::uint8_t> pixels;};
+#if defined(__cpp_lib_atomic_shared_ptr) && __cpp_lib_atomic_shared_ptr >= 201711L
+inline std::atomic<std::shared_ptr<const Image>> image;
+inline auto Load() { return image.load(); }
+inline void Store(std::shared_ptr<const Image> value) { image.store(std::move(value)); }
+#else
+// libc++ versions without the C++20 specialization retain the atomic free functions.
 inline std::shared_ptr<const Image> image;
+inline auto Load() { return std::atomic_load(&image); }
+inline void Store(std::shared_ptr<const Image> value) { std::atomic_store(&image,std::move(value)); }
+#endif
 inline bool Texture(std::uint64_t hash){return hash==0xE6E70FC2BF6BCD60ULL||hash==0xF5B5C27302313096ULL;}
 inline void Apply(std::uint64_t hash,std::span<std::uint8_t> pixels,unsigned width,unsigned height,bool top_down=false) {
  if(!Texture(hash)||width<512||height!=width||width%512||pixels.size()<std::size_t(width)*height*4)return;
- const auto source=std::atomic_load(&image);
+ const auto source=Load();
  if(!source||!source->width||!source->height||source->pixels.size()!=std::size_t(source->width)*source->height*4)return;
  // The shared item atlas uses 42px cells. Replace only the three regular swords;
  // the Great Fairy's Sword, masks, items, portraits, and HUD layout stay intact.

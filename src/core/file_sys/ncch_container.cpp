@@ -647,7 +647,7 @@ Loader::ResultStatus NCCHContainer::ReadRomFS(std::shared_ptr<RomFSReader>& romf
     if (GetModId(ncch_header.program_id) == 0x0004000000125500ULL) {
         MM3D::ModelMod::adult_active.store(false);
         MM3D::TunicColor::selected.store(0);
-        std::atomic_store(&MM3D::SwordIcon::image,std::shared_ptr<const MM3D::SwordIcon::Image>{});
+        MM3D::SwordIcon::Store(std::shared_ptr<const MM3D::SwordIcon::Image>{});
         const auto settings = FileUtil::GetUserPath(FileUtil::UserPath::ConfigDir) +
                               "mm3d-local/presentation.json";
         std::string text;
@@ -686,7 +686,7 @@ Loader::ResultStatus NCCHContainer::ReadRomFS(std::shared_ptr<RomFSReader>& romf
                     if(icon_file.ReadBytes(encoded.data(),encoded.size())==encoded.size() &&
                        Core::System::GetInstance().GetImageInterface()->DecodePNG(image->pixels,image->width,image->height,encoded) &&
                        image->width<=2048 && image->height<=2048)
-                        std::atomic_store(&MM3D::SwordIcon::image,std::shared_ptr<const MM3D::SwordIcon::Image>(std::move(image)));
+                        MM3D::SwordIcon::Store(std::shared_ptr<const MM3D::SwordIcon::Image>(std::move(image)));
                 }
                 LOG_INFO(Service_FS, "{} model loaded: {} (requested tunic {}, imported sword {})", model_name, model_path, color, dark||MM3D::ModelMod::MasterSwordSelected(text));
             } else {
