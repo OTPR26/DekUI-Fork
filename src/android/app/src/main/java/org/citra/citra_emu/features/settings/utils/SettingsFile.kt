@@ -193,16 +193,16 @@ object SettingsFile {
         }
 
     fun getSettingsFile(fileName: String): DocumentFile {
-        val root = if (org.citra.citra_emu.utils.DekuiAndroidSetup.isPrivateStorage(CitraApplication.appContext)) {
-            DocumentFile.fromFile(java.io.File(CitraApplication.appContext.filesDir, "dekui"))
+        val root = if (org.citra.citra_emu.utils.DekuiAndroidSetup.isLocalStorage(CitraApplication.appContext)) {
+            DocumentFile.fromFile(org.citra.citra_emu.utils.DekuiStorage.root(CitraApplication.appContext))
         } else DocumentFile.fromTreeUri(CitraApplication.appContext, Uri.parse(userDirectory))
         val configDirectory = root!!.findFile("config")
         return configDirectory!!.findFile("$fileName.ini")!!
     }
 
     private fun getCustomGameSettingsFile(gameId: String): DocumentFile {
-        val root = if (org.citra.citra_emu.utils.DekuiAndroidSetup.isPrivateStorage(CitraApplication.appContext)) {
-            DocumentFile.fromFile(java.io.File(CitraApplication.appContext.filesDir, "dekui"))
+        val root = if (org.citra.citra_emu.utils.DekuiAndroidSetup.isLocalStorage(CitraApplication.appContext)) {
+            DocumentFile.fromFile(org.citra.citra_emu.utils.DekuiStorage.root(CitraApplication.appContext))
         } else DocumentFile.fromTreeUri(CitraApplication.appContext, Uri.parse(userDirectory))
         val configDirectory = root!!.findFile("GameSettings")
         return configDirectory!!.findFile("$gameId.ini")!!

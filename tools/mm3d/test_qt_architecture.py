@@ -11,7 +11,8 @@ class QtArchitectureTests(unittest.TestCase):
         module=(Path(__file__).resolve().parents[2]/'CMakeModules/DownloadExternals.cmake').as_posix()
         for cpu,expected,folder in [('arm64','win64_msvc2022_arm64_cross_compiled','msvc2022_arm64'),('x86_64','win64_msvc2022_64','msvc2022_64')]:
             with self.subTest(cpu=cpu),tempfile.TemporaryDirectory() as tmp:
-                script=Path(tmp)/'check.cmake';script.write_text(f'''include("{module}")
+                script=Path(tmp)/'check.cmake';script.write_text(f'''cmake_minimum_required(VERSION 3.22)
+include("{module}")
 set(WIN32 TRUE)
 set(MINGW FALSE)
 set(MSVC TRUE)

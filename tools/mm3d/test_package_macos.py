@@ -22,6 +22,6 @@ class MacPackageTests(unittest.TestCase):
                 elif args[0]!='codesign':raise AssertionError(args)
             with patch.object(package_macos,'verify_dependencies'),patch.object(package_macos,'install'),patch.object(package_macos.subprocess,'run',side_effect=run):
                 package_macos.package(app,root/'out.zip',root/'python.tar.gz')
-            subprocess.run([sys.executable,'-E','-s',str(captured/'tools/mm3d/package_setup_check.py')],check=True,capture_output=True)
+            subprocess.run([sys.executable,'-E','-s',str(captured/'DekUI Fork.app/Contents/Resources/tools/mm3d/package_setup_check.py')],check=True,capture_output=True)
             self.assertFalse((captured/'user').exists())
             self.assertFalse(list(captured.rglob('*.rgba')))

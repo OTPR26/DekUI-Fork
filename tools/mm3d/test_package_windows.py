@@ -18,6 +18,7 @@ class WindowsPackageTest(unittest.TestCase):
                 p = bundle / name; p.parent.mkdir(parents=True, exist_ok=True); p.write_bytes(b'test')
             for name in package_windows.SCRIPTS:
                 p = repo / 'tools/mm3d' / name; p.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(package_windows.ROOT/'tools/mm3d'/name,p)
+            shutil.copytree(package_windows.ROOT / 'src/android/app/src/main/assets/dekui-pc-controls', repo / 'src/android/app/src/main/assets/dekui-pc-controls')
             shutil.copytree(package_windows.ROOT / 'resources/mm3d/desktop-hud', repo / 'resources/mm3d/desktop-hud')
             shutil.copytree(package_windows.ROOT / 'src/android/app/src/main/assets/dekui-hud8x', repo / 'src/android/app/src/main/assets/dekui-hud8x')
             shutil.copytree(package_windows.ROOT / 'tools/mm3d/mod_import' , repo / 'tools/mm3d/mod_import')

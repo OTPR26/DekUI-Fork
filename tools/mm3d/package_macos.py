@@ -57,17 +57,18 @@ def package(bundle, output, python_archive):
         info.write_bytes(plistlib.dumps(metadata))
         runtime = app / 'Contents/Resources/runtime'
         install(python_archive, runtime)
-        scripts = root / 'tools/mm3d'; scripts.mkdir(parents=True)
+        payload = app / 'Contents/Resources'
+        scripts = payload / 'tools/mm3d'; scripts.mkdir(parents=True)
         for name in SCRIPTS:
             shutil.copy2(ROOT / 'tools/mm3d' / name, scripts / name)
-        resources = root / 'resources/mm3d'; resources.mkdir(parents=True)
+        resources = payload / 'resources/mm3d'; resources.mkdir(parents=True)
         for name in ('supported-rom.json', 'setup-fingerprints.json', 'layout-migration.json'):
             shutil.copy2(ROOT / 'resources/mm3d' / name, resources / name)
         shutil.copytree(ROOT / 'resources/mm3d/defaults', resources / 'defaults')
         shutil.copytree(ROOT / "tools/mm3d/mod_import", scripts / "mod_import", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         font_license=root / "licenses/fonts/LICENSE.txt";font_license.parent.mkdir(parents=True,exist_ok=True)
         shutil.copy2(ROOT / "src/android/app/src/main/assets/dekui-fonts/LICENSE.txt",font_license)
-        copy_desktop_hud(ROOT, root / "resources/mm3d/desktop-hud")
+        copy_desktop_hud(ROOT, payload / "resources/mm3d/desktop-hud")
         copy_restoration(ROOT, resources / 'project-restoration')
         for name in ('README.md', 'CHANGELOG.md', 'CREDITS.md', 'KNOWN_ISSUES.md', 'INSTALL.md'):
             shutil.copy2(ROOT / 'resources/mm3d/release-docs' / name, root / name)
@@ -82,6 +83,7 @@ def package(bundle, output, python_archive):
             if p.is_file():
                 dest = root / 'licenses/MoltenVK' / p.name
                 dest.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(p, dest)
+        shutil.move(str(root / "licenses"), str(payload / "licenses"))
         verify_dependencies(root)
         # Ad-hoc signatures support Apple Silicon without paid Apple credentials.
         # This does not notarize the app or remove Gatekeeper's first-launch prompt.

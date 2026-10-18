@@ -659,7 +659,7 @@ class InputBindingSetting(val abstractSetting: AbstractSetting, titleId: Int) :
                 }
             }
             check(editor.commit()) { "Cannot clear previous game bindings" }
-            val buttons = nintendoFaceButtonMappings + dpadButtonMappings + listOf(
+            val buttons = xboxFaceButtonMappings + dpadButtonMappings + listOf(
                 DefaultButtonMapping(Settings.KEY_BUTTON_L, KeyEvent.KEYCODE_BUTTON_L2, NativeLibrary.ButtonType.TRIGGER_L),
                 DefaultButtonMapping(Settings.KEY_BUTTON_R, KeyEvent.KEYCODE_BUTTON_R2, NativeLibrary.ButtonType.TRIGGER_R),
                 DefaultButtonMapping(Settings.KEY_BUTTON_ZL, KeyEvent.KEYCODE_BUTTON_L1, NativeLibrary.ButtonType.BUTTON_ZL),

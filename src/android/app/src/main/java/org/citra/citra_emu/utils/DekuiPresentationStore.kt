@@ -8,7 +8,7 @@ import org.json.JSONObject
 
 /** Edit only requested keys; preserve all installed HUD customization and unknown fields. */
 class DekuiPresentationStore(context: Context) {
-    private val file=File(context.filesDir,"dekui/config/mm3d-local/presentation.json")
+    private val file=java.io.File(org.citra.citra_emu.utils.DekuiStorage.root(context),"config/mm3d-local/presentation.json")
     fun read(): JSONObject {
         val value=JSONObject(file.readText())
         check(value.optInt("version",1)==1) { "Unsupported settings version" }

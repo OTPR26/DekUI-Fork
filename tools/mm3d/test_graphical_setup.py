@@ -14,6 +14,9 @@ class GraphicalSetupTests(unittest.TestCase):
         hud = patch('desktop_hud.apply')
         hud.start()
         self.addCleanup(hud.stop)
+        controls = patch('desktop_hud.apply_controls')
+        controls.start()
+        self.addCleanup(controls.stop)
 
     def test_existing_saves_preserved(self):
         with tempfile.TemporaryDirectory() as tmp:

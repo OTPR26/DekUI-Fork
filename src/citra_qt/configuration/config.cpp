@@ -675,6 +675,7 @@ void QtConfig::ReadPathValues() {
             ReadSetting(Settings::QKeys::gameListRootDir, QStringLiteral(".")).toString();
         UISettings::values.game_dir_deprecated_deepscan =
             ReadSetting(Settings::QKeys::gameListDeepScan, false).toBool();
+        UISettings::values.game_dirs.clear();
         int size = qt_config->beginReadArray(QStringLiteral("gamedirs"));
         for (int i = 0; i < size; ++i) {
             qt_config->setArrayIndex(i);
@@ -682,7 +683,8 @@ void QtConfig::ReadPathValues() {
             game_dir.path = ReadSetting(Settings::QKeys::path).toString();
             game_dir.deep_scan = ReadSetting(Settings::QKeys::deep_scan, false).toBool();
             game_dir.expanded = ReadSetting(Settings::QKeys::expanded, true).toBool();
-            UISettings::values.game_dirs.append(game_dir);
+            if (!UISettings::values.game_dirs.contains(game_dir))
+                UISettings::values.game_dirs.append(game_dir);
         }
         qt_config->endArray();
         // create NAND and SD card directories if empty, these are not removable through the UI,
@@ -754,6 +756,7 @@ void QtConfig::ReadRendererValues() {
 }
 
 void QtConfig::ReadShortcutValues() {
+    UISettings::values.shortcuts.clear();
     qt_config->beginGroup(QStringLiteral("Shortcuts"));
 
     for (const auto& [name, group, shortcut] : default_hotkeys) {
@@ -903,6 +906,7 @@ void QtConfig::ReadUIGameListValues() {
     ReadBasicSetting(UISettings::values.show_size_column);
     ReadBasicSetting(UISettings::values.show_play_time_column);
 
+    UISettings::values.favorited_ids.clear();
     const int favorites_size = qt_config->beginReadArray(QStringLiteral("favorites"));
     for (int i = 0; i < favorites_size; i++) {
         qt_config->setArrayIndex(i);
@@ -1019,6 +1023,7 @@ void QtConfig::SaveControlValues() {
                  static_cast<int>(UISettings::values.controller_hotkey_maptype.GetValue()),
                  static_cast<int>(Settings::InputMappingType::GuidPort));
     WriteSetting(Settings::QKeys::profile, Settings::values.current_input_profile_index, 0);
+    qt_config->remove(QStringLiteral("profiles"));
     qt_config->beginWriteArray(QStringLiteral("profiles"));
     for (std::size_t p = 0; p < Settings::values.input_profiles.size(); ++p) {
         qt_config->setArrayIndex(static_cast<int>(p));
@@ -1061,6 +1066,7 @@ void QtConfig::SaveControlValues() {
     }
     qt_config->endArray();
 
+    qt_config->remove(Settings::QKeys::touch_from_button_maps);
     qt_config->beginWriteArray(Settings::QKeys::touch_from_button_maps);
     for (std::size_t p = 0; p < Settings::values.touch_from_button_maps.size(); ++p) {
         qt_config->setArrayIndex(static_cast<int>(p));
@@ -1255,6 +1261,7 @@ void QtConfig::SavePathValues() {
         WriteSetting(Settings::QKeys::movieRecordPath, UISettings::values.movie_record_path);
         WriteSetting(Settings::QKeys::moviePlaybackPath, UISettings::values.movie_playback_path);
         WriteSetting(Settings::QKeys::videoDumpingPath, UISettings::values.video_dumping_path);
+        qt_config->remove(Settings::QKeys::gamedirs);
         qt_config->beginWriteArray(Settings::QKeys::gamedirs);
         for (int i = 0; i < UISettings::values.game_dirs.size(); ++i) {
             qt_config->setArrayIndex(i);

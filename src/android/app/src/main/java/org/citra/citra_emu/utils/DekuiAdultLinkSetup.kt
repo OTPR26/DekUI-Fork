@@ -23,7 +23,7 @@ object DekuiAdultLinkSetup {
     private fun prefs(c:Context)=c.getSharedPreferences("dekui-adult-link",Context.MODE_PRIVATE)
     fun description(c:Context):String {
         val p=prefs(c)
-        val voices=if(listOf("adult-link","dark-link").any{File(c.filesDir,"dekui/load/mm3d-models/$it/voices/romfs/sound/sequence/JokerSound.bcsar").isFile})"Adult voices: imported"else"Adult voices: generate the mod to import"
+        val voices=if(listOf("adult-link","dark-link").any{java.io.File(org.citra.citra_emu.utils.DekuiStorage.root(c),"load/mm3d-models/$it/voices/romfs/sound/sequence/JokerSound.bcsar").isFile})"Adult voices: imported"else"Adult voices: generate the mod to import"
         return "OoT3D ROM: ${p.getString("romLabel","Not selected")}\nTexture pack: ${p.getString("packLabel","Not selected (original textures)")}\n$voices\n${p.getString("result","")}"
     }
     fun selectRom(c:Context,uri:Uri){
@@ -44,7 +44,7 @@ object DekuiAdultLinkSetup {
         check(folder.canRead()){"Android cannot read the texture folder"}
         check(prefs(c).edit().putString("pack",folder.uri.toString()).putString("packLabel",folder.name?:"Selected texture pack").commit())
     }
-    fun canGenerate(c:Context)=prefs(c).contains("rom")&&File(c.filesDir,"dekui-game/game.cci").isFile
+    fun canGenerate(c:Context)=prefs(c).contains("rom")&&org.citra.citra_emu.utils.DekuiStorage.game(c).isFile
     private class Reader(private val channel:FileChannel){
         fun read(at:Long,n:Int):ByteArray{require(at>=0&&n in 0..64*1024*1024&&at+n<=channel.size()){"Invalid ROM range"};val b=ByteBuffer.allocate(n);while(b.hasRemaining()){val got=channel.read(b,at+b.position());check(got>0){"Could not read ROM"}};return b.array()}
         fun actor(name:String,oot:Boolean):ByteArray{
@@ -112,14 +112,14 @@ object DekuiAdultLinkSetup {
         val actor=c.contentResolver.openFileDescriptor(uri,"r")?.use{fd->FileInputStream(fd.fileDescriptor).use{Reader(it.channel).actor(if(dark)"actor/zelda_torch2.zar"else"actor/zelda_link_boy_new.zar",true)}}?:error("Cannot read the selected ROM")
         val es=DekuiModelConverter.entries(actor);val adult=es.firstOrNull{it.name==(if(dark)"Model/darklink.cmb"else"boy/model/link_v2.cmb")}?.bytes?:error("$modelName model is missing")
         val body=if(dark)byteArrayOf()else es.firstOrNull{it.name=="boy/misc/link_body.cmab"}?.bytes?:error("Original tunic colors are missing")
-        val native=FileInputStream(File(c.filesDir,"dekui-game/game.cci")).use{Reader(it.channel).actor("actors/zelda2_link_child_new.gar.lzs",false)}
-        val root=File(c.filesDir,"dekui/load/mm3d-models/$modelId");val stage=File(root.parentFile,".$modelId-${java.util.UUID.randomUUID()}");check(stage.mkdirs())
+        val native=FileInputStream(org.citra.citra_emu.utils.DekuiStorage.game(c)).use{Reader(it.channel).actor("actors/zelda2_link_child_new.gar.lzs",false)}
+        val root=java.io.File(org.citra.citra_emu.utils.DekuiStorage.root(c),"load/mm3d-models/$modelId");val stage=File(root.parentFile,".$modelId-${java.util.UUID.randomUUID()}");check(stage.mkdirs())
         try{
             progress("Reading the Master Sword HUD icon from your OoT3D ROM…")
             val iconHashes=nativeSwordIcon(c,uri,stage)
             progress("Importing Adult Link's voice clips from your OoT3D ROM…")
             val sourceSound=c.contentResolver.openFileDescriptor(uri,"r")?.use{fd->FileInputStream(fd.fileDescriptor).use{Reader(it.channel).actor("sound/QueenSound.bcsar",true)}}?:error("Cannot read OoT3D voices")
-            val nativeSound=FileInputStream(File(c.filesDir,"dekui-game/game.cci")).use{Reader(it.channel).actor("sound/sequence/JokerSound.bcsar",false)}
+            val nativeSound=FileInputStream(org.citra.citra_emu.utils.DekuiStorage.game(c)).use{Reader(it.channel).actor("sound/sequence/JokerSound.bcsar",false)}
             val voices=DekuiVoiceConverter.convert(sourceSound,nativeSound)
             atomic(File(stage,"voices/romfs/sound/sequence/JokerSound.bcsar"),voices.archive)
             val allTextures=mutableListOf<Texture>();val report=JSONObject().put("voices",JSONObject().put("schema",1).put("clips",voices.clips).put("human_keys",voices.mappedKeys));var count=0
@@ -146,7 +146,7 @@ object DekuiAdultLinkSetup {
                     val bitmap=c.contentResolver.openInputStream(iconSource)?.use{android.graphics.BitmapFactory.decodeStream(it,null,options)}?:error("Cannot decode the HD item icons")
                     try{writeSwordIcon(stage,bitmap);copied++}finally{bitmap.recycle()}
                 }
-                val textureRoot=File(c.filesDir,"dekui/load/textures/0004000000125500");val textureStage=File(stage,"texture-overrides");val unique=mutableSetOf<String>()
+                val textureRoot=java.io.File(org.citra.citra_emu.utils.DekuiStorage.root(c),"load/textures/0004000000125500");val textureStage=File(stage,"texture-overrides");val unique=mutableSetOf<String>()
                 for(t in allTextures){val hashes=NativeLibrary.dekuiTextureHashes(t.raw,t.width,t.height,t.format);check(hashes.size==2);val names=hashes.map{java.lang.Long.toUnsignedString(it,16).uppercase().padStart(16,'0')};if(!unique.add(names[0]))continue
                     val source=index[names[1]]?:index[names[0]]?:continue;val extension=DocumentFile.fromSingleUri(c,source)?.name?.substringAfterLast('.')?.lowercase()?:"png"
                     val bytes=c.contentResolver.openInputStream(source)?.use{input->
@@ -167,7 +167,7 @@ object DekuiAdultLinkSetup {
             if(!stage.renameTo(root)){if(backup.exists())backup.renameTo(root);error("Could not install generated models")}
             val generatedTextures=File(root,"texture-overrides")
             if(generatedTextures.isDirectory) {
-                val textureRoot=File(c.filesDir,"dekui/load/textures/0004000000125500");val target=File(textureRoot,"$modelId-generated");textureRoot.mkdirs()
+                val textureRoot=java.io.File(org.citra.citra_emu.utils.DekuiStorage.root(c),"load/textures/0004000000125500");val target=File(textureRoot,"$modelId-generated");textureRoot.mkdirs()
                 val oldTextures=File(textureRoot,".$modelId-backup-${System.currentTimeMillis()}")
                 if(target.exists())check(target.renameTo(oldTextures)){"Could not back up generated textures"}
                 if(!generatedTextures.renameTo(target)){if(oldTextures.exists())oldTextures.renameTo(target);error("Could not install generated textures")}

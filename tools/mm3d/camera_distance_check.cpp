@@ -98,6 +98,33 @@ int main(int argc,char** argv) {
         orbit.Observe(Cam,6);assert(orbit.normal_camera==0&&orbit.baseline==0);
         m.words[Stack]=Bits(50.f);orbit.Apply(m,r,form,2.f);assert(m.Read(Stack)==Bits(100.f));
     }
+    // Recover a shortened orbit without a scene change or resetting the user's
+    // multiplier. Rebuild from native form parameters, retaining collision output.
+    for(U32 form:{1u,2u,3u,4u}) {
+        auto m=Fixture(31,form);Orbit orbit;MM3D::FormCamera::Hook native;
+        std::array<U32,16> r{};r[4]=Cam;r[13]=Stack;
+        m.words[Cam+0x5c]=Bits(25.f); // wall-adjusted eye must remain untouched
+        orbit.camera=Cam;orbit.player=Player;orbit.form=form;orbit.setting=1;
+        orbit.baseline=35;orbit.applied=true;
+        native.saved=true;native.camera=Cam;native.player=Player;native.form=form;native.radius=35;
+        MM3D::FormCamera::ArrivalLens params;
+        const auto expected=params.NormalRadius(m,1,Player,form);assert(expected);
+        const auto before=m.words;
+        RequestReset();assert(orbit.Recover(m,r,native));assert(!reset_requested);
+        orbit.Apply(m,r,native,1.66f);
+        assert(m.Read(Stack)==Bits(*expected*1.66f));
+        assert(native.saved&&native.radius==*expected&&orbit.baseline==*expected);
+        for(const auto& [at,value]:before)if(at!=Stack)assert(m.Read(at)==value);
+        for(unsigned frame=0;frame<100;++frame) {
+            orbit.Apply(m,r,native,1.66f);assert(m.Read(Stack)==Bits(*expected*1.66f));
+        }
+        // Aiming/cutscenes defer the request and never receive a reset write.
+        m.words[Cam+0x158]=6;const auto special=m.words;
+        RequestReset();assert(!orbit.Recover(m,r,native)&&reset_requested);
+        assert(m.words==special);
+        m.words[Cam+0x158]=31;assert(orbit.Recover(m,r,native));
+        orbit.Apply(m,r,native,1.f);assert(m.Read(Stack)==Bits(*expected));
+    }
     for(U32 bits:{Bits(-0.f),0x7fc12345u,0x7f800000u})assert(Scale(bits,1.f)==bits&&Scale(bits,2.f)==bits);
     assert(Scale(Bits(100.f),100.f)==Bits(300.f));assert(Scale(Bits(100.f),0.f)==Bits(50.f));
     std::cout<<"Camera distance: exact code guards, native 1x, isolated radius operands, repeated-frame stability, live reset, all forms and special-camera exclusions passed\n";

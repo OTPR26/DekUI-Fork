@@ -89,7 +89,7 @@ class MainActivity :
             if (org.citra.citra_emu.NativeLibrary.isRunning()) {
                 startActivity(android.content.Intent(this, org.citra.citra_emu.activities.EmulationActivity::class.java).apply {
                     action=android.content.Intent.ACTION_VIEW
-                    data=android.net.Uri.fromFile(java.io.File(filesDir,"dekui-game/game.cci"))
+                    data=android.net.Uri.fromFile(org.citra.citra_emu.utils.DekuiStorage.game(this@MainActivity))
                     putExtra("dekui_resume_existing",true)
                     addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
                 })

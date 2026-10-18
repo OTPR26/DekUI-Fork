@@ -24,23 +24,52 @@ class DekuiLaunchActivity : AppCompatActivity() {
     private lateinit var status: TextView
     private lateinit var select: Button
     private val prefs by lazy { getSharedPreferences("dekui-launch", MODE_PRIVATE) }
-    private val game by lazy { File(filesDir, "dekui-game/game.cci") }
+    private val game get() = org.citra.citra_emu.utils.DekuiStorage.game(this)
     private val picker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) importGame(uri)
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        prepareSharedStorage()
+        onBackPressedDispatcher.addCallback(this,object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() { finish() }
+        })
+    }
+
+    private val storagePermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        prepareSharedStorage()
+    }
+    private val legacyStoragePermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+        prepareSharedStorage()
+    }
+    private var preparingStorage=false
+    private fun prepareSharedStorage() {
+        if(preparingStorage)return
+        if(!org.citra.citra_emu.utils.DekuiStorage.hasAccess(this)) {
+            val panel=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setPadding(48,48,48,48) }
+            panel.addView(TextView(this).apply { text="Game data folder\n\nDekUI stores saves, mods and settings in Internal storage/mm3dport. Allow file access to create this folder and migrate existing data. Your existing private data will be kept as a backup.";textSize=20f })
+            panel.addView(Button(this).apply { text="Allow file access";setOnClickListener {
+                if(android.os.Build.VERSION.SDK_INT>=30)storagePermission.launch(Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,Uri.parse("package:$packageName")))
+                else legacyStoragePermission.launch(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            }})
+            setContentView(panel);return
+        }
+        preparingStorage=true
+        val message=TextView(this).apply {text="Preparing Internal storage/mm3dport…\nCopying and verifying existing data. Originals will be retained.";textSize=20f;setPadding(48,48,48,48)}
+        setContentView(message)
+        lifecycleScope.launch {
+            val result=withContext(Dispatchers.IO){runCatching{org.citra.citra_emu.utils.DekuiStorage.migrate(this@DekuiLaunchActivity)}}
+            preparingStorage=false
+            result.fold({finishStorageSetup()},{message.text="Game data was retained.\n"+(it.message?:"Storage migration failed")})
+        }
+    }
+    private fun finishStorageSetup() {
         if (!prefs.getBoolean("odin-controls-v1", false)) {
             org.citra.citra_emu.features.settings.model.view.InputBindingSetting.applyDekuiOdinBindings()
             org.citra.citra_emu.utils.EmulationMenuSettings.showOverlay = false
             prefs.edit().putBoolean("odin-controls-v1", true).apply()
         }
         buildLauncher()
-        onBackPressedDispatcher.addCallback(this,object : androidx.activity.OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                finish()
-            }
-        })
     }
 
     private fun buildLauncher() {

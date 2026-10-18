@@ -11,8 +11,8 @@ def check(package):
         subprocess.run(['ditto', '-x', '-k', str(package.resolve()), tmp], check=True)
         root = Path(tmp) / 'dekui'
         python = root / 'DekUI Fork.app/Contents/Resources/runtime/python/bin/python3'
-        subprocess.run([str(python), '-E', '-s', '-B', str(root / 'tools/mm3d/package_setup_check.py')], cwd=tmp, check=True, timeout=30)
-        helper = root / 'tools/mm3d/graphical_setup.py'
+        subprocess.run([str(python), '-E', '-s', '-B', str(root / 'DekUI Fork.app/Contents/Resources/tools/mm3d/package_setup_check.py')], cwd=tmp, check=True, timeout=30)
+        helper = root / 'DekUI Fork.app/Contents/Resources/tools/mm3d/graphical_setup.py'
         env = os.environ.copy()
         env.update(PATH='/usr/bin:/bin', PYTHONHOME='/nonexistent-python',
                    PYTHONPATH='/nonexistent-modules')

@@ -21,8 +21,8 @@ object PermissionsHandler {
         PreferenceManager.getDefaultSharedPreferences(CitraApplication.appContext)
 
     fun hasWriteAccess(context: Context): Boolean {
-        if (DekuiAndroidSetup.isPrivateStorage(context)) {
-            val root = java.io.File(context.filesDir, "dekui")
+        if (DekuiAndroidSetup.isLocalStorage(context)) {
+            val root = org.citra.citra_emu.utils.DekuiStorage.root(context)
             return root.isDirectory && root.canWrite()
         }
         try {

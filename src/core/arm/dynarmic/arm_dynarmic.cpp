@@ -1321,6 +1321,9 @@ public:
                 const auto before=guest.Read(regs[13]);
                 form_camera.Radius(guest,regs);
                 arrival_lens.Radius(guest,regs,form_camera);
+                if(camera_distance_orbit.Recover(guest,regs,form_camera))
+                    LOG_INFO(Core_ARM11,"Camera orbit reset in place; native radius={} distance factor={}",
+                             camera_distance_orbit.baseline,MM3D::CameraDistance::multiplier.load());
                 camera_distance_orbit.Apply(guest,regs,form_camera,MM3D::CameraDistance::multiplier.load());
                 if(MM3D::FormCamera::diagnostics.load()) {
                     const auto after=guest.Read(regs[13]);

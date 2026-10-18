@@ -8,10 +8,12 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QtEndian>
+#include <QStandardPaths>
+#include "mm3d/desktop_storage.h"
 
 namespace MM3D::GameFolder {
 inline constexpr auto Hash = "9c756279e3ec00bb9009f92ca2e7b9ec8b1fcdfcd9de057658b209caa24323da";
-inline QString Root() {
+inline QString LegacyRoot() {
     // AppImage mounts its executable read-only; use the folder holding the image.
     const auto appimage = qEnvironmentVariable("APPIMAGE");
 #ifdef Q_OS_MACOS
@@ -25,6 +27,27 @@ inline QString Root() {
 #endif
     return appimage.isEmpty() ? QCoreApplication::applicationDirPath()
                               : QFileInfo(appimage).absolutePath();
+}
+inline QString PackageRoot() {
+#ifdef Q_OS_MACOS
+    const auto embedded=QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(QStringLiteral("../Resources"));
+    if (QFileInfo::exists(embedded+QStringLiteral("/tools/mm3d/graphical_setup.py"))) return embedded;
+#endif
+    return LegacyRoot();
+}
+inline QString Root() {
+#ifdef Q_OS_MACOS
+    return QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)+QStringLiteral("/DekUI Fork");
+#else
+    return LegacyRoot();
+#endif
+}
+inline QString InitializeStorage() {
+#ifdef Q_OS_MACOS
+    return DesktopStorage::Migrate(LegacyRoot(),Root());
+#else
+    return {};
+#endif
 }
 inline QString FindRom(const QString& root) {
     QFile selection(root+QStringLiteral("/desktop-settings.json"));
@@ -44,7 +67,14 @@ inline QString FindRom(const QString& root) {
     const auto legacy=root+QStringLiteral("/game/mm3d.cci");
     return QFileInfo(legacy).isFile()?legacy:QString{};
 }
-inline QString Rom() { return FindRom(Root()); }
+inline QString Rom() {
+    const auto chosen=FindRom(Root());
+#ifdef Q_OS_MACOS
+    if(chosen.isEmpty()&&!QFileInfo::exists(Root()+QStringLiteral("/desktop-settings.json")))
+        return FindRom(LegacyRoot());
+#endif
+    return chosen;
+}
 inline QString MissingGameMessage() {
     return QStringLiteral("Select your decrypted MM3D USA Rev 1 game-card dump (.cci or .3ds) from the startup screen.");
 }

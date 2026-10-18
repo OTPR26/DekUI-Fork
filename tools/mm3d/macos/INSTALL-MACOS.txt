@@ -1,10 +1,16 @@
 DekUI Fork desktop UI preview — Apple Silicon, macOS 13.4 or newer
 
-Extract the entire ZIP into a writable folder. Keep DekUI Fork.app, tools,
-resources and the user folder together. Open DekUI Fork.app, then select your
-own decrypted MM3D USA Rev 1 (.cci/.3ds) ROM from the startup screen.
-The selected ROM can stay in its existing folder; setup does not copy it.
-Python and setup resources are bundled. No developer tools are required.
+Extract the ZIP and open DekUI Fork.app. The app contains its setup tools,
+resources and Python runtime; no developer tools are required.
+Select your own decrypted MM3D USA Rev 1 (.cci/.3ds) ROM at startup. Selected
+ROMs and texture packs stay in their existing locations.
+
+Saves, settings, generated mods, logs and caches are stored in:
+~/Library/Application Support/DekUI Fork/
+On first launch, data from an older portable user folder beside the app is
+copied there and verified before use. The old folder remains as a backup.
+Existing Application Support data is never overwritten by a portable copy.
+macOS may ask for access to external game/texture folders you select.
 
 Settings is available on the startup screen. During gameplay, use the DekUI
 Fork > Settings menu or Command-comma. F1 also works. On a controller, press
@@ -21,10 +27,11 @@ No ROMs, models, voice banks, texture packs or saves are included in this ZIP.
 Touch > Swap screens shows the game's touchscreen for mouse input. Swap back
 to return to the single-screen game. In-game cheats need a loaded save.
 
-Updating: close the app, retain a backup of user/ and desktop-settings.json,
-and extract the new complete package into a separate folder. Copy your user/
-and desktop-settings.json into it. Never replace or delete your saves to fix
-setup problems. Resource and model upgrades retain backups.
+Updating: close DekUI Fork and replace the app. Your Application Support
+data stays in place. Back up that folder before making manual changes.
+For the first upgrade from the portable version, place the updated app beside
+the existing user folder so it can migrate your saves and settings once.
+Never delete your saves to fix setup problems.
 
 This development preview is ad-hoc signed and not Apple-notarized. If macOS
 blocks it, use System Settings > Privacy & Security > Open Anyway. Move the

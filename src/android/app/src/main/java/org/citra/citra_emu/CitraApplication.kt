@@ -52,14 +52,19 @@ class CitraApplication : Application() {
         application = this
         documentsTree = DocumentsTree()
         org.citra.citra_emu.utils.DekuiAndroidSetup.initializeStorage(this)
-        if (PermissionsHandler.hasWriteAccess(applicationContext)) {
+        val storageReady = !BuildConfig.DEKUI_PRESENTATION ||
+            (getSharedPreferences("dekui-storage",MODE_PRIVATE).getBoolean("shared-v1",false) &&
+             org.citra.citra_emu.utils.DekuiStorage.hasAccess(this))
+        if (storageReady && PermissionsHandler.hasWriteAccess(applicationContext)) {
             DirectoryInitialization.start()
         }
 
-        NativeLibrary.logDeviceInfo()
-        logDeviceInfo()
+        if (storageReady) {
+            NativeLibrary.logDeviceInfo()
+            logDeviceInfo()
+            NativeLibrary.playTimeManagerInit()
+        }
         createNotificationChannel()
-        NativeLibrary.playTimeManagerInit()
     }
 
     fun logDeviceInfo() {

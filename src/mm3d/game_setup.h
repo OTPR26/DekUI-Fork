@@ -13,7 +13,7 @@ namespace MM3D::GameFolder {
 inline QString Prepare() {
     const auto rom=Rom();
     if(rom.isEmpty())return MissingGameMessage();
-    const auto helper=Root()+QStringLiteral("/tools/mm3d/graphical_setup.py");
+    const auto helper=PackageRoot()+QStringLiteral("/tools/mm3d/graphical_setup.py");
     if(!QFileInfo::exists(helper))return QStringLiteral("Setup files are missing. Extract the entire Dekui download and keep the app beside its tools and resources folders.");
 #ifdef Q_OS_WIN
     const auto python=Root()+QStringLiteral("/runtime/python/python.exe");

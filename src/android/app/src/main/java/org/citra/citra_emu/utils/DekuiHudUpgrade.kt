@@ -19,12 +19,34 @@ object DekuiHudUpgrade {
         try { stream.write(data); atomic.finishWrite(stream) }
         catch (e: Exception) { atomic.failWrite(stream); throw e }
     }
+    private fun authored(context:Context, source:ByteArray, recipe:String):ByteArray {
+        val spec=JSONObject(context.assets.open("dekui-hud8x/$recipe").bufferedReader().use{it.readText()})
+        if(hash(source)==spec.getString("sha256"))return source
+        if(hash(source)!=spec.getString("source_sha256"))return source
+        val size=spec.getInt("size");check(size in 1..(512*1024))
+        val output=java.io.ByteArrayOutputStream(size);val ops=spec.getJSONArray("ops")
+        for(i in 0 until ops.length()) {
+            val op=ops.getJSONObject(i)
+            if(op.has("copy")) {
+                val at=op.getInt("copy");val count=op.getInt("size")
+                check(at>=0&&count>=0&&at<=source.size-count)
+                output.write(source,at,count)
+            } else output.write(Base64.decode(op.getString("data"),Base64.DEFAULT))
+            check(output.size()<=size)
+        }
+        val result=output.toByteArray();check(result.size==size&&hash(result)==spec.getString("sha256"))
+        return result
+    }
     fun apply(context: Context) {
-        val root = File(context.filesDir, "dekui")
+        val root = org.citra.citra_emu.utils.DekuiStorage.root(context)
         val archive = File(root,"load/mods/0004000000125500/romfs/layout/Joker.Main.New.gar")
         if (!archive.isFile) return // A fresh ROM import installs its layouts first.
         val spec = context.assets.open("dekui-hud8x/upgrade.json").bufferedReader().use { JSONObject(it.readText()) }
-        val original = archive.readBytes()
+        val archiveOriginal = archive.readBytes()
+        val original = authored(context,archiveOriginal,"layout.json")
+        val play=File(root,"load/mods/0004000000125500/romfs/layout/Joker.Main.Play.gar")
+        val playOriginal=play.readBytes()
+        val playUpdated=authored(context,playOriginal,"play.json")
         check(original.size == spec.getInt("archive_size")) { "HUD archive size differs; existing HUD retained" }
         val updated = original.copyOf()
         val ops = spec.getJSONArray("ops")
@@ -47,9 +69,14 @@ object DekuiHudUpgrade {
         check(hash(textureBytes) == spec.getString("texture_sha256")) { "HUD texture checksum mismatch" }
         val texture = File(root,"load/textures/0004000000125500/CUSTOM_HUD/$name")
         if (!texture.isFile || hash(texture.readBytes()) != hash(textureBytes)) write(texture,textureBytes)
-        if (!original.contentEquals(updated)) {
-            val backup = File(root,"config/dekui-backups/hud-before-8x-${hash(original).take(12)}.gar")
-            if (!backup.isFile) write(backup,original)
+        if(!playOriginal.contentEquals(playUpdated)) {
+            val backup=File(root,"config/dekui-backups/play-before-android-hud-${hash(playOriginal).take(12)}.gar")
+            if(!backup.isFile)write(backup,playOriginal)
+            write(play,playUpdated)
+        }
+        if (!archiveOriginal.contentEquals(updated)) {
+            val backup = File(root,"config/dekui-backups/hud-before-8x-${hash(archiveOriginal).take(12)}.gar")
+            if (!backup.isFile) write(backup,archiveOriginal)
             write(archive,updated)
         }
     }

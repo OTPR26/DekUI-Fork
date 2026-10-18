@@ -79,6 +79,9 @@ int main() {
             const auto analogs=[&](const Common::ParamPackage& p,int i){return state.GetSDLControllerAnalogBindByGUID(p.Get("guid",""),p.Get("port",0),static_cast<Settings::NativeAnalog::Values>(i));};
             auto mapped=original;Check(A::Map(mapped,candidate,buttons,analogs),"full auto map succeeds");
             Check(A::Managed(mapped,buttons,analogs),"automatic binding identity recognized");
+            auto explicitly_custom=mapped;explicitly_custom.name="Controller (custom)";
+            auto active_other=candidate;active_other.Set("guid","other");active_other.Set("active",1);
+            Check(!A::Select(explicitly_custom,{active_other},original.buttons,original.analogs,buttons,analogs),"manual mapping equal to template must remain protected");
             auto second=candidate;second.Set("guid","different-controller");
             auto recovery=A::Select(mapped,{second},original.buttons,original.analogs,buttons,analogs);
             Check(recovery&&Common::ParamPackage(recovery->buttons[0]).Get("guid","")=="different-controller","disconnected saved controller replaced");

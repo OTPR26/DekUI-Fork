@@ -25,6 +25,7 @@
 #include <QVBoxLayout>
 #include "citra_qt/configuration/config.h"
 #include "citra_qt/dekui_import.h"
+#include "citra_qt/dekui_bindings.h"
 #include "common/cityhash.h"
 #include "common/param_package.h"
 #include "common/settings.h"
@@ -82,11 +83,8 @@ QString Binding(int index) {
         .toString();
 }
 void SaveBinding(int index, const QString& binding) {
-    QSettings ini(NativeSettingsPath(), QSettings::IniFormat);
-    const QString key = ButtonPath(index);
-    ini.setValue(key, binding);
-    ini.setValue(key + QStringLiteral("/default"), false);
-    ini.sync();
+    Require(ControllerBindings::Save(NativeSettingsPath(), index, binding),
+            QStringLiteral("Could not save controller binding"));
 }
 QString AnalogPath(int index) {
     const auto key = ButtonPath(Settings::NativeButton::A);
@@ -102,10 +100,8 @@ QString AnalogBinding(int index) {
         .toString();
 }
 void SaveAnalog(int index, const QString& binding) {
-    QSettings ini(NativeSettingsPath(), QSettings::IniFormat);
-    ini.setValue(AnalogPath(index), binding);
-    ini.setValue(AnalogPath(index) + QStringLiteral("/default"), false);
-    ini.sync();
+    Require(ControllerBindings::Save(NativeSettingsPath(), index, binding, true),
+            QStringLiteral("Could not save stick binding"));
 }
 QString BindingLabel(const QString& binding) {
     const Common::ParamPackage p(binding.toStdString());
@@ -296,6 +292,8 @@ void MapController(Common::ParamPackage controller) {
                            : i == Settings::NativeButton::R  ? Settings::NativeButton::ZR
                            : i == Settings::NativeButton::ZL ? Settings::NativeButton::L
                            : i == Settings::NativeButton::ZR ? Settings::NativeButton::R
+                           : i == Settings::NativeButton::Start ? Settings::NativeButton::Select
+                           : i == Settings::NativeButton::Select ? Settings::NativeButton::Start
                                                              : i;
         auto mapped = InputCommon::GetControllerButtonBinds(controller, target);
         if (mapped.Has("engine"))

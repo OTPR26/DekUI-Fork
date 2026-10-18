@@ -20,10 +20,10 @@ struct Bounds {
     void Add(const Bounds& b){if(b.Valid()){Add(b.left,b.top);Add(b.right,b.bottom);}}
 };
 enum class Anchor {TopLeft,TopRight,BottomLeft,Center};
-inline NativeInventory::Hook::Affine Mapping(const Bounds& b,Anchor anchor,float scale,float padding){
+inline NativeInventory::Hook::Affine Mapping(const Bounds& b,Anchor anchor,float factor,float padding){
     const float x=anchor==Anchor::TopRight?b.right:anchor==Anchor::Center?(b.left+b.right)*.5f:b.left;
     const float y=anchor==Anchor::BottomLeft?b.bottom:anchor==Anchor::Center?(b.top+b.bottom)*.5f:b.top;
-    return {scale,0,0,scale,x*(1-scale),y*(1-scale)+padding};
+    return {factor,0,0,factor,x*(1-factor),y*(1-factor)+padding};
 }
 struct Hook {
     NativeInventory::Hook helper;

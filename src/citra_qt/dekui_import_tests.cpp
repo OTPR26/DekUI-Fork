@@ -11,9 +11,13 @@
 #include <QSettings>
 #include <QTemporaryDir>
 #include "citra_qt/dekui_import.h"
+#include "citra_qt/dekui_bindings.h"
+#include "mm3d/desktop_storage.h"
 #include "citra_qt/configuration/config.h"
+#include "citra_qt/uisettings.h"
 #include "common/file_util.h"
 #include "common/settings.h"
+#include "common/param_package.h"
 #include "common/cityhash.h"
 
 namespace {
@@ -54,25 +58,91 @@ int main(int argc, char** argv) {
         QTemporaryDir temp;
         Check(temp.isValid(), "temporary directory");
         const QString root = temp.path();
+        // Application Support migration publishes only verified copies, keeps
+        // original saves, preserves external texture links and is idempotent.
+        {
+            const auto portable=root+QStringLiteral("/portable"), support=root+QStringLiteral("/support/DekUI Fork");
+            Write(portable+QStringLiteral("/user/sdmc/save.bin"),"precious-save");
+            Write(portable+QStringLiteral("/user/config/qt-config.ini"),
+                  ("[Paths]\nowned="+portable+"/user/cache\nexternal="+root+"/textures\n").toUtf8());
+            Write(portable+QStringLiteral("/desktop-settings.json"),"{\"mm_rom\":\"/external/game.3ds\"}");
+            QDir().mkpath(root+QStringLiteral("/textures"));
+            QDir().mkpath(portable+QStringLiteral("/user/load"));
+            Check(QFile::link(root+QStringLiteral("/textures"),portable+QStringLiteral("/user/load/textures")),"texture link fixture");
+            Check(MM3D::DesktopStorage::Migrate(portable,support).isEmpty(),"storage migration failed");
+            Check(MM3D::DesktopStorage::Digest(portable+"/user/sdmc/save.bin")==MM3D::DesktopStorage::Digest(support+"/user/sdmc/save.bin"),"save copy changed");
+            Check(QFileInfo(support+"/user/load/textures").isSymLink(),"external pack was copied instead of linked");
+            QFile settings(support+"/user/config/qt-config.ini");Check(settings.open(QIODevice::ReadOnly),"migrated config open");
+            const auto bytes=settings.readAll();
+            Check(bytes.contains((support+"/user/cache").toUtf8())&&bytes.contains((root+"/textures").toUtf8()),"path rebasing changed external location");
+            Write(support+"/user/sdmc/save.bin","newer-progress");
+            Check(MM3D::DesktopStorage::Migrate(portable,support).isEmpty(),"repeat migration failed");
+            Check(MM3D::DesktopStorage::Digest(portable+"/user/sdmc/save.bin")!=MM3D::DesktopStorage::Digest(support+"/user/sdmc/save.bin"),"repeat migration overwrote newer save");
+            const auto conflict=root+"/conflict";Write(conflict+"/user/save.bin","other-progress");
+            Check(!MM3D::DesktopStorage::Migrate(portable,conflict).isEmpty(),"existing destination accepted");
+            const auto broken=root+"/broken";QDir().mkpath(broken);
+            Write(broken+"/user", "not-a-directory");
+            Check(!MM3D::DesktopStorage::Migrate(broken,root+"/invalid-destination").isEmpty(),"invalid user tree accepted");
+            Check(!QFileInfo::exists(root+"/invalid-destination"),"failed migration published partial data");
+        }
         FileUtil::SetUserPath((root + QStringLiteral("/config-test/")).toStdString());
         {
             QtConfig config("binding-regression");
             const auto count = Settings::values.input_profiles.size();
             const auto maps = Settings::values.touch_from_button_maps.size();
+            const auto dirs = UISettings::values.game_dirs.size();
+            const auto shortcuts = UISettings::values.shortcuts.size();
             QSettings saved(QString::fromStdString(FileUtil::GetUserPath(FileUtil::UserPath::ConfigDir)) +
                                 QStringLiteral("binding-regression.ini"), QSettings::IniFormat);
-            for (int button : {0, 1}) {
+            // Reproduce stale array data left by earlier versions and a saved favorite.
+            saved.setValue(QStringLiteral("Controls/profiles/999/name"), QStringLiteral("stale"));
+            saved.setValue(QStringLiteral("UI/Paths/gamedirs/999/path"), QStringLiteral("stale"));
+            saved.setValue(QStringLiteral("UI/GameList/favorites/size"), 1);
+            saved.setValue(QStringLiteral("UI/GameList/favorites/1/program_id"), qulonglong{0x125500});
+            for (int button : {0, 1, 0, 1}) {
                 const auto key = QStringLiteral("Controls/profiles/1/button_a");
                 const auto binding = QStringLiteral("engine:sdl,api:controller,guid:test,port:0,button:%1").arg(button);
                 saved.setValue(key, binding);
                 saved.setValue(key + QStringLiteral("/default"), false);
                 saved.sync();
                 config.Reload();
+                Check(UISettings::values.game_dirs.size() == dirs, "reload duplicated game directories");
+                Check(UISettings::values.shortcuts.size() == shortcuts, "reload duplicated shortcuts");
+                Check(UISettings::values.favorited_ids.size() == 1, "reload duplicated favorites");
                 Check(Settings::values.input_profiles.size() == count, "reload duplicated profiles");
                 Check(Settings::values.touch_from_button_maps.size() == maps, "reload duplicated touch maps");
                 Check(Settings::values.current_input_profile.buttons[Settings::NativeButton::A] == binding.toStdString(),
                       "reload ignored remapped confirm button");
             }
+            // Four successive in-game captures, each followed by the emulator's
+            // normal save/reload cycle. The fourth must not revert the first three.
+            saved.setValue(QStringLiteral("Controls/profiles/1/name"), QStringLiteral("Controller (automatic)"));
+            saved.setValue(QStringLiteral("Controls/profiles/1/name/default"), false);
+            saved.sync();
+            config.Reload();
+            const auto bindings_path = saved.fileName();
+            const int faces[]{Settings::NativeButton::A, Settings::NativeButton::B,
+                              Settings::NativeButton::X, Settings::NativeButton::Y};
+            for (int i = 0; i < 4; ++i) {
+                config.Save();
+                const auto bind = QStringLiteral("engine:sdl,api:controller,guid:test,port:0,button:%1").arg(i);
+                Check(MM3D::ControllerBindings::Save(bindings_path, faces[i], bind), "manual binding commit");
+                // Also exercise a settings save before reloading: the live and
+                // stored copies must already agree at this point.
+                config.Save();
+                config.Reload();
+                for (int j = 0; j <= i; ++j)
+                    Check(Common::ParamPackage(Settings::values.current_input_profile.buttons[faces[j]]).Get("button", -1) == j,
+                          "later capture reverted earlier face binding");
+                Check(Settings::values.current_input_profile.name == "Controller (custom)", "manual profile remained automatic");
+            }
+            const auto kept_buttons = Settings::values.current_input_profile.buttons;
+            Check(MM3D::ControllerBindings::Save(bindings_path, 1, QStringLiteral("engine:sdl,axis_x:2,axis_y:3"), true), "manual stick commit");
+            config.Save(); config.Reload();
+            Check(Settings::values.current_input_profile.buttons == kept_buttons, "stick edit changed face mappings");
+            saved.sync();
+            Check(!saved.contains(QStringLiteral("Controls/profiles/999/name")), "save retained stale profile keys");
+            Check(!saved.contains(QStringLiteral("UI/Paths/gamedirs/999/path")), "save retained stale directory keys");
         }
 
         const QString old = root + QStringLiteral("/user/load/mm3d-models/dark-link/previous.txt"),

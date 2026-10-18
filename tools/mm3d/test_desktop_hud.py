@@ -1,6 +1,6 @@
 import base64, hashlib, json, tempfile, unittest
 from pathlib import Path
-from desktop_hud import apply, reconstruct, ARCHIVE, CONFIG
+from desktop_hud import apply, apply_controls, reconstruct, ARCHIVE, CONFIG
 
 class DesktopHudTests(unittest.TestCase):
     def fixture(self, root):
@@ -9,7 +9,11 @@ class DesktopHudTests(unittest.TestCase):
         spec={'source_sha256':hashlib.sha256(source).hexdigest(),'sha256':hashlib.sha256(target).hexdigest(),
               'size':len(target),'ops':[{'copy':0,'size':len(source)},{'data':base64.b64encode(b'-custom-hud').decode()}],
               'presentation':{'hud_diamond_enabled':True},'previous':[{'hud_diamond_enabled':False}]}
-        (assets/'layout.json').write_text(json.dumps(spec));texture=b'custom-atlas'
+        (assets/'layout.json').write_text(json.dumps(spec))
+        play=b'owned-action-layout'
+        (assets/'play.json').write_text(json.dumps({'source_sha256':hashlib.sha256(play).hexdigest(),'sha256':hashlib.sha256(play).hexdigest(),'size':len(play),'ops':[]}))
+        path=user/'load/mods/0004000000125500/romfs/layout/Joker.Main.Play.gar';path.parent.mkdir(parents=True);path.write_bytes(play)
+        texture=b'custom-atlas'
         (assets/'atlas.png').write_bytes(texture)
         (assets/'upgrade.json').write_text(json.dumps({'texture':'atlas.png','texture_sha256':hashlib.sha256(texture).hexdigest()}))
         for rel,data in ((ARCHIVE,source),(CONFIG,b'{"hud_diamond_enabled":false,"walk_speed":2}'),('save/sentinel',b'save')):
@@ -37,3 +41,27 @@ class DesktopHudTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             user,res,spec,source,target=self.fixture(Path(tmp));(user/CONFIG).write_text('{"hud_diamond_enabled":"custom"}')
             apply(user,res);self.assertEqual(json.loads((user/CONFIG).read_text()),{'hud_diamond_enabled':'custom'})
+
+    def test_pc_input_patch_is_checked_backed_up_and_idempotent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);user=root/'user';res=root/'resources';folder=res/'desktop-controls';folder.mkdir(parents=True)
+            old=b'baseline-gameplay';new=b'pc-input-gameplay'
+            (folder/'code.bps').write_bytes(new)
+            (folder/'provenance.json').write_text(json.dumps({'patch_sha256':hashlib.sha256(new).hexdigest(),'baseline_patch_sha256':hashlib.sha256(old).hexdigest()}))
+            target=user/'load/mods/0004000000125500/code.bps';target.parent.mkdir(parents=True);target.write_bytes(old)
+            apply_controls(user,res);self.assertEqual(target.read_bytes(),new)
+            self.assertEqual((user/'config/dekui-backups/code-before-desktop-pc-input.bps').read_bytes(),old)
+            apply_controls(user,res);target.write_bytes(b'my-custom-patch')
+            with self.assertRaisesRegex(ValueError,'Custom gameplay patch'):apply_controls(user,res)
+            self.assertEqual(target.read_bytes(),b'my-custom-patch')
+
+    def test_shared_android_desktop_hud_defaults_are_identical(self):
+        root=Path(__file__).resolve().parents[2]
+        resources=root/'resources/mm3d'
+        assets=root/'src/android/app/src/main/assets'
+        for name in ('layout.json','play.json'):
+            self.assertEqual((resources/'desktop-hud'/name).read_bytes(),(assets/'dekui-hud8x'/name).read_bytes())
+        values=json.loads((resources/'desktop-hud/layout.json').read_text())['presentation']
+        for file in (resources/'defaults/presentation.json',assets/'dekui/presentation.json'):
+            actual=json.loads(file.read_text())
+            self.assertEqual({k:actual[k] for k in values},values)
