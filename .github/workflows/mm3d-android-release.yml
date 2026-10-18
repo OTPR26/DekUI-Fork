@@ -1,0 +1,166 @@
+name: DekUI Fork Android
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Commit or tag to build (blank uses this workflow revision)
+        required: false
+        type: string
+concurrency:
+  group: android-release-${{ github.ref }}-${{ inputs.source_ref }}
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      ANDROID_USER_HOME: ${{ runner.temp }}/android-user
+      GRADLE_USER_HOME: ${{ runner.temp }}/gradle-user
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
+          submodules: recursive
+          fetch-depth: 1
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Read source revision and version
+        id: source
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "version=$(python3 tools/mm3d/release_version.py)" >> "$GITHUB_OUTPUT"
+      - name: Install Android build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgl1 libegl1 libxkbcommon0 libdbus-1-3
+          python3 -m pip install aqtinstall==3.3.0
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            'platforms;android-35' 'build-tools;36.1.0' 'ndk;27.3.13750724' 'cmake;3.31.6'
+      - uses: actions/cache@v5
+        id: qt
+        with:
+          path: ${{ runner.temp }}/qt-android
+          key: android-qt-6.12.0-linux-arm64-v1
+      - name: Install Qt Android and host tools
+        if: steps.qt.outputs.cache-hit != 'true'
+        run: python3 -m aqt install-qt linux android 6.12.0 android_arm64_v8a --autodesktop --outputdir "$RUNNER_TEMP/qt-android"
+      - name: Locate Qt kits
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])/'qt-android/6.12.0'
+          android = root/'android_arm64_v8a'
+          hosts = [p for p in root.iterdir() if p != android and (p/'lib/cmake/Qt6/Qt6Config.cmake').is_file()]
+          if not (android/'lib/cmake/Qt6/Qt6Config.cmake').is_file() or len(hosts) != 1:
+              raise SystemExit('Expected one matching Android kit and one host kit')
+          with open(os.environ['GITHUB_ENV'], 'a') as stream:
+              stream.write(f'DEKUI_ANDROID_QT_ROOT={android}\nDEKUI_HOST_QT_ROOT={hosts[0]}\n')
+          PY
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ${{ runner.temp }}/gradle-user/caches
+            ${{ runner.temp }}/gradle-user/wrapper
+          key: android-gradle-${{ runner.os }}-${{ hashFiles('src/android/**/*.gradle*', 'src/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: android-gradle-${{ runner.os }}-
+      - name: Run setup and migration tests
+        run: python3 -m unittest discover -s tools/mm3d -p 'test_*.py'
+      - name: Restore signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          python3 - <<'PY'
+          import base64, os
+          from pathlib import Path
+          value = os.environ.get('KEYSTORE_BASE64', '')
+          if not value:
+              raise SystemExit('Android signing secret is missing')
+          root = Path(os.environ['ANDROID_USER_HOME'])
+          root.mkdir(mode=0o700, parents=True, exist_ok=True)
+          path = root/'debug.keystore'
+          path.write_bytes(base64.b64decode(value, validate=True))
+          path.chmod(0o600)
+          PY
+      - name: Build signed optimized APK
+        env:
+          ANDROID_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          cat > "$RUNNER_TEMP/dekui-ci.init.gradle" <<'GRADLE'
+          allprojects {
+              plugins.withId('com.android.application') {
+                  extensions.getByName('androidComponents').finalizeDsl { android ->
+                      def signing = android.signingConfigs.getByName('debug')
+                      signing.storeFile = new File(System.getenv('ANDROID_USER_HOME'), 'debug.keystore')
+                      signing.storePassword = System.getenv('ANDROID_KEYSTORE_PASS')
+                      signing.keyAlias = System.getenv('ANDROID_KEY_ALIAS')
+                      signing.keyPassword = System.getenv('ANDROID_KEYSTORE_PASS')
+                      android.defaultConfig.externalNativeBuild.cmake.arguments.addAll([
+                          '-DCMAKE_JOB_POOLS=ci_compile=2', '-DCMAKE_JOB_POOL_COMPILE=ci_compile'])
+                  }
+              }
+          }
+          GRADLE
+          cd src/android
+          ./gradlew :app:assembleVanillaPerformance \
+            --init-script "$RUNNER_TEMP/dekui-ci.init.gradle" \
+            -Pandroid.injected.build.abi=arm64-v8a -Pandroid.injected.testOnly=false \
+            -PdekuiPresentation=true \
+            "-PdekuiQtRoot=$DEKUI_ANDROID_QT_ROOT" "-PdekuiQtHost=$DEKUI_HOST_QT_ROOT" \
+            --no-daemon --console=plain --max-workers=2 -Dorg.gradle.jvmargs=-Xmx3g
+      - name: Verify and stage APK
+        env:
+          RELEASE_VERSION: ${{ steps.source.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os, re, shutil, subprocess
+          from pathlib import Path
+          sdk = Path(os.environ['ANDROID_HOME'])/'build-tools/36.1.0'
+          apks = list(Path('src/android/app/build').glob('intermediates/apk/vanilla/performance/*.apk'))
+          if len(apks) != 1:
+              raise SystemExit('Expected one optimized APK')
+          apk = apks[0]
+          cert = subprocess.check_output([str(sdk/'apksigner'), 'verify', '--print-certs', str(apk)], text=True)
+          expected = '73e734704569a6f17f126bf09c243c24442f3e68c2ab20256b31cb44c6631615'
+          if not re.search(r'Signer #1 certificate SHA-256 digest: '+expected, cert):
+              raise SystemExit('APK signing identity does not match existing installations')
+          badging = subprocess.check_output([str(sdk/'aapt'), 'dump', 'badging', str(apk)], text=True)
+          if "name='io.github.tgacquin.dekui.experiment.debug'" not in badging.splitlines()[0]:
+              raise SystemExit('APK application ID changed')
+          if "versionName='"+os.environ['RELEASE_VERSION']+"'" not in badging.splitlines()[0]:
+              raise SystemExit('APK version does not match the release')
+          manifest = subprocess.check_output([str(sdk/'aapt'), 'dump', 'xmltree', str(apk), 'AndroidManifest.xml'], text=True)
+          for flag in ('debuggable', 'testOnly'):
+              if any('android:'+flag+'(' in line and '0xffffffff' in line for line in manifest.splitlines()):
+                  raise SystemExit('APK must be optimized and installable outside development tools')
+          out = Path('artifacts')/('DekUI-Fork-'+os.environ['RELEASE_VERSION']+'-Android-arm64.apk')
+          out.parent.mkdir(exist_ok=True)
+          shutil.copy2(apk, out)
+          PY
+          python3 tools/mm3d/check_release_privacy.py artifacts/*.apk
+      - name: Remove signing key
+        if: always()
+        run: rm -f "$ANDROID_USER_HOME/debug.keystore" "$RUNNER_TEMP/dekui-ci.init.gradle"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: DekUI-Fork-${{ steps.source.outputs.version }}-Android-arm64-${{ steps.source.outputs.sha }}
+          path: artifacts/*.apk
+          if-no-files-found: error
+      - name: Archive matching source
+        run: python3 tools/mm3d/package_source.py artifacts/DekUI-Fork-${{ steps.source.outputs.version }}-Source.tar.gz
+      - name: Check source privacy
+        run: python3 tools/mm3d/check_release_privacy.py artifacts/*Source.tar.gz
+      - uses: actions/upload-artifact@v7
+        with:
+          name: DekUI-Fork-${{ steps.source.outputs.version }}-Android-Source-${{ steps.source.outputs.sha }}
+          path: artifacts/*Source.tar.gz
+          if-no-files-found: error
