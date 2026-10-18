@@ -26,7 +26,11 @@ function(determine_qt_parameters target host_out type_out arch_out arch_path_out
                 else()
                     message(FATAL_ERROR "Unsupported bundled Qt architecture. Enable USE_SYSTEM_QT and provide your own.")
                 endif()
-                set(arch "win64_${arch_path}")
+                if("arm64" IN_LIST ARCHITECTURE)
+                    set(arch "win64_msvc2022_arm64_cross_compiled")
+                else()
+                    set(arch "win64_${arch_path}")
+                endif()
 
                 # In case we're cross-compiling, prepare to also fetch the correct host Qt tools.
                 if (CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "AMD64")
@@ -137,6 +141,9 @@ function(download_qt_configuration prefix_out target host type arch arch_path ba
                     WORKING_DIRECTORY ${base_path})
         endif()
 
+        if(NOT tool AND NOT EXISTS "${prefix}/lib/cmake/Qt6/Qt6Config.cmake")
+            message(FATAL_ERROR "Qt installation is incomplete for ${arch}. Check the installer output above; no usable Qt6Config.cmake was found in ${prefix}.")
+        endif()
         message(STATUS "Downloaded Qt binaries for ${target}:${host}:${type}:${arch}:${arch_path} to ${prefix}")
     endif()
 
