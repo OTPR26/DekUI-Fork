@@ -109,15 +109,6 @@ void SaveAnalog(int index, const QString& binding) {
 }
 QString BindingLabel(const QString& binding) {
     const Common::ParamPackage p(binding.toStdString());
-    // SDL's generic face labels are Xbox labels even for a Nintendo controller.
-    // Show the physical position so a correctly captured binding is unambiguous.
-    if (p.Get("engine", "") == "sdl" && p.Get("api", "") == "controller" && p.Has("button")) {
-        const int button = p.Get("button", -1);
-        const QStringList face{QStringLiteral("Bottom face button"), QStringLiteral("Right face button"),
-                               QStringLiteral("Left face button"), QStringLiteral("Top face button")};
-        if (button >= 0 && button < face.size())
-            return face[button];
-    }
     return p.Get("engine", "") == "keyboard"
                ? QKeySequence(p.Get("code", 0)).toString(QKeySequence::NativeText)
                : QString::fromStdString(InputCommon::ButtonToText(p));
