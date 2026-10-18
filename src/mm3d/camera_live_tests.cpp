@@ -42,6 +42,24 @@ int main() {
     Check(sampled.valid && sampled.sampled_at_ms==12345 && sampled.eye[0]==0 && sampled.target[0]==3,
           "CPU camera snapshot publishes its sample time and direct eye/target readings");
     Check(m.writes==0,"timestamped camera sampling is read-only");
+    m.words[0x72f5c0]=0x08010000;m.words[0x0801016c]=0x08100000;
+    m.words[0x0810013c]=0x0402;m.words[0x08100a78]=0;
+    const U32 cam=0x08100408;
+    m.words[cam+0xa0]=0x08100000;m.words[cam+0x154]=1u<<16;
+    for(U32 mode:{3u,4u,6u,12u,13u}) {
+        m.words[cam+0x158]=mode;
+        const auto aim=engine.Tick(m,55.f);
+        Check(aim.camera_context_valid&&aim.NativeAiming()&&aim.camera_mode==mode,
+              "bubble, targeted bow, subject and bow modes preserve native camera");
+    }
+    m.words[cam+0x158]=31;
+    const auto free=engine.Tick(m,55.f);
+    Check(free.camera_context_valid&&!free.NativeAiming()&&free.CameraContext()!=0,
+          "free camera remains eligible for interpolation");
+    m.words[cam+0xa0]=0;
+    Check(!engine.Tick(m,55.f).camera_context_valid,"reject camera with wrong owner");
+    Check(m.writes==0,"camera mode sampling never changes guest memory");
+
     Check(engine.Tick(m,55.f).active && m.writes==0,"inspection does not modify camera state");
     m.words[CameraPointer]=0;
     Check(engine.Tick(m,55.f).active,"projection hook does not wait for published camera");
