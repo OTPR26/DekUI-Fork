@@ -596,7 +596,7 @@ class SettingsDialog final : public QDialog {
                     Render();
                 }
             })->setEnabled(!running);
-            Number(QStringLiteral("Menu size"), QStringLiteral("desktop_menu_text_size"), 20, 0,
+            Number(QStringLiteral("Menu size"), QStringLiteral("desktop_menu_text_size"), 5, 0,
                    40);
             Note(box,
                  QStringLiteral(
@@ -700,7 +700,7 @@ public:
         setProperty("dekuiMenu", true);
         setWindowTitle(QStringLiteral("DekUI / Settings"));
         const int text_size =
-            16 + int(Presentation().value(QStringLiteral("desktop_menu_text_size")).toInt(20) * .3);
+            16 + int(Presentation().value(QStringLiteral("desktop_menu_text_size")).toInt(5) * .3);
         setStyleSheet(QString::fromUtf8(Theme) +
                       QStringLiteral(" QWidget{font-size:%1px;} QLabel#Heading{font-size:%2px;}")
                           .arg(text_size)

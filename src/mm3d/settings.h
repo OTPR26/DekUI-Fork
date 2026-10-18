@@ -99,7 +99,7 @@ struct Settings {
     std::vector<WidescreenProbe::Draw> fullscreen_draws;
     float scale = 1.f;
     int android_menu_text_size = 20;
-    int desktop_menu_text_size = 20;
+    int desktop_menu_text_size = 5;
     float opacity = .9f;
     float x = .02f, y = .02f;
     bool Load(const QString& path);
