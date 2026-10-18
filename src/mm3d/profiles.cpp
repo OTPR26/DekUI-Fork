@@ -71,8 +71,8 @@ Profile Parse(const QJsonObject& o, const std::string& id) {
             const int n=cell.toInt(-1);
             if(n>=0 && n<grid.columns*grid.rows && std::find(grid.cells.begin(),grid.cells.end(),n)==grid.cells.end()) grid.cells.push_back(n);
         }
-        for(const auto& value:g["rectangles"].toArray()) {
-            const auto a=value.toArray(); if(a.size()!=4) continue;
+        for(const auto& rectangle:g["rectangles"].toArray()) {
+            const auto a=rectangle.toArray(); if(a.size()!=4) continue;
             std::array<float,4> r;
             bool valid=true;
             for(int i=0;i<4;++i) { r[i]=float(a[i].toDouble(-1)); valid &= std::isfinite(r[i]) && r[i]>=0 && r[i]<=1; }
