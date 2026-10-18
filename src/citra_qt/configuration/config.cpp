@@ -342,6 +342,10 @@ void QtConfig::ReadCameraValues() {
 }
 
 void QtConfig::ReadControlValues() {
+    // Reload replaces the saved collections. Appending leaves the selected index
+    // pointing at stale bindings and doubles the profiles on every reload.
+    Settings::values.input_profiles.clear();
+    Settings::values.touch_from_button_maps.clear();
     qt_config->beginGroup(QStringLiteral("Controls"));
 
     ReadBasicSetting(Settings::values.use_artic_base_controller);
@@ -1496,6 +1500,7 @@ void QtConfig::WriteSetting(const QString& name, const QVariant& value,
 }
 
 void QtConfig::Reload() {
+    qt_config->sync();
     ReadValues();
     // To apply default value changes
     SaveValues();

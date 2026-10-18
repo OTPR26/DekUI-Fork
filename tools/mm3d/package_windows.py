@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Package a clean Windows bundle with allowlisted setup files, never local user data."""
-from bundle_restoration import copy_restoration
+from bundle_restoration import copy_restoration, copy_desktop_hud
 from windows_python import install as install_python
 import argparse
 from layout_migration import policy as verify_layout_policy
@@ -41,6 +41,7 @@ def package(bundle, output, python_archive, architecture='x64'):
         shutil.copytree(ROOT / "tools/mm3d/mod_import", scripts / "mod_import", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         font_license=root / "licenses/fonts/LICENSE.txt";font_license.parent.mkdir(parents=True,exist_ok=True)
         shutil.copy2(ROOT / "src/android/app/src/main/assets/dekui-fonts/LICENSE.txt",font_license)
+        copy_desktop_hud(ROOT, root / "resources/mm3d/desktop-hud")
         copy_restoration(ROOT, root / 'resources/mm3d/project-restoration')
         shutil.copy2(ROOT / 'resources/mm3d/release-docs/README.md', root / 'README.md')
         for name in ('CHANGELOG.md', 'CREDITS.md', 'KNOWN_ISSUES.md', 'INSTALL.md'):

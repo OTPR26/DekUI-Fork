@@ -28,3 +28,15 @@ def copy_restoration(repo, destination):
     for name in FILES:
         (destination / name).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source / name, destination / name)
+
+
+def copy_desktop_hud(repo, destination):
+    source = repo/'src/android/app/src/main/assets/dekui-hud8x'
+    spec = json.loads((source/'upgrade.json').read_bytes())
+    texture = source/spec['texture']
+    if hashlib.sha256(texture.read_bytes()).hexdigest() != spec['texture_sha256']:
+        raise ValueError('Android HUD texture checksum mismatch')
+    destination.mkdir(parents=True)
+    shutil.copy2(repo/'resources/mm3d/desktop-hud/layout.json', destination/'layout.json')
+    shutil.copy2(source/'upgrade.json', destination/'upgrade.json')
+    shutil.copy2(texture, destination/texture.name)

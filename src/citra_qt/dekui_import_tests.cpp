@@ -11,6 +11,9 @@
 #include <QSettings>
 #include <QTemporaryDir>
 #include "citra_qt/dekui_import.h"
+#include "citra_qt/configuration/config.h"
+#include "common/file_util.h"
+#include "common/settings.h"
 #include "common/cityhash.h"
 
 namespace {
@@ -51,6 +54,27 @@ int main(int argc, char** argv) {
         QTemporaryDir temp;
         Check(temp.isValid(), "temporary directory");
         const QString root = temp.path();
+        FileUtil::SetUserPath((root + QStringLiteral("/config-test/")).toStdString());
+        {
+            QtConfig config("binding-regression");
+            const auto count = Settings::values.input_profiles.size();
+            const auto maps = Settings::values.touch_from_button_maps.size();
+            QSettings saved(QString::fromStdString(FileUtil::GetUserPath(FileUtil::UserPath::ConfigDir)) +
+                                QStringLiteral("binding-regression.ini"), QSettings::IniFormat);
+            for (int button : {0, 1}) {
+                const auto key = QStringLiteral("Controls/profiles/1/button_a");
+                const auto binding = QStringLiteral("engine:sdl,api:controller,guid:test,port:0,button:%1").arg(button);
+                saved.setValue(key, binding);
+                saved.setValue(key + QStringLiteral("/default"), false);
+                saved.sync();
+                config.Reload();
+                Check(Settings::values.input_profiles.size() == count, "reload duplicated profiles");
+                Check(Settings::values.touch_from_button_maps.size() == maps, "reload duplicated touch maps");
+                Check(Settings::values.current_input_profile.buttons[Settings::NativeButton::A] == binding.toStdString(),
+                      "reload ignored remapped confirm button");
+            }
+        }
+
         const QString old = root + QStringLiteral("/user/load/mm3d-models/dark-link/previous.txt"),
                       save = root + QStringLiteral("/user/save/sentinel");
         Write(old, "old-model");

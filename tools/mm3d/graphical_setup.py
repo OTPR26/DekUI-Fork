@@ -38,8 +38,12 @@ def prepare(root, rom, patch=None, exheader=None, hud=None, in_place=False, upgr
             target=restoration/name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(path,target)
         if (root/'user').exists():
             from upgrade_game_resources import upgrade
-            return upgrade(root,rom,restoration)
-        return setup(root,restoration,rom,copy_game=not in_place,reference_game=reference_game)
+            result = upgrade(root,rom,restoration)
+        else:
+            result = setup(root,restoration,rom,copy_game=not in_place,reference_game=reference_game)
+        from desktop_hud import apply
+        apply(root/'user', RESOURCES)
+        return result
 
 
 if __name__=='__main__':

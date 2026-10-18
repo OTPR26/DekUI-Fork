@@ -1,6 +1,7 @@
 """Validate the installed setup contract using only the bundled helper modules."""
 import layout_migration
 import graphical_setup
+import desktop_hud
 
 
 def check():

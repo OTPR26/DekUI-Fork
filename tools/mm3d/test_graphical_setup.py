@@ -10,6 +10,11 @@ from setup_game_folder import setup
 
 
 class GraphicalSetupTests(unittest.TestCase):
+    def setUp(self):
+        hud = patch('desktop_hud.apply')
+        hud.start()
+        self.addCleanup(hud.stop)
+
     def test_existing_saves_preserved(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);(root/'user').mkdir();save=root/'user/save';save.write_bytes(b'keep')
