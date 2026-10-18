@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Allowlisted Linux package; never copies local user data or installed mod directories."""
-from bundle_restoration import copy_restoration
+from bundle_restoration import copy_restoration, copy_desktop_hud
 import argparse
 from layout_migration import policy as verify_layout_policy
 from pathlib import Path
@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ('graphical_setup.py','setup_game_folder.py','probe_rom.py','build_release_assets.py',
            'release_setup.py','restore_action_flips.py','stop_map_slides.py',
            'classic_owl_text.py','classic_localized_text.py','single_screen_text.py',
-           'double_prices.py','upgrade_game_resources.py','layout_migration.py','package_setup_check.py')
+           'double_prices.py','upgrade_game_resources.py','layout_migration.py','package_setup_check.py','desktop_hud.py')
 
 
 def package(appimage, output):
@@ -33,6 +33,7 @@ def package(appimage, output):
         shutil.copytree(ROOT / "tools/mm3d/mod_import", scripts / "mod_import", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         font_license=root / "licenses/fonts/LICENSE.txt";font_license.parent.mkdir(parents=True,exist_ok=True)
         shutil.copy2(ROOT / "src/android/app/src/main/assets/dekui-fonts/LICENSE.txt",font_license)
+        copy_desktop_hud(ROOT, root / "resources/mm3d/desktop-hud")
         copy_restoration(ROOT, root / 'resources/mm3d/project-restoration')
         shutil.copy2(ROOT/'license.txt',root/'LICENSE.txt')
         notices=root/'licenses';notices.mkdir(exist_ok=True)

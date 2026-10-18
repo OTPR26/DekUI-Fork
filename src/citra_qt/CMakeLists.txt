@@ -371,7 +371,7 @@ endif()
 
 if(ENABLE_MM3D_GAME_FOLDER AND ENABLE_MM3D_PRESENTATION)
     add_executable(mm3d_desktop_import_tests dekui_import_tests.cpp)
-    target_link_libraries(mm3d_desktop_import_tests PRIVATE citra_qt Qt6::Widgets)
+    target_link_libraries(mm3d_desktop_import_tests PRIVATE citra_qt Qt6::Widgets Boost::boost)
     if(APPLE)
         target_link_libraries(mm3d_desktop_import_tests PRIVATE Qt6::GuiPrivate)
     endif()

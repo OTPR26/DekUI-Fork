@@ -65,3 +65,15 @@ scanned directory. The regression fixture covers a symlinked ordinary pack and
 checks it remains untouched. A real user-selected OoT3D ROM/texture import on Mac
 completed with six Adult Link variants, 38 adult voice clips (42 keys), and 11
 matching texture replacements. Gameplay appearance remains a user playtest.
+
+Controller/HUD parity correction: configuration reload now replaces input-profile
+and touch-map collections rather than appending stale copies. A native regression
+changes the confirm binding repeatedly and checks both loaded bindings and stable
+collection sizes. Captured SDL face buttons display physical positions instead
+of generic Xbox names. Startup/resource checks reconstruct the Android fork's
+authored HUD using a hash-guarded copy recipe, backed-up archive and presentation
+settings, and the same filter-safe 8x atlas as Android. Only recognized desktop
+HUD defaults migrate; custom archives and custom HUD positions are retained.
+The current Mac fixture reconstructs byte-identically to Android and preserves
+non-HUD preferences. Python tests: 86 passed. Native tests: 78 passed, five
+existing audio tests skipped. Live controller/HUD playtesting is pending.

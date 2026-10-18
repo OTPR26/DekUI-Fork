@@ -7,7 +7,7 @@ import plistlib
 import shutil
 import subprocess
 import tempfile
-from bundle_restoration import copy_restoration
+from bundle_restoration import copy_restoration, copy_desktop_hud
 from macos_python import install
 from package_deck import ROOT, SCRIPTS
 
@@ -67,6 +67,7 @@ def package(bundle, output, python_archive):
         shutil.copytree(ROOT / "tools/mm3d/mod_import", scripts / "mod_import", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         font_license=root / "licenses/fonts/LICENSE.txt";font_license.parent.mkdir(parents=True,exist_ok=True)
         shutil.copy2(ROOT / "src/android/app/src/main/assets/dekui-fonts/LICENSE.txt",font_license)
+        copy_desktop_hud(ROOT, root / "resources/mm3d/desktop-hud")
         copy_restoration(ROOT, resources / 'project-restoration')
         for name in ('README.md', 'CHANGELOG.md', 'CREDITS.md', 'KNOWN_ISSUES.md', 'INSTALL.md'):
             shutil.copy2(ROOT / 'resources/mm3d/release-docs' / name, root / name)
