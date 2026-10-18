@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <iostream>
+#include <filesystem>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -58,6 +59,7 @@ int main(int argc, char** argv) {
         QTemporaryDir temp;
         Check(temp.isValid(), "temporary directory");
         const QString root = temp.path();
+#ifdef Q_OS_MACOS
         // Application Support migration publishes only verified copies, keeps
         // original saves, preserves external texture links and is idempotent.
         {
@@ -68,7 +70,9 @@ int main(int argc, char** argv) {
             Write(portable+QStringLiteral("/desktop-settings.json"),"{\"mm_rom\":\"/external/game.3ds\"}");
             QDir().mkpath(root+QStringLiteral("/textures"));
             QDir().mkpath(portable+QStringLiteral("/user/load"));
-            Check(QFile::link(root+QStringLiteral("/textures"),portable+QStringLiteral("/user/load/textures")),"texture link fixture");
+            std::filesystem::create_directory_symlink(
+                std::filesystem::path((root+QStringLiteral("/textures")).toStdString()),
+                std::filesystem::path((portable+QStringLiteral("/user/load/textures")).toStdString()));
             Check(MM3D::DesktopStorage::Migrate(portable,support).isEmpty(),"storage migration failed");
             Check(MM3D::DesktopStorage::Digest(portable+"/user/sdmc/save.bin")==MM3D::DesktopStorage::Digest(support+"/user/sdmc/save.bin"),"save copy changed");
             Check(QFileInfo(support+"/user/load/textures").isSymLink(),"external pack was copied instead of linked");
@@ -85,6 +89,7 @@ int main(int argc, char** argv) {
             Check(!MM3D::DesktopStorage::Migrate(broken,root+"/invalid-destination").isEmpty(),"invalid user tree accepted");
             Check(!QFileInfo::exists(root+"/invalid-destination"),"failed migration published partial data");
         }
+#endif
         FileUtil::SetUserPath((root + QStringLiteral("/config-test/")).toStdString());
         {
             QtConfig config("binding-regression");
@@ -165,8 +170,11 @@ int main(int argc, char** argv) {
         Write(external + QStringLiteral("/sentinel"), "external-pack");
         QDir().mkpath(root + QStringLiteral("/user/load/textures"));
         #ifndef Q_OS_WIN
-        Check(QFile::link(external, root + QStringLiteral("/user/load/textures/0004000000125500")),
-              "texture directory symlink fixture");
+        // QFile::link creates a shortcut on Windows. Use a native directory
+        // symlink so the cross-platform fixture exercises the actual pack path.
+        std::filesystem::create_directory_symlink(
+            std::filesystem::path(external.toStdString()),
+            std::filesystem::path((root+QStringLiteral("/user/load/textures/0004000000125500")).toStdString()));
 #else
         QDir().mkpath(root + QStringLiteral("/user/load/textures/0004000000125500"));
 #endif
