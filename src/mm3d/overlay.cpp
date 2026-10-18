@@ -1419,7 +1419,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                     ImGui::TextUnformatted(binding_labels[i]);
                     const auto label=android.capture==int(i)?std::string("Waiting for input..."):
                         i<android.bindings.size()&&!android.bindings[i].empty()?android.bindings[i]:std::string("Unbound");
-                    if(ImGui::Button(label.c_str(),{std::max(80.f,ImGui::GetContentRegionAvail().x-ImGui::GetFontSize()*4.5f-ImGui::GetStyle().ItemSpacing.x),0}))
+                    if(ImGui::Button(label.c_str(),{std::max(80.f,AndroidMenuStyle::ControlWidth()-ImGui::GetFontSize()*4.5f-ImGui::GetStyle().ItemSpacing.x),0}))
                         AndroidMenu::Request(AndroidMenu::Bind,i);
                     ImGui::SameLine();
                     if(ImGui::Button("Clear",{ImGui::GetFontSize()*4.5f,0}))AndroidMenu::Request(AndroidMenu::ClearBind,i);

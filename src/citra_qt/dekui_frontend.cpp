@@ -118,7 +118,8 @@ void SetPreference(const QString& key, const QString& value) {
 }
 QPushButton* Button(QVBoxLayout* box, const QString& text, std::function<void()> callback) {
     auto* b = new QPushButton(text);
-    box->addWidget(b);
+    b->setSizePolicy(QSizePolicy::Maximum,QSizePolicy::Preferred);
+    box->addWidget(b,0,Qt::AlignLeft);
     QObject::connect(b, &QPushButton::clicked, b, std::move(callback));
     return b;
 }
@@ -572,8 +573,16 @@ class SettingsDialog final : public QDialog {
     void Render() {
         auto* content = new QWidget;
         content->setObjectName(QStringLiteral("Panel"));
-        box = new QVBoxLayout(content);
-        box->setSpacing(18);
+        auto* columns = new QHBoxLayout(content);
+        columns->setContentsMargins(12,12,12,12);
+        auto* form = new QWidget(content);
+        form->setMaximumWidth(fontMetrics().height()*24);
+        form->setSizePolicy(QSizePolicy::Preferred,QSizePolicy::Preferred);
+        columns->addWidget(form,1,Qt::AlignTop);
+        columns->addStretch(0);
+        box = new QVBoxLayout(form);
+        box->setContentsMargins(0,0,0,0);
+        box->setSpacing(14);
         Heading(box, page);
         if (page == QStringLiteral("General")) {
             Bool(QStringLiteral("Show frame rate"), QStringLiteral("show_performance"));

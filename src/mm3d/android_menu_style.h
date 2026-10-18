@@ -4,7 +4,7 @@
 #include <string>
 #include <imgui.h>
 
-// Android presentation only. Setting storage and game actions stay in overlay.cpp.
+// Shared presentation. Setting storage and game actions stay in overlay.cpp.
 namespace MM3D::AndroidMenuStyle {
 inline constexpr ImVec4 Accent{.725f,.49f,.95f,1};
 inline void Theme(ImGuiStyle& s) {
@@ -37,19 +37,39 @@ inline void Theme(ImGuiStyle& s) {
     c[ImGuiCol_NavCursor]=Accent;
 }
 
+inline float ControlWidth() {
+#if defined(ENABLE_MM3D_GAME_FOLDER) && !defined(__ANDROID__)
+    return std::min(ImGui::GetContentRegionAvail().x,ImGui::GetFontSize()*28.f);
+#else
+    return ImGui::GetContentRegionAvail().x;
+#endif
+}
 inline bool Checkbox(const char* label,bool* value,bool radio=false) {
 #if defined(__ANDROID__) || defined(ENABLE_MM3D_GAME_FOLDER)
-    const float f=ImGui::GetFontSize(), w=ImGui::GetContentRegionAvail().x;
+    const float f=ImGui::GetFontSize(), w=ControlWidth();
+#if defined(ENABLE_MM3D_GAME_FOLDER) && !defined(__ANDROID__)
+    const float pad=f*.55f, toggle=f*3.f;
+#else
     const float pad=f*.45f, toggle=f*1.65f;
+#endif
     const float text_w=std::max(f*2,w-toggle-pad*3);
     const auto text=ImGui::CalcTextSize(label,nullptr,true,text_w);
+#if defined(ENABLE_MM3D_GAME_FOLDER) && !defined(__ANDROID__)
+    const float h=std::max(f*2.1f,text.y+pad*2);
+#else
     const float h=std::max({f*1.85f,text.y+pad*2,ImGui::GetIO().DisplaySize.y*.065f});
+#endif
     const auto p=ImGui::GetCursorScreenPos();
     const bool clicked=ImGui::InvisibleButton(label,{w,h},ImGuiButtonFlags_EnableNav);
     if(clicked)*value=!*value;
     auto* d=ImGui::GetWindowDrawList();
     const auto bg=ImGui::IsItemHovered()?ImGuiCol_FrameBgHovered:ImGuiCol_FrameBg;
+#if defined(ENABLE_MM3D_GAME_FOLDER) && !defined(__ANDROID__)
+    d->AddRectFilled(p,{p.x+w,p.y+h},ImGui::GetColorU32(ImGui::IsItemHovered()?bg:ImGuiCol_ChildBg),f*.3f);
+    d->AddRect(p,{p.x+w,p.y+h},ImGui::GetColorU32(ImGuiCol_Border),f*.3f);
+#else
     d->AddRectFilled(p,{p.x+w,p.y+h},ImGui::GetColorU32(bg),f*.2f);
+#endif
     if(ImGui::IsItemFocused())d->AddRect(p,{p.x+w,p.y+h},ImGui::GetColorU32(Accent),f*.2f,0,2);
     d->AddText(ImGui::GetFont(),f,{p.x+pad,p.y+(h-text.y)*.5f},
         ImGui::GetColorU32(ImGuiCol_Text),label,nullptr,text_w);
@@ -59,10 +79,17 @@ inline bool Checkbox(const char* label,bool* value,bool radio=false) {
         d->AddCircle(center,f*.40f,ImGui::GetColorU32(Accent),0,2);
         if(*value)d->AddCircleFilled(center,f*.24f,ImGui::GetColorU32(Accent));
     } else {
+#if defined(ENABLE_MM3D_GAME_FOLDER) && !defined(__ANDROID__)
+        const char* state=*value?"On":"Off";
+        const auto state_size=ImGui::CalcTextSize(state);
+        d->AddText({p.x+w-pad-state_size.x,p.y+(h-state_size.y)*.5f},
+                   ImGui::GetColorU32(*value?Accent:ImVec4{.69f,.65f,.74f,1}),state);
+#else
         d->AddRectFilled(a,{a.x+toggle,a.y+f*.85f},
             ImGui::GetColorU32(*value?Accent:ImVec4{.36f,.31f,.42f,1}),f);
         d->AddCircleFilled({a.x+(*value?toggle-f*.425f:f*.425f),a.y+f*.425f},
             f*.30f,ImGui::GetColorU32(ImGuiCol_Text));
+#endif
     }
     return clicked;
 #else
@@ -71,8 +98,11 @@ inline bool Checkbox(const char* label,bool* value,bool radio=false) {
 }
 
 inline void Label(const char* label) {
-    ImGui::TextWrapped("%s",label);
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+    const float width=ControlWidth();
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX()+width);
+    ImGui::TextUnformatted(label);
+    ImGui::PopTextWrapPos();
+    ImGui::SetNextItemWidth(width);
 }
 inline void AfterControl() {
 #if !defined(__ANDROID__) && !defined(ENABLE_MM3D_GAME_FOLDER)
