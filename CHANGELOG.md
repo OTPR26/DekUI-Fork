@@ -1,6 +1,6 @@
 # DekUI Fork changes
 
-## Unreleased — desktop and Android update
+## 0.2.0 — Android and Desktop
 
 - Shared startup and settings experience across Android, Windows, Linux, and macOS.
 - Adult Link and Dark Link import from a user-supplied OoT3D ROM, including adult

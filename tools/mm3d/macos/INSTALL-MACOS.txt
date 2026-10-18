@@ -1,4 +1,4 @@
-DekUI Fork desktop UI preview — Apple Silicon, macOS 13.4 or newer
+DekUI Fork — Apple Silicon, macOS 13.4 or newer
 
 Extract the ZIP and open DekUI Fork.app. The app contains its setup tools,
 resources and Python runtime; no developer tools are required.
@@ -33,7 +33,7 @@ For the first upgrade from the portable version, place the updated app beside
 the existing user folder so it can migrate your saves and settings once.
 Never delete your saves to fix setup problems.
 
-This development preview is ad-hoc signed and not Apple-notarized. If macOS
+This app is ad-hoc signed and not Apple-notarized. If macOS
 blocks it, use System Settings > Privacy & Security > Open Anyway. Move the
 entire extracted folder with Finder if macOS isolates the downloaded app.
 Intel Macs are not supported by this package.

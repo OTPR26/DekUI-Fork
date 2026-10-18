@@ -13,7 +13,7 @@ DekUI Fork builds on [tgacquin’s DekUI](https://github.com/tgacquin/mm3d-dekui
 - Single-screen gear, masks, items, maps, file select, and Bomber’s Notebook inherited from DekUI.
 - A full-screen menu for touch, mouse, and controllers; Android also supports a swipe from the left edge during gameplay.
 - Controller bindings and button-layout preferences, touch overlay controls, and screen swapping.
-- Adjustable HUD positions, scale, spacing, and visibility; custom texture-folder selection through Android’s file picker.
+- Customizable Wii U Style HUD with adjustable positions, scale, spacing, and visibility; custom texture-folder selection through Android’s file picker.
 - Separate Field of View and Camera Distance controls; adjustable walk, climb, and swim speeds.
 - Optional controller-neutral English item prompts.
 - Adult Link appearance mod generated on the device from your own OoT3D ROM, with adult voice clips imported from that ROM.
