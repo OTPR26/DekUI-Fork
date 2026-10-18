@@ -38,6 +38,9 @@ def package(bundle, output, python_archive, architecture='x64'):
         for name in ('supported-rom.json', 'setup-fingerprints.json', 'layout-migration.json'):
             shutil.copy2(ROOT / 'resources/mm3d' / name, resources / name)
         shutil.copytree(ROOT / 'resources/mm3d/defaults', resources / 'defaults')
+        shutil.copytree(ROOT / "tools/mm3d/mod_import", scripts / "mod_import", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        font_license=root / "licenses/fonts/LICENSE.txt";font_license.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy2(ROOT / "src/android/app/src/main/assets/dekui-fonts/LICENSE.txt",font_license)
         copy_restoration(ROOT, root / 'resources/mm3d/project-restoration')
         shutil.copy2(ROOT / 'resources/mm3d/release-docs/README.md', root / 'README.md')
         for name in ('CHANGELOG.md', 'CREDITS.md', 'KNOWN_ISSUES.md', 'INSTALL.md'):

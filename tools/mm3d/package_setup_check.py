@@ -4,6 +4,10 @@ import graphical_setup
 
 
 def check():
+    import sys
+    from pathlib import Path
+    sys.path.insert(0,str(Path(__file__).parent/'mod_import'))
+    import generate, model, voice, binary
     data=layout_migration.policy(graphical_setup.RESOURCES)
     for relative in data['retired_profiles']:
         suffix=relative.removeprefix('config/mm3d-local/')

@@ -1,0 +1,5 @@
+<RCC><qresource prefix="/dekui">
+<file alias="startup.png">../android/app/src/main/res/drawable-nodpi/dekui_launcher_fierce_deity.png</file>
+<file alias="flower.png">../android/app/src/main/res/drawable-nodpi/deku_flower.png</file>
+<file alias="font.ttf">../android/app/src/main/res/font/dekui_sans_regular.ttf</file>
+</qresource></RCC>

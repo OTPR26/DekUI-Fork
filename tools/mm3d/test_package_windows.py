@@ -18,6 +18,9 @@ class WindowsPackageTest(unittest.TestCase):
                 p = bundle / name; p.parent.mkdir(parents=True, exist_ok=True); p.write_bytes(b'test')
             for name in package_windows.SCRIPTS:
                 p = repo / 'tools/mm3d' / name; p.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(package_windows.ROOT/'tools/mm3d'/name,p)
+            shutil.copytree(package_windows.ROOT / 'tools/mm3d/mod_import', repo / 'tools/mm3d/mod_import')
+            font=repo / 'src/android/app/src/main/assets/dekui-fonts/LICENSE.txt';font.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(package_windows.ROOT / 'src/android/app/src/main/assets/dekui-fonts/LICENSE.txt',font)
             for name in ('tools/mm3d/windows/README.txt', 'license.txt',
                          'resources/mm3d/release-docs/README.md',
                          'resources/mm3d/release-docs/CHANGELOG.md',

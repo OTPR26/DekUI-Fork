@@ -74,9 +74,9 @@ def extract(rom, output):
         if found != wanted: raise ValueError('Required game layouts missing')
 
 
-def setup(root, restoration, selected_rom=None, copy_game=True):
+def setup(root, restoration, selected_rom=None, copy_game=True, reference_game=False):
     rom = selected_rom or root/'game/mm3d.cci'
-    if not copy_game and rom.resolve().parent != root.resolve() and rom.resolve() != (root/'game/mm3d.cci').resolve():
+    if not copy_game and not reference_game and rom.resolve().parent != root.resolve() and rom.resolve() != (root/'game/mm3d.cci').resolve():
         raise ValueError('Place the game beside the application before starting setup.')
     layout_policy = layout_migration.policy(RESOURCES)
     validate(rom)
@@ -95,7 +95,7 @@ def setup(root, restoration, selected_rom=None, copy_game=True):
         write(stage, layout_migration.BASELINE, layout_migration.baseline(layout_policy))
         (stage/'load/textures/0004000000125500').mkdir(parents=True)
         shutil.copytree(RESOURCES/'defaults',stage/'config/mm3d-local')
-        write(stage, 'config/qt-config.ini', b'[Layout]\nlayout_option=1\nlayout_option\\default=false\n[Renderer]\nuse_hw_shader=false\nuse_hw_shader\\default=false\nasync_shader_compilation=false\nasync_shader_compilation\\default=false\nuse_vsync=true\nuse_vsync\\default=true\nresolution_factor=4\nresolution_factor\\default=false\ngraphics_api=2\ngraphics_api\\default=false\n')
+        write(stage, 'config/qt-config.ini', b'[Layout]\nlayout_option=1\nlayout_option\\default=false\n[Renderer]\nuse_hw_shader=false\nuse_hw_shader\\default=false\nasync_shader_compilation=false\nasync_shader_compilation\\default=false\nuse_disk_shader_cache=false\nuse_disk_shader_cache\\default=false\nuse_vsync=true\nuse_vsync\\default=true\nresolution_factor=4\nresolution_factor\\default=false\ngraphics_api=2\ngraphics_api\\default=false\n')
         p=stage/'config/mm3d-local/notebook.json'; obj=json.loads(p.read_text())
         obj['source_archive']='setup/original/romfs/layout/Joker.Main.Play.SubMenu.gar'
         obj['fade_source']='setup/original/romfs/layout/Joker.gar'

@@ -28,7 +28,7 @@ class GraphicalSetupTests(unittest.TestCase):
                 files.append({'input_root':'restoration','input':name if path.parent==bundled else 'romfs/layout/'+name,
                               'input_sha256':hashlib.sha256(data).hexdigest()})
             (resources/'setup-fingerprints.json').write_text(json.dumps({'files':files}))
-            def check_stage(app,stage,game,copy_game=True):
+            def check_stage(app,stage,game,copy_game=True,reference_game=False):
                 self.assertEqual(app,root);self.assertEqual(game,rom)
                 for entry in files:self.assertEqual((stage/entry['input']).read_bytes(),Path(entry['input']).name.encode())
             with patch.object(graphical_setup,'RESOURCES',resources),patch('graphical_setup.validate'),patch('graphical_setup.setup',side_effect=check_stage) as setup:
@@ -68,6 +68,16 @@ class GraphicalSetupTests(unittest.TestCase):
             self.assertEqual(notebook['source_archive'], 'setup/original/romfs/layout/Joker.Main.Play.SubMenu.gar')
             self.assertEqual(notebook['fade_source'], 'setup/original/romfs/layout/Joker.gar')
             self.assertFalse(list(root.glob('.mm3d-setup-*')))
+
+    def test_explicit_external_reference_preserves_rom(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)/'app';root.mkdir();rom=Path(tmp)/'external.3ds';rom.write_bytes(b'keep')
+            with self.assertRaisesRegex(ValueError,'beside the application'):
+                setup(root,root,rom,copy_game=False)
+            with patch('setup_game_folder.validate'),patch('setup_game_folder.extract',side_effect=lambda rom,out:out.mkdir(parents=True)),patch('setup_game_folder.build'):
+                setup(root,root,rom,copy_game=False,reference_game=True)
+            self.assertEqual(rom.read_bytes(),b'keep');self.assertFalse((root/'game').exists())
+            self.assertTrue((root/'user/setup/ready.json').is_file())
 
     def test_existing_game_survives_failure(self):
         with tempfile.TemporaryDirectory() as tmp:

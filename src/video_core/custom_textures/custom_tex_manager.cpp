@@ -35,6 +35,19 @@ std::string TextureLoadPath(u64 title_id) {
         return "/@textures/";
     }
 #endif
+#ifdef ENABLE_MM3D_GAME_FOLDER
+    if(title_id==0x0004000000125500ULL) {
+        FileUtil::IOFile source(GetUserPath(FileUtil::UserPath::ConfigDir)+"mm3d-local/texture-source.json","r");
+        if(source.IsOpen()&&source.GetSize()<=65536) {
+            std::string text(source.GetSize(),'\0');source.ReadBytes(text.data(),text.size());
+            const auto saved=nlohmann::json::parse(text,nullptr,false);
+            if(saved.is_object()&&saved.contains("path")&&saved["path"].is_string()) {
+                auto path=saved["path"].get<std::string>();
+                if(!path.empty()&&FileUtil::IsDirectory(path)){if(path.back()!='/')path+='/';return path;}
+            }
+        }
+    }
+#endif
     return fmt::format("{}textures/{:016X}/", GetUserPath(FileUtil::UserPath::LoadDir), title_id);
 }
 
@@ -389,12 +402,11 @@ std::vector<FileUtil::FSTEntry> CustomTexManager::GetTextures(u64 title_id) {
     std::vector<FileUtil::FSTEntry> textures;
     FileUtil::ScanDirectoryTree(load_path, texture_dir, 64);
     FileUtil::GetAllFilesFromNestedEntries(texture_dir, textures);
-#ifdef ANDROID
-    if (load_path == "/@textures/") {
+#if defined(ANDROID) || defined(ENABLE_MM3D_GAME_FOLDER)
+    const auto private_path = fmt::format("{}textures/{:016X}/",GetUserPath(FileUtil::UserPath::LoadDir),title_id);
+    if (load_path != private_path) {
         FileUtil::FSTEntry overrides_dir;
         std::vector<FileUtil::FSTEntry> overrides;
-        const auto private_path = fmt::format("{}textures/{:016X}/",
-                                             GetUserPath(FileUtil::UserPath::LoadDir), title_id);
         FileUtil::ScanDirectoryTree(private_path, overrides_dir, 64);
         FileUtil::GetAllFilesFromNestedEntries(overrides_dir, overrides);
         for (const auto& file : overrides) {

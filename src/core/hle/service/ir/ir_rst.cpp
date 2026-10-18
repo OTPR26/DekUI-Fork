@@ -6,6 +6,9 @@
 #include <boost/serialization/shared_ptr.hpp>
 #include "common/archives.h"
 #include "common/settings.h"
+#ifdef ENABLE_MM3D_GAME_FOLDER
+#include "mm3d/diagnostics.h"
+#endif
 #include "core/core.h"
 #include "core/core_timing.h"
 #include "core/hle/ipc_helpers.h"
@@ -110,6 +113,9 @@ void IR_RST::UpdateCallback(std::uintptr_t user_data, s64 cycles_late) {
         }
     }
 
+#ifdef ENABLE_MM3D_GAME_FOLDER
+    if(MM3D::overlay_visible.load()){state.hex=0;c_stick_x=0;c_stick_y=0;}
+#endif
     // TODO (wwylele): implement raw C-stick data for raw_c_stick = true
 
     const u32 last_entry_index = mem->index;

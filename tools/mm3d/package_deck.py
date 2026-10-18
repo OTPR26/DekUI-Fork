@@ -30,9 +30,12 @@ def package(appimage, output):
             target=root/'resources/mm3d'/name;target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(ROOT/'resources/mm3d'/name,target)
         shutil.copytree(ROOT/'resources/mm3d/defaults',root/'resources/mm3d/defaults')
+        shutil.copytree(ROOT / "tools/mm3d/mod_import", scripts / "mod_import", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        font_license=root / "licenses/fonts/LICENSE.txt";font_license.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy2(ROOT / "src/android/app/src/main/assets/dekui-fonts/LICENSE.txt",font_license)
         copy_restoration(ROOT, root / 'resources/mm3d/project-restoration')
         shutil.copy2(ROOT/'license.txt',root/'LICENSE.txt')
-        notices=root/'licenses';notices.mkdir()
+        notices=root/'licenses';notices.mkdir(exist_ok=True)
         # Include dependency license texts, never dependency source data/assets.
         for p in sorted((ROOT/'externals').rglob('*')):
             if p.is_file() and p.name.lower().startswith(('license','copying','copyright')) and p.stat().st_size<2_000_000:

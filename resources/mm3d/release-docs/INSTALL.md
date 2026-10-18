@@ -2,7 +2,7 @@
 
 ## What you need
 
-A supported decrypted USA v1.1 game-card dump in `.cci` or `.3ds` format, from a card with v1.1 preinstalled. The filename can be anything. Keep exactly one game file beside the application; multiple candidates or unsupported files block startup.
+A supported decrypted USA v1.1 game-card dump in `.cci` or `.3ds` format, from a card with v1.1 preinstalled. The filename can be anything. Select it from the startup screen; it can remain in its existing folder.
 
 Project Restoration and the required HUD layouts are included. Optional custom texture packs are separate.
 
@@ -10,7 +10,7 @@ Project Restoration and the required HUD layouts are included. Optional custom t
 
 1. Extract `Dekui-1.0.0-beta.2-Windows-x64.zip` into a writable location and open the `dekui` folder.
 2. Keep `Dekui.exe`, its DLLs, and the `plugins`, `tools`, `resources`, and `runtime` folders together.
-3. Put your game beside `Dekui.exe`, then open it.
+3. Open `Dekui.exe` and select your game from the startup screen.
 
 Windows 10/11 x64 and a Vulkan-capable graphics driver are required. Python is bundled privately for setup; you do not need to install it or modify PATH. The application is unsigned.
 
@@ -18,7 +18,7 @@ Windows 10/11 x64 and a Vulkan-capable graphics driver are required. Python is b
 
 1. Extract `Dekui-1.0.0-beta.2-Linux-x86_64.tar.gz` and open the `dekui` folder. If downloading a build artifact from Actions, extract its outer ZIP first.
 2. Put the extracted folder somewhere writable under your home directory. Keep `Dekui.AppImage`, `tools`, and `resources` together.
-3. Put your game beside `Dekui.AppImage` and make the AppImage executable if needed.
+3. Make the AppImage executable if needed; select your game from its startup screen.
 4. Launch `Dekui.AppImage`.
 
 Python 3.9 or newer and a Vulkan-capable graphics driver are required. Keep Python installed for startup resource checks and upgrades.
@@ -33,7 +33,7 @@ APPIMAGE_EXTRACT_AND_RUN=1 ./Dekui.AppImage
 
 1. Extract `Dekui-1.0.0-beta.2-macOS-arm64.zip`. If downloading a build artifact from Actions, extract its outer ZIP first.
 2. Move the entire `dekui` folder with Finder to a writable location, such as Documents. Keep `Dekui.app`, `tools`, and `resources` together; do not move only the app.
-3. Put your game beside `Dekui.app`, then open it.
+3. Open the app and select your game from the startup screen.
 4. If macOS blocks the app because the developer cannot be verified, open **System Settings → Privacy & Security → Open Anyway**, then confirm **Open**.
 
 An Apple Silicon Mac (M1 or newer) running macOS 13.4 or newer is required. This package does not support Intel Macs. Python and app dependencies are bundled; Homebrew and developer tools are not required. The app is ad-hoc signed and is not Apple-notarized.
@@ -42,19 +42,19 @@ If the app cannot find its adjacent files after downloading, quit it, move the e
 
 ## First launch and later launches
 
-First launch silently checks the game and builds the required mod files in `user/` before opening the game. Allow extra time on first launch. There are no file-selection forms or preparation progress windows; an error is shown if setup cannot finish.
+The startup screen offers Start game / Select ROM, Settings, About and Quit. First launch validates the selected game and prepares required files in `user/`, with a progress window. Unsupported files are rejected before changes are made.
 
-The game stays in place; setup does not move or duplicate it. Later launches check for required resource upgrades and use the prepared files. Keep the game in the application folder: missing or unsupported games block gameplay.
+Setup references your selected game in place. Later launches check for resource upgrades while preserving saves and custom settings. Keep the complete application package together, including its tools and resources.
 
 ## Settings
 
-Press **F1** (or **Fn–F1** on a Mac using media keys) for General, Graphics, HUD, Difficulty, Restoration, QOL, Audio, Controls, and About. Game touchscreen input is disabled. Controller and keyboard mappings can be changed under Controls.
+Use Settings on the startup screen. In game, choose DekUI Fork → Settings, press Command-comma on macOS or Ctrl-comma elsewhere, or press Start + Select together on a controller. F1 remains an alternative. Confirm/back follow the saved controller bindings.
 
-Fullscreen defaults to **F11** on Windows/Linux and **Control–Command–F** on macOS. Change the shortcut under **Controls → Fullscreen shortcut**. **Esc** leaves fullscreen. New profiles start fullscreen; your chosen windowed/fullscreen mode is remembered for later launches.
+The same sidebar organizes General, Controls, Touch, Graphics, Audio, HUD, Difficulty, Restoration, Quality of life, Mods, Cheats and About. Graphics includes an existing custom texture-folder picker. Touch → Swap screens exposes the game's touchscreen for mouse input.
 
-Hold **ZR** and press **SELECT** during gameplay to hide or show the minimap. The full map remains available from the inventory Map tab.
+Before gameplay, Mods accepts your own decrypted OoT3D ROM and optional existing texture pack, then generates Adult Link or Dark Link locally. Adult Link supports tunic colors and an optional Master Sword. Imported mods include adult voices. Restart gameplay after changing models.
 
-For an optional texture pack, use **Graphics → Open texture folder**, install a compatible pack, enable **Use custom textures**, and restart Dekui.
+Hold ZR and press SELECT during gameplay to toggle the minimap. In-game cheats require a recognized loaded save.
 
 ## Updates and saves
 

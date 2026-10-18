@@ -1,5 +1,8 @@
 #ifdef ENABLE_MM3D_GAME_FOLDER
 #include "mm3d/game_folder.h"
+#include "citra_qt/dekui_frontend.h"
+#include "citra_qt/dekui_import.h"
+#include "mm3d/android_menu.h"
 #include "mm3d/game_setup.h"
 #include "mm3d/controller_autoconfig.h"
 #endif
@@ -513,22 +516,31 @@ GMainWindow::GMainWindow(Core::System& system_)
 #ifdef __APPLE__
     // Qt promotes the menu bar to macOS's global application menu. Hiding the
     // widget alone leaves Azahar's Preferences and emulator actions available.
-    ui->menubar->setNativeMenuBar(false);
+    ui->menubar->setNativeMenuBar(true);
 #endif
     ui->menubar->clear();
-    ui->menubar->hide();
-    setWindowIcon(QIcon());render_window->setWindowIcon(QIcon());
-    ui->action_Show_Status_Bar->setChecked(false);
-    statusBar()->hide();
     for(auto* menu:ui->menubar->findChildren<QMenu*>())
         for(auto* action:menu->actions())action->setShortcut(QKeySequence());
+    auto* dekui_menu=ui->menubar->addMenu(tr("DekUI Fork"));
+    auto* settings_action=dekui_menu->addAction(tr("Settings…"));
+    settings_action->setMenuRole(QAction::PreferencesRole);
+    settings_action->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Comma));
+    connect(settings_action,&QAction::triggered,this,[]{MM3D::ToggleOverlayView(true);});
+    auto* quit_action=dekui_menu->addAction(tr("Quit"));
+    quit_action->setMenuRole(QAction::QuitRole);
+    connect(quit_action,&QAction::triggered,this,&QWidget::close);
+    ui->menubar->show();
+    setWindowIcon(QIcon(QStringLiteral(":/dekui/flower.png")));render_window->setWindowIcon(windowIcon());
+    ui->action_Show_Status_Bar->setChecked(false);
+    statusBar()->hide();
+
     game_list->hide();
     game_list_placeholder->hide();
     game_path = MM3D::GameFolder::Rom();
 #endif
     show();
 
-#ifdef __APPLE__
+#if defined(__APPLE__) && !defined(ENABLE_MM3D_GAME_FOLDER)
     if (AppleUtils::IsRunningFromTerminal()) {
         QMessageBox::warning(
             this, tr("Warning"),
@@ -1121,6 +1133,20 @@ bool GApplicationEventFilter::eventFilter(QObject* object, QEvent* event) {
     if (!MM3D::overlay_visible.load()) editing_keys.clear();
     const bool keyboard_event = event->type() == QEvent::KeyPress || event->type() == QEvent::KeyRelease;
     const bool editor_focused = MM3D::text_input_active.load() && !QApplication::activeModalWidget();
+#ifdef ENABLE_MM3D_GAME_FOLDER
+    if(MM3D::presentation_available.load()&&!QApplication::activeModalWidget()&&
+       (keyboard_event||event->type()==QEvent::ShortcutOverride)) {
+        auto* key=static_cast<QKeyEvent*>(event);
+        if(key->key()==Qt::Key_Comma&&key->modifiers()==Qt::ControlModifier){
+            if(event->type()==QEvent::KeyPress&&!key->isAutoRepeat())MM3D::ToggleOverlayView(true);
+            event->accept();return true;
+        }
+        if(key->key()==Qt::Key_Escape&&MM3D::overlay_visible.load()){
+            if(event->type()==QEvent::KeyPress&&!key->isAutoRepeat())MM3D::ToggleOverlay();
+            event->accept();return true;
+        }
+    }
+#endif
     if (keyboard_event && (static_cast<QKeyEvent*>(event)->key() == Qt::Key_F1
 #ifndef ENABLE_MM3D_GAME_FOLDER
         || static_cast<QKeyEvent*>(event)->key() == Qt::Key_F2
@@ -1133,7 +1159,7 @@ bool GApplicationEventFilter::eventFilter(QObject* object, QEvent* event) {
         return true;
     }
     if (MM3D::overlay_visible.load() && keyboard_event &&
-        (editor_focused || (event->type() == QEvent::KeyRelease &&
+        (MM3D::PlayerOverlay() || editor_focused || (event->type() == QEvent::KeyRelease &&
                            editing_keys.contains(static_cast<QKeyEvent*>(event)->key())))) {
         auto* key = static_cast<QKeyEvent*>(event);
         const bool down = event->type() == QEvent::KeyPress;
@@ -1274,12 +1300,17 @@ void GMainWindow::ConnectWidgetEvents() {
                 analogs[i]=InputCommon::GenerateAnalogParamFromKeys(keys[0],keys[1],keys[2],keys[3],keys[4],.5f);
             }
             using namespace MM3D::ControllerAutoConfig;
+            const auto button_binds=[](const Common::ParamPackage& device,int i){
+                using namespace Settings::NativeButton;
+                const int mapped=i==L?ZL:i==R?ZR:i==ZL?L:i==ZR?R:i;
+                return InputCommon::GetControllerButtonBinds(device,mapped);
+            };
             const auto& current=Settings::values.current_input_profile;
             auto mapped=Select(current,InputCommon::GetConnectedControllers(),buttons,analogs,
-                InputCommon::GetControllerButtonBinds,InputCommon::GetControllerAnalogBinds);
+                button_binds,InputCommon::GetControllerAnalogBinds);
             if(mapped) {
                 int index=Settings::values.current_input_profile_index;
-                if(Managed(current,InputCommon::GetControllerButtonBinds,InputCommon::GetControllerAnalogBinds)&&
+                if(Managed(current,button_binds,InputCommon::GetControllerAnalogBinds)&&
                    index>=0&&index<int(Settings::values.input_profiles.size())) {
                     Settings::values.input_profiles[index]=std::move(*mapped);
                 } else {
@@ -1294,6 +1325,28 @@ void GMainWindow::ConnectWidgetEvents() {
         }
 #else
         (void)controller_ticks;
+#endif
+#ifdef ENABLE_MM3D_GAME_FOLDER
+        MM3D::DesktopFrontend::RuntimeInput();
+        const int menu_action=MM3D::AndroidMenu::pending.exchange(0);
+        if(menu_action && !QApplication::activeModalWidget()) {
+            const int action=menu_action>>16;const unsigned value=menu_action&65535;
+            if(action==MM3D::AndroidMenu::Bind||action==MM3D::AndroidMenu::ClearBind){
+                config->Save();
+                if(MM3D::DesktopImport::CaptureBinding(this,value,action==MM3D::AndroidMenu::ClearBind)){
+                    config->Reload();system.ApplySettings();
+                }
+            } else if(action==MM3D::AndroidMenu::SwapScreens){
+                Settings::values.swap_screen.SetGlobal(true);Settings::values.swap_screen=value!=0;
+                system.ApplySettings();config->Save();UpdateUISettings();
+            } else if(action==MM3D::AndroidMenu::Textures||action==MM3D::AndroidMenu::ClearTextures){
+                try{MM3D::DesktopImport::ChooseTextures(this,action==MM3D::AndroidMenu::ClearTextures);}
+                catch(const std::exception& error){QMessageBox::warning(this,tr("Textures"),QString::fromUtf8(error.what()));}
+            }
+            render_window->setFocus();
+        }
+        if(controller_ticks%15==0)MM3D::DesktopImport::RefreshBindings();
+        {std::scoped_lock lock{MM3D::AndroidMenu::mutex};MM3D::AndroidMenu::state.touch=Settings::values.swap_screen.GetValue();}
 #endif
         using namespace MM3D::PlayerSettings;
         ApplyPending(Settings::values, [&] { system.ApplySettings(); },
@@ -1846,7 +1899,7 @@ void GMainWindow::BootGame(const QString& filename) {
     Settings::values.use_disk_shader_cache.SetGlobal(true);
     Settings::values.custom_textures.SetGlobal(true);
     Settings::values.swap_screen.SetGlobal(true);
-    Settings::values.swap_screen=false;
+
     Settings::values.layout_option.SetGlobal(true);
     Settings::values.layout_option=Settings::LayoutOption::SingleScreen;
     Settings::values.graphics_api.SetGlobal(true);
@@ -4888,10 +4941,12 @@ int LaunchQtFrontend(int argc, char* argv[]) {
         return 0;
     }
 #ifdef ENABLE_MM3D_GAME_FOLDER
-    if (MM3D::GameFolder::Rom().isEmpty()) {
-        QMessageBox::information(nullptr, QStringLiteral("Game required"), MM3D::GameFolder::MissingGameMessage());
-        return 1;
-    }
+    app.setQuitOnLastWindowClosed(false);
+    Q_INIT_RESOURCE(dekui_frontend);
+    InputCommon::Init();
+    const bool start_game=MM3D::DesktopFrontend::Startup();
+    InputCommon::Shutdown();
+    if(!start_game)return 0;
     if (const auto error=MM3D::GameFolder::Prepare(); !error.isEmpty()) {
         QMessageBox::critical(nullptr, QStringLiteral("Dekui setup"), error);
         return 1;
@@ -4900,6 +4955,8 @@ int LaunchQtFrontend(int argc, char* argv[]) {
         QMessageBox::critical(nullptr, QStringLiteral("Dekui setup"), error);
         return 1;
     }
+    try { MM3D::DesktopImport::ApplyPendingSettings(); }
+    catch(const std::exception& error){QMessageBox::critical(nullptr,QStringLiteral("Settings"),QString::fromUtf8(error.what()));return 1;}
     FileUtil::SetUserPath(MM3D::GameFolder::User().toStdString());
 #endif
 
@@ -4946,6 +5003,7 @@ int LaunchQtFrontend(int argc, char* argv[]) {
     // Process any pending events before executing the app (prevents freeze-on–boot on macOS)
     app.processEvents();
 
+    app.setQuitOnLastWindowClosed(true);
     int result = app.exec();
     return result;
 }
