@@ -762,10 +762,10 @@ struct Hook {
         const float dx=nx[1]-nx[0],dy=ny[1]-ny[0],length=dx*dx+dy*dy;
         if(!std::isfinite(px)||!std::isfinite(py)||!std::isfinite(length))return false;
         const float t=length>0.0001f?std::clamp(((px-nx[0])*dx+(py-ny[0])*dy)/length,0.f,1.f):0.f;
-        const float scale=sc[0]+t*(sc[1]-sc[0]);
+        const float cursor_scale=sc[0]+t*(sc[1]-sc[0]);
         std::vector<U32> seen;
-        return Transform(m,layout+8,writes,seen,{scale,0,0,scale,
-            tx[0]+t*(tx[1]-tx[0])-scale*px,ty[0]+t*(ty[1]-ty[0])-scale*py});
+        return Transform(m,layout+8,writes,seen,{cursor_scale,0,0,cursor_scale,
+            tx[0]+t*(tx[1]-tx[0])-cursor_scale*px,ty[0]+t*(ty[1]-ty[0])-cursor_scale*py});
     }
     template<class Memory> bool Prepare(Memory& m,U32 layout,U32 screen,std::vector<Write>& writes) {
         std::vector<U32> seen;

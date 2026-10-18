@@ -22,3 +22,14 @@ class ReleasePrivacyTests(unittest.TestCase):
             reasons = [reason for _, reason in inspect_archive(path, patterns(['/Users/example']))]
             self.assertIn('private path in file contents', reasons)
             self.assertIn('macOS metadata', reasons)
+
+    def test_vendored_runner_cache_is_public_but_other_home_paths_fail(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'source.zip'
+            name = 'externals/catch2/.github/workflows/linux-bazel-builds.yml'
+            with zipfile.ZipFile(path, 'w') as archive:
+                archive.writestr(name, b'path: /home/runner/.cache/bazel')
+            self.assertEqual(inspect_archive(path, patterns(['/home/runner'])), [])
+            with zipfile.ZipFile(path, 'w') as archive:
+                archive.writestr(name, b'path: /home/runner/.cache/bazel\nprivate: /home/runner/private')
+            self.assertTrue(inspect_archive(path, patterns(['/home/runner'])))

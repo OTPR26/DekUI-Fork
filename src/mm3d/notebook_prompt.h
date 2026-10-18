@@ -230,7 +230,7 @@ struct Hook {
             constexpr U32 MapText=0xb20,MapGeo=0xc60,MapGlyphs=0xf80;
             constexpr U32 MapIcon=0x11a0,MapIconGeo=0x12e0;
             static_assert(MapGlyphs+AlarmLabel.size()*60<=MapIcon);
-            const float left=mx,cy=228.f+(my-20.f)*ms;
+            const float map_left=mx,cy=228.f+(my-20.f)*ms;
             const auto text=[&](U32 at,U32 geo,U32 records,const auto& gs,float tx,float ty,float fs) {
                 if(!copy(at,text_node,0x140)||!copy(geo,text_geometry,0x30c))return false;
                 node(at,scratch+geo,tx,ty);
@@ -242,12 +242,12 @@ struct Hook {
                 for(unsigned i=0;i<gs.size();++i)for(unsigned j=0;j<15;++j)put(records+i*60+j*4,gs[i].words[j]);
                 child(at);return true;
             };
-            if(!text(MapText,MapGeo,MapGlyphs,map_glyphs,left+(16.f*icons+4.f)*ms,cy-6.f*ms,fit(map_glyphs,left,ms)))return layout+8;
+            if(!text(MapText,MapGeo,MapGlyphs,map_glyphs,map_left+(16.f*icons+4.f)*ms,cy-6.f*ms,fit(map_glyphs,map_left,ms)))return layout+8;
             // Clone the already prepared A geometry, changing only atlas cell:
             // native parts.ctxb X is x144,y0,16x16 (A is x112).
             for(U32 i=0;i<0x140;i+=4)put(MapIcon+i,words[(Icon+i)/4]);
             for(U32 i=0;i<0x7c;i+=4)put(MapIconGeo+i,words[(IconGeometry+i)/4]);
-            node(MapIcon,scratch+MapIconGeo,left,cy-8.f*icons*ms);
+            node(MapIcon,scratch+MapIconGeo,map_left,cy-8.f*icons*ms);
             number(MapIcon+0xe0,ms*icons);number(MapIcon+0xf4,ms*icons);
             number(MapIconGeo+0x28,144.f/256.f);
             child(MapIcon);
@@ -257,12 +257,12 @@ struct Hook {
             constexpr U32 MapText=0x1380,MapGeo=0x14c0,MapGlyphs=0x2800;
             constexpr U32 MapIcon=0x1b40,MapIconGeo=0x1c80;
             static_assert(MapGlyphs+18*60<=ScratchSize);
-            const float ms=scale;
-            const float left=x,cy=228.f+(sy-20.f)*ms;
+            const float schedule_scale=scale;
+            const float schedule_left=x,cy=228.f+(sy-20.f)*schedule_scale;
             const auto text=[&](U32 at,U32 geo,U32 records,const auto& gs,float tx,float ty,float fs) {
                 if(!copy(at,text_node,0x140)||!copy(geo,text_geometry,0x30c))return false;
                 node(at,scratch+geo,tx,ty);
-                number(at+0xe0,ms*fs);number(at+0xf4,ms*fs);
+                number(at+0xe0,schedule_scale*fs);number(at+0xf4,schedule_scale*fs);
                 number(geo+0x34,0);number(geo+0x38,0);
                 put(geo+0x118,words[(geo+0x118)/4]&~0xff00u);
                 put(geo+0x2fc,scratch+records);
@@ -270,13 +270,13 @@ struct Hook {
                 for(unsigned i=0;i<gs.size();++i)for(unsigned j=0;j<15;++j)put(records+i*60+j*4,gs[i].words[j]);
                 child(at);return true;
             };
-            if(!text(MapText,MapGeo,MapGlyphs,schedule_glyphs,left+(16.f*icons+4.f)*ms,cy-6.f*ms,fit(schedule_glyphs,left,ms)))return layout+8;
+            if(!text(MapText,MapGeo,MapGlyphs,schedule_glyphs,schedule_left+(16.f*icons+4.f)*schedule_scale,cy-6.f*schedule_scale,fit(schedule_glyphs,schedule_left,schedule_scale)))return layout+8;
             // Clone the already prepared A geometry, changing only atlas cell:
             // native parts.ctxb Y is x160,y0,16x16 (A is x112).
             for(U32 i=0;i<0x140;i+=4)put(MapIcon+i,words[(Icon+i)/4]);
             for(U32 i=0;i<0x7c;i+=4)put(MapIconGeo+i,words[(IconGeometry+i)/4]);
-            node(MapIcon,scratch+MapIconGeo,left,cy-8.f*icons*ms);
-            number(MapIcon+0xe0,ms*icons);number(MapIcon+0xf4,ms*icons);
+            node(MapIcon,scratch+MapIconGeo,schedule_left,cy-8.f*icons*schedule_scale);
+            number(MapIcon+0xe0,schedule_scale*icons);number(MapIcon+0xf4,schedule_scale*icons);
             number(MapIconGeo+0x28,160.f/256.f); // Y: native View Schedule shortcut
             child(MapIcon);
 

@@ -4,11 +4,11 @@
 namespace MM3D::MenuTabs {
 using namespace NativeInventory;
 inline AtomicButtonPose gear_pose;
-inline float SlideClearance(float y,float scale,bool selected) {
+inline float SlideClearance(float tab_y,float tab_scale,bool selected) {
     // Start just beyond the bottom edge. A fixed 40px minimum leaves small,
     // low-positioned tabs invisible through most of the four opening steps.
     // The selected face/rim is lifted seven local pixels before scaling.
-    return std::max(0.f,242.f-(204.f+y-(selected?7.f*scale:0.f)));
+    return std::max(0.f,242.f-(204.f+tab_y-(selected?7.f*tab_scale:0.f)));
 }
 struct SlideTiming {
     U32 layout{};

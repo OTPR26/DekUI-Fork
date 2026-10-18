@@ -95,11 +95,11 @@ struct Hook {
                 if(!child || *child<0x100000 || *child>0x3ffffe00) continue;
                 auto child_name=m.Read(*child+0x10);
                 if(!child_name || !Name(m,*child_name,"plate")) continue;
-                auto px=m.Read(*child+0x98),pf=m.Read(*child+0xd4),pd=m.Read(*child+0xd8);
-                if(!px || !pf || !pd) break;
-                const float psx=std::bit_cast<float>(*px);
+                auto plate_x_bits=m.Read(*child+0x98),pf=m.Read(*child+0xd4),pd=m.Read(*child+0xd8);
+                if(!plate_x_bits || !pf || !pd) break;
+                const float psx=std::bit_cast<float>(*plate_x_bits);
                 if(!std::isfinite(psx)) break;
-                frame.plate=*child;frame.plate_x=*px;frame.plate_flags=*pf;frame.plate_defaults=*pd;
+                frame.plate=*child;frame.plate_x=*plate_x_bits;frame.plate_flags=*pf;frame.plate_defaults=*pd;
                 const float npx=psx*width;
                 m.Write(*child+0x98,std::bit_cast<U32>(npx));
                 m.Write(*child+0xd4,*pf|0x800u);
@@ -115,9 +115,9 @@ struct Hook {
             auto ix=m.Read(indicator+0x8c),iy=m.Read(indicator+0x90),iflags=m.Read(indicator+0xd4),idefaults=m.Read(indicator+0xd8);
             if(ix && iy && iflags && idefaults) {
                 const float ox=indicator_x.load(),oy=indicator_y.load();
-                const float px=std::bit_cast<float>(*ix),py2=std::bit_cast<float>(*iy);
-                if(std::isfinite(ox) && std::isfinite(oy) && std::isfinite(px) && std::isfinite(py2)) {
-                    const float nx2=px+std::clamp(ox,-200.f,200.f),ny2=py2+std::clamp(oy,-64.f,64.f);
+                const float indicator_position_x=std::bit_cast<float>(*ix),py2=std::bit_cast<float>(*iy);
+                if(std::isfinite(ox) && std::isfinite(oy) && std::isfinite(indicator_position_x) && std::isfinite(py2)) {
+                    const float nx2=indicator_position_x+std::clamp(ox,-200.f,200.f),ny2=py2+std::clamp(oy,-64.f,64.f);
                     frame.indicator=indicator;frame.indicator_x=*ix;frame.indicator_y=*iy;frame.indicator_flags=*iflags;frame.indicator_defaults=*idefaults;
                     m.Write(indicator+0x8c,std::bit_cast<U32>(nx2));m.Write(indicator+0x90,std::bit_cast<U32>(ny2));
                     m.Write(indicator+0xd4,*iflags|0x300u);
