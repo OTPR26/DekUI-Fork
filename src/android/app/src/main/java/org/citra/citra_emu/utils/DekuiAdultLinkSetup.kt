@@ -23,7 +23,7 @@ object DekuiAdultLinkSetup {
     private fun prefs(c:Context)=c.getSharedPreferences("dekui-adult-link",Context.MODE_PRIVATE)
     fun description(c:Context):String {
         val p=prefs(c)
-        val voices=if(File(c.filesDir,"dekui/load/mm3d-models/adult-link/voices/romfs/sound/sequence/JokerSound.bcsar").isFile)"Adult voices: imported"else"Adult voices: generate the mod to import"
+        val voices=if(listOf("adult-link","dark-link").any{File(c.filesDir,"dekui/load/mm3d-models/$it/voices/romfs/sound/sequence/JokerSound.bcsar").isFile})"Adult voices: imported"else"Adult voices: generate the mod to import"
         return "OoT3D ROM: ${p.getString("romLabel","Not selected")}\nTexture pack: ${p.getString("packLabel","Not selected (original textures)")}\n$voices\n${p.getString("result","")}"
     }
     fun selectRom(c:Context,uri:Uri){
@@ -100,14 +100,20 @@ object DekuiAdultLinkSetup {
         generating=true
         try { return generateImpl(c,progress) } finally { generating=false }
     }
-    private fun generateImpl(c:Context,progress:(String)->Unit):String{
+    @Synchronized fun generateDarkLink(c:Context,progress:(String)->Unit):String {
+        generating=true
+        try { return generateImpl(c,progress,true) } finally { generating=false }
+    }
+    private fun generateImpl(c:Context,progress:(String)->Unit,dark:Boolean=false):String{
+        val modelName=if(dark)"Dark Link"else"Adult Link"
+        val modelId=if(dark)"dark-link"else"adult-link"
         check(!NativeLibrary.isRunning()){"Close the game before generating a mod"};check(canGenerate(c)){"Select your OoT3D ROM and set up MM3D first"}
-        val p=prefs(c);val uri=Uri.parse(p.getString("rom",null));progress("Reading Adult Link from your OoT3D ROM…")
-        val actor=c.contentResolver.openFileDescriptor(uri,"r")?.use{fd->FileInputStream(fd.fileDescriptor).use{Reader(it.channel).actor("actor/zelda_link_boy_new.zar",true)}}?:error("Cannot read the selected ROM")
-        val es=DekuiModelConverter.entries(actor);val adult=es.firstOrNull{it.name=="boy/model/link_v2.cmb"}?.bytes?:error("Adult Link model is missing")
-        val body=es.firstOrNull{it.name=="boy/misc/link_body.cmab"}?.bytes?:error("Original tunic colors are missing")
+        val p=prefs(c);val uri=Uri.parse(p.getString("rom",null));progress("Reading $modelName from your OoT3D ROM…")
+        val actor=c.contentResolver.openFileDescriptor(uri,"r")?.use{fd->FileInputStream(fd.fileDescriptor).use{Reader(it.channel).actor(if(dark)"actor/zelda_torch2.zar"else"actor/zelda_link_boy_new.zar",true)}}?:error("Cannot read the selected ROM")
+        val es=DekuiModelConverter.entries(actor);val adult=es.firstOrNull{it.name==(if(dark)"Model/darklink.cmb"else"boy/model/link_v2.cmb")}?.bytes?:error("$modelName model is missing")
+        val body=if(dark)byteArrayOf()else es.firstOrNull{it.name=="boy/misc/link_body.cmab"}?.bytes?:error("Original tunic colors are missing")
         val native=FileInputStream(File(c.filesDir,"dekui-game/game.cci")).use{Reader(it.channel).actor("actors/zelda2_link_child_new.gar.lzs",false)}
-        val root=File(c.filesDir,"dekui/load/mm3d-models/adult-link");val stage=File(root.parentFile,".adult-link-${java.util.UUID.randomUUID()}");check(stage.mkdirs())
+        val root=File(c.filesDir,"dekui/load/mm3d-models/$modelId");val stage=File(root.parentFile,".$modelId-${java.util.UUID.randomUUID()}");check(stage.mkdirs())
         try{
             progress("Reading the Master Sword HUD icon from your OoT3D ROM…")
             val iconHashes=nativeSwordIcon(c,uri,stage)
@@ -117,13 +123,13 @@ object DekuiAdultLinkSetup {
             val voices=DekuiVoiceConverter.convert(sourceSound,nativeSound)
             atomic(File(stage,"voices/romfs/sound/sequence/JokerSound.bcsar"),voices.archive)
             val allTextures=mutableListOf<Texture>();val report=JSONObject().put("voices",JSONObject().put("schema",1).put("clips",voices.clips).put("human_keys",voices.mappedKeys));var count=0
-            for(color in 0..2)for(master in listOf(false,true)){
-                progress("Creating ${listOf("green","blue","red")[color]} tunic / ${if(master)"Master Sword"else"Kokiri sword"}…")
-                val source=DekuiModelConverter.tunicModel(adult,body,color);val archive=DekuiModelConverter.convert(source,native,master)
+            for(color in (if(dark)listOf(0)else(0..2).toList()))for(master in (if(dark)listOf(true)else listOf(false,true))){
+                progress(if(dark)"Creating the original Dark Link model…"else"Creating ${listOf("green","blue","red")[color]} tunic / ${if(master)"Master Sword"else"Kokiri sword"}…")
+                val source=if(dark)adult else DekuiModelConverter.tunicModel(adult,body,color);val archive=DekuiModelConverter.convert(source,native,master,dark)
                 val name=if(master)"master"else"kokiri";val suffix=if(color==0)""else if(color==1)"-blue"else"-red"
-                val output=File(stage,"variants/$name$suffix/romfs/actors/zelda2_link_child_new.gar.lzs");atomic(output,archive)
+                val output=File(stage,if(dark)"romfs/actors/zelda2_link_child_new.gar.lzs"else"variants/$name$suffix/romfs/actors/zelda2_link_child_new.gar.lzs");atomic(output,archive)
                 if(color==0&&!master)atomic(File(stage,"romfs/actors/zelda2_link_child_new.gar.lzs"),archive)
-                report.put(name+suffix,MessageDigest.getInstance("SHA-256").digest(archive).joinToString(""){"%02x".format(it)})
+                report.put(if(dark)"dark-link"else name+suffix,MessageDigest.getInstance("SHA-256").digest(archive).joinToString(""){"%02x".format(it)})
                 allTextures.addAll(textures(archive));count++
             }
             val folder=p.getString("pack",null);var copied=0
@@ -156,22 +162,22 @@ object DekuiAdultLinkSetup {
             }
             atomic(File(stage,"generated.json"),report.put("rom",p.getString("romLabel","")).put("hd_textures",copied).toString(2).toByteArray())
             // Publish a complete generation only after every archive has validated.
-            val backup=File(root.parentFile,"adult-link-backup-${System.currentTimeMillis()}")
+            val backup=File(root.parentFile,"$modelId-backup-${System.currentTimeMillis()}")
             if(root.exists())check(root.renameTo(backup)){"Could not back up the current model"}
             if(!stage.renameTo(root)){if(backup.exists())backup.renameTo(root);error("Could not install generated models")}
             val generatedTextures=File(root,"texture-overrides")
             if(generatedTextures.isDirectory) {
-                val textureRoot=File(c.filesDir,"dekui/load/textures/0004000000125500");val target=File(textureRoot,"adult-link-generated");textureRoot.mkdirs()
-                val oldTextures=File(textureRoot,".adult-link-backup-${System.currentTimeMillis()}")
+                val textureRoot=File(c.filesDir,"dekui/load/textures/0004000000125500");val target=File(textureRoot,"$modelId-generated");textureRoot.mkdirs()
+                val oldTextures=File(textureRoot,".$modelId-backup-${System.currentTimeMillis()}")
                 if(target.exists())check(target.renameTo(oldTextures)){"Could not back up generated textures"}
                 if(!generatedTextures.renameTo(target)){if(oldTextures.exists())oldTextures.renameTo(target);error("Could not install generated textures")}
             }
-            DekuiPresentationStore(c).update(mapOf("adult_link_model" to true))
+            DekuiPresentationStore(c).update(mapOf("adult_link_model" to !dark,"dark_link_model" to dark))
             BooleanSetting.DISK_SHADER_CACHE.boolean=false
             val settings=mutableListOf<org.citra.citra_emu.features.settings.model.AbstractSetting>(BooleanSetting.DISK_SHADER_CACHE)
             if(copied>0){BooleanSetting.CUSTOM_TEXTURES.boolean=true;settings.add(BooleanSetting.CUSTOM_TEXTURES)}
             check(SettingsFile.saveDekuiSettings(settings)){"Models created, but graphics settings could not be saved"}
-            val result="Ready: $count model variants, ${voices.clips} adult voice clips, $copied matching HD textures. Restart the game to apply."
+            val result="Ready: $modelName, $count model variants, ${voices.clips} adult voice clips, $copied matching HD textures. Restart the game to apply."
             check(p.edit().putString("result",result).commit());return result
         }finally{stage.deleteRecursively()}
     }

@@ -7,8 +7,15 @@
 
 namespace MM3D::ModelMod {
 // Selection is sampled when RomFS opens, never during a running game's asset reads.
+// Legacy flag name: true for either imported tall human model.
 inline std::atomic<bool> adult_active{false};
 inline constexpr std::string_view actor_path="actors/zelda2_link_child_new.gar.lzs";
+inline bool DarkSelected(std::string_view text) {
+    const auto object=nlohmann::json::parse(text,nullptr,false);
+    if(!object.is_object())return false;
+    const auto it=object.find("dark_link_model");
+    return it!=object.end() && it->is_boolean() && it->get<bool>();
+}
 inline bool MasterSwordSelected(std::string_view text) {
     const auto object=nlohmann::json::parse(text,nullptr,false);
     if(!object.is_object())return false;
@@ -27,5 +34,8 @@ inline bool AdultSelected(std::string_view text) {
     if(!object.is_object())return false;
     const auto it=object.find("adult_link_model");
     return it!=object.end() && it->is_boolean() && it->get<bool>();
+}
+inline bool AppearanceSelected(std::string_view text) {
+    return DarkSelected(text) || AdultSelected(text);
 }
 }

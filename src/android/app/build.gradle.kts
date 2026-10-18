@@ -103,7 +103,7 @@ android {
         minSdk = 29
         targetSdk = 37
         versionCode = autoVersion
-        versionName = if (dekuiPresentation) "1.0.0-beta.2-android.33" else getGitVersion()
+        versionName = if (dekuiPresentation) "1.0.0-beta.2-android.34" else getGitVersion()
 
         ndk {
             //noinspection ChromeOsAbiSupport

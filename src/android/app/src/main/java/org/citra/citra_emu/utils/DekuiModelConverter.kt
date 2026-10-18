@@ -73,9 +73,9 @@ object DekuiModelConverter {
     private fun retarget(a:Model,m:Model,si:Int):Pair<Array<DoubleArray>,Array<DoubleArray>>{val g=geometry(a,si);val p=Array(g.pos.size){g.pos[it].copyOf()};val normal=Array(g.normal.size){g.normal[it].copyOf()};val scale=identity().apply{this[0]=.62;this[5]=.62;this[10]=.62};val matrices=a.world.indices.map{mul(mul(m.world[mapping[it]],scale),inverse(a.world[it]))}
         for(pr in g.prims)for(vi in pr.indices.distinct()){if(pr.mode in 0..1){p[vi]=DoubleArray(3){g.pos[vi][it]*.62}}else{val sum=g.bw[vi].sum();require(sum>0);val out=DoubleArray(3);val n=DoubleArray(3);for(j in g.bi[vi].indices){val w=g.bw[vi][j]/sum;if(w==0.0)continue;val matrix=matrices[pr.bones[g.bi[vi][j].toInt()]];val pp=point(matrix,g.pos[vi]);val nn=point(matrix,g.normal[vi],0.0);for(k in 0..2){out[k]+=pp[k]*w;n[k]+=nn[k]*w}};p[vi]=out;val length=sqrt(n.sumOf{it*it});normal[vi]=DoubleArray(3){if(length==0.0)0.0 else n[it]/length}}};return p to normal}
     private fun worldPoints(m:Model,si:Int):List<DoubleArray>{val g=geometry(m,si);val out=g.pos.map{it.copyOf()}.toTypedArray();for(pr in g.prims)for(v in pr.indices.distinct()){if(pr.mode==2)continue;val b=pr.bones[if(pr.mode==0)0 else g.bi[v][0].toInt()];out[v]=point(m.world[b],g.pos[v])};return out.toList()}
-    private fun handPlan(a:Model,m:Model):Pair<Map<Int,List<Int>>,Set<Int>>{
+    private fun handPlan(a:Model,m:Model,skinMaterial:Int=22):Pair<Map<Int,List<Int>>,Set<Int>>{
         val candidates=mutableMapOf<Int,Pair<Boolean,Array<DoubleArray>>>()
-        for(me in a.meshes)if((me[2].toInt()and 255)==22){val si=h(me,0);val bones=a.primitives(a.shapes[si]).flatMap{it.bones.toList()}.toSet();val left=bones.all{it in setOf(15,16)};if(!left&&!bones.all{it in setOf(19,20)})continue;candidates[si]=left to retarget(a,m,si).first}
+        for(me in a.meshes)if((me[2].toInt()and 255)==skinMaterial){val si=h(me,0);val bones=a.primitives(a.shapes[si]).flatMap{it.bones.toList()}.toSet();val left=bones.all{it in setOf(15,16)};if(!left&&!bones.all{it in setOf(19,20)})continue;candidates[si]=left to retarget(a,m,si).first}
         val plan=mutableMapOf<Int,MutableList<Int>>();val removed=mutableSetOf<Int>()
         for(vis in m.meshes.map{it[3].toInt()and 255}.distinct().sorted()){
             val points=mutableListOf<DoubleArray>();val ids=mutableListOf<Int>();val bones=mutableSetOf<Int>()
@@ -96,13 +96,16 @@ object DekuiModelConverter {
         val rawStart=u(bodyAnimation,28);val source=rawStart+(if(color==1)2 else 1)*raw
         val out=adult.copyOf();slice(bodyAnimation,source,raw).copyInto(out,m.offsets.getValue("textures")+u(t,16));return out
     }
-    fun convert(adultData:ByteArray,nativeArchive:ByteArray,master:Boolean):ByteArray{
+    fun convert(adultData:ByteArray,nativeArchive:ByteArray,master:Boolean,dark:Boolean=false):ByteArray{
         val gar=decompress(nativeArchive);val mm=Model(entries(gar).first{it.name=="child/model/link_child.cmb"}.bytes);val a=Model(adultData)
-        require(a.world.size==25&&mm.world.size==26&&a.materials.size==36&&mm.materials.size==42){"Unsupported Link model revision"}
+        require(a.world.size==25&&mm.world.size==26&&a.materials.size==(if(dark)10 else 36)&&mm.materials.size==42){"Unsupported Link model revision"}
+        if(dark)require(a.meshes.size==15&&a.tex.size==9){"Unsupported Dark Link model revision"}
+        // Dark Link shares Adult Link's skeleton but has its own mesh/material profile.
+        // Groups 2/3 are source shadow geometry; 5/7 are alternate body/head meshes.
         // Native sword_a/b/c slots are 12/14/16; slot 18 is the separate Great Fairy item.
-        val (hands,removed)=handPlan(a,mm);val eqGroups=if(master)mapOf(16 to listOf(12,14,16),31 to listOf(5,6,7),42 to listOf(13,15,17))else emptyMap()
-        val equipment=a.meshes.filter{(it[3].toInt()and 255)in eqGroups&&(it[2].toInt()and 255)!=22}.associate{h(it,0)to eqGroups.getValue(it[3].toInt()and 255)}
-        val baseSelected=a.meshes.filter{(it[3].toInt()and 255)in setOf(45,46)||h(it,0)in hands};val selected=baseSelected+a.meshes.filter{h(it,0)in equipment}
+        val (hands,removed)=handPlan(a,mm,if(dark)7 else 22);val eqGroups=if(dark)mapOf(1 to listOf(12,14,16))else if(master)mapOf(16 to listOf(12,14,16),31 to listOf(5,6,7),42 to listOf(13,15,17))else emptyMap()
+        val equipment=a.meshes.filter{(it[3].toInt()and 255)in eqGroups&&(it[2].toInt()and 255)!=(if(dark)7 else 22)}.associate{h(it,0)to eqGroups.getValue(it[3].toInt()and 255)}
+        val baseSelected=a.meshes.filter{(it[3].toInt()and 255)in (if(dark)setOf(4,6)else setOf(45,46))||h(it,0)in hands};val selected=baseSelected+a.meshes.filter{h(it,0)in equipment}
         val baseMats=baseSelected.map{it[2].toInt()and 255}.distinct().sorted();val usedMats=baseMats+(selected.map{it[2].toInt()and 255}.toSet()-baseMats.toSet()).sorted();val matMap=usedMats.mapIndexed{i,v->v to mm.materials.size+i}.toMap()
         val buffers=mm.buffers.map{Buf(it)};val adultBuffers=listOf(byteArrayOf(),byteArrayOf(),byteArrayOf())+a.buffers.drop(2);val offsets=buffers.mapIndexed{i,b->b.align(4).also{b.add(adultBuffers[i])}}
         val indices=Buf(mm.chunks.getValue("indices"));val indexBase=indices.align(2);indices.add(a.chunks.getValue("indices"))
@@ -110,11 +113,11 @@ object DekuiModelConverter {
         fun textures(mats:List<Int>)=mats.flatMap{mi->(0..2).map{s(a.materials[mi],16+it*24)}}.filter{it>=0}.toSet()
         val baseTex=textures(baseMats).sorted();val usedTex=baseTex+(textures(usedMats)-baseTex.toSet()).sorted();val texMap=usedTex.mapIndexed{i,v->v to mm.tex.size+i}.toMap();val texData=Buf(mm.chunks.getValue("textures"));val tex=mm.tex.map{it.copyOf()}.toMutableList()
         for(ti in usedTex){val t=a.tex[ti].copyOf();val old=u(t,16);put(t,16,texData.align(128));texData.add(slice(a.chunks.getValue("textures"),old,u(t,0)));tex.add(t)}
-        for(mi in usedMats){val ma=a.materials[mi].copyOf();for(j in 0..2){val at=16+j*24;val ti=s(ma,at);if(ti>=0)put(ma,at,texMap.getValue(ti),2)};for(j in 0 until u(ma,0x120))put(ma,0x124+2*j,h(ma,0x124+2*j)+combBase,2);materials.add(ma+mm.materials[1].copyOfRange(0x15c,0x168)+ByteArray(4).apply{put(this,0,0xada10000.toInt()+mi)})};combiners.add(a.combiners)
+        for(mi in usedMats){val ma=a.materials[mi].copyOf();for(j in 0..2){val at=16+j*24;val ti=s(ma,at);if(ti>=0)put(ma,at,texMap.getValue(ti),2)};for(j in 0 until u(ma,0x120))put(ma,0x124+2*j,h(ma,0x124+2*j)+combBase,2);materials.add(ma+mm.materials[1].copyOfRange(0x15c,0x168)+ByteArray(4).apply{put(this,0,(if(dark)0xdad10000.toInt()else 0xada10000.toInt())+mi)})};combiners.add(a.combiners)
         val shapes=mm.shapes.map{it.copyOf()}.toMutableList();val meshes=mutableListOf<ByteArray>();val templates=mm.meshes.associateBy{it[3].toInt()and 255};val swordGroups=setOf(5,6,7,12,13,14,15,16,17)
-        for((i,me)in mm.meshes.withIndex()){val vis=me[3].toInt()and 255;if(vis in 28..33||i in removed)continue;if(master&&vis in swordGroups&&(me[2].toInt()and 255) !in setOf(2,3))continue;meshes.add(me.copyOf())}
+        for((i,me)in mm.meshes.withIndex()){val vis=me[3].toInt()and 255;if(vis in 28..33||i in removed)continue;if((master||dark)&&vis in (if(dark)setOf(12,14,16)else swordGroups)&&(me[2].toInt()and 255) !in setOf(2,3))continue;meshes.add(me.copyOf())}
         for(si in meshes.map{h(it,0)}.distinct().sorted()){val g=geometry(mm,si);require(g.prims.all{it.mode in 0..1});val at=buffers[0].align(4);buffers[0].add(floats(Array(g.pos.size){v->DoubleArray(3){g.pos[v][it]/height}}));descriptor(at).copyInto(shapes[si],0x24)}
-        for(me in selected){val si=h(me,0);val mat=me[2].toInt()and 255;val vis=me[3].toInt()and 255;val target=equipment[si]?:hands[si]?:if(vis==45)listOf(28,29)else listOf(33);val source=a.shapes[si];val (pos,norm)=retarget(a,mm,si)
+        for(me in selected){val si=h(me,0);val mat=me[2].toInt()and 255;val vis=me[3].toInt()and 255;val target=equipment[si]?:hands[si]?:if(vis==(if(dark)4 else 45))listOf(28,29)else listOf(33);val source=a.shapes[si];val (pos,norm)=retarget(a,mm,si)
             val tangent=descriptor(0).apply{put(this,10,1,2)};val sh=source.copyOfRange(0,0x5c)+tangent+source.copyOfRange(0x5c,source.size);val flags=h(sh,10);put(sh,10,(flags and 3)or((flags and 3.inv())shl 1),2)
             for(attr in 0..8){if(attr==2)continue;val at=0x24+attr*28;put(sh,at,u(sh,at)+offsets[attr])}
             for((attr,values)in listOf(0 to pos,1 to norm)){val at=buffers[attr].align(4);buffers[attr].add(floats(values));descriptor(at).copyInto(sh,0x24+attr*28)}
@@ -122,7 +125,7 @@ object DekuiModelConverter {
             put(sh,4,sh.size);val newSi=shapes.size;shapes.add(sh)
             for(group in target){val output=templates.getValue(group).copyOf();put(output,0,newSi,2);output[2]=matMap.getValue(mat).toByte();meshes.add(output)}
         }
-        if(!master){val replacements=mapOf(5 to 5,6 to 5,7 to 5,13 to 13,15 to 13,17 to 13,12 to 12,14 to 12,16 to 12)
+        if(!master&&!dark){val replacements=mapOf(5 to 5,6 to 5,7 to 5,13 to 13,15 to 13,17 to 13,12 to 12,14 to 12,16 to 12)
         fun weapon(me:ByteArray)=(me[3].toInt()and 255)in replacements&&(me[2].toInt()and 255)<42&&(me[2].toInt()and 255) !in setOf(2,3)
         val before=meshes.toList();meshes.removeAll{weapon(it)};for((target,source)in replacements)for(me in before)if((me[3].toInt()and 255)==source&&weapon(me)){val output=templates.getValue(target).copyOf();me.copyOfRange(0,3).copyInto(output);output[3]=target.toByte();meshes.add(output)}}
         val oldOpaque=h(mm.meshHeader,12);val transparent=mm.meshes.drop(oldOpaque).map{h(it,0)to(it[2].toInt()and 255)}.toSet();fun translucent(me:ByteArray)=(h(me,0)to(me[2].toInt()and 255))in transparent
