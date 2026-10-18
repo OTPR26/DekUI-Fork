@@ -30,3 +30,7 @@ This development preview is ad-hoc signed and not Apple-notarized. If macOS
 blocks it, use System Settings > Privacy & Security > Open Anyway. Move the
 entire extracted folder with Finder if macOS isolates the downloaded app.
 Intel Macs are not supported by this package.
+
+In-game Reset warns about unsaved progress, then returns to the startup screen
+while keeping the app open. Mods > ROM and texture setup uses that confirmation
+and opens startup Settings > Mods directly. Quit on the startup screen exits.

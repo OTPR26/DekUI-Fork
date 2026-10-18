@@ -154,7 +154,11 @@ inline void Begin(int& page,int width,int height,bool& resume,bool& quit) {
     }
     ImGui::PopStyleVar();ImGui::EndChild();
     ImGui::SetCursorPos({gap,header+gap+body+gap});
+#ifdef ENABLE_MM3D_GAME_FOLDER
+    quit=ImGui::Button("Reset",{rail,footer-gap});
+#else
     quit=ImGui::Button("Quit game",{rail,footer-gap});
+#endif
     ImGui::SetCursorPos({rail+gap*2,header+gap});
     ImGui::BeginChild("Settings panel",{float(width)-rail-gap*3,body},ImGuiChildFlags_AlwaysUseWindowPadding);
     ImGui::TextColored(Accent,"%s",Pages[page]);

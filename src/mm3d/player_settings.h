@@ -16,5 +16,6 @@ inline std::atomic<int> game_language{1}, set_game_language{-1};
 inline std::atomic<int> game_language_status{0}; // 0 idle, 1 pending, 2 saved, 3 failed
 inline constexpr bool SupportedLanguage(int value){return value==1||value==2||value==5;}
 inline std::atomic<bool> fullscreen_shortcut{false}, textures_shortcut{false};
+inline std::atomic<bool> mod_setup_requested{false};
 inline std::atomic<bool> controls{false}, fullscreen{false}, quit{false}, about{false};
 }
