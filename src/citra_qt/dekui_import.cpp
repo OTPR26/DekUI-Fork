@@ -318,7 +318,8 @@ void EnsureController() {
 }
 void BindingControls(QVBoxLayout* box, QWidget* parent) {
     auto* automatic = new QPushButton(QStringLiteral("Configure connected controller"));
-    box->addWidget(automatic);
+    automatic->setSizePolicy(QSizePolicy::Maximum,QSizePolicy::Preferred);
+    box->addWidget(automatic,0,Qt::AlignLeft);
     QObject::connect(automatic, &QPushButton::clicked, parent, [parent] {
         Capture capture(parent);
         capture.setWindowTitle(QStringLiteral("Press your confirm button (game A)"));
