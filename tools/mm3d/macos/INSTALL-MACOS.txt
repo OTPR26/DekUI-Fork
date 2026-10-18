@@ -1,4 +1,4 @@
-Dekui for Apple Silicon Macs (M1 or newer), macOS 13.4 or newer
+DekUI Fork for Apple Silicon Macs (M1 or newer), macOS 13.4 or newer
 
 1. Extract the ZIP. Move the entire dekui folder to a writable location such
    as Documents using Finder; keep the app, tools and resources together.
@@ -27,3 +27,27 @@ Launch the new version. Saves, preferences, textures and unrelated mods are pres
 Recognized older menu layouts update with backups; customized layouts are kept.
 General > Reset menu layouts restores the current menu layouts if needed.
 If an upgrade is interrupted, relaunch to retry. Keep user/ and upgrade backups.
+
+Dark Link and Adult Link
+
+This development build includes the corrected Dark Link sword and red eyes,
+adult voice-bank loading, and the aiming interpolation fix.
+
+Before launching the game, place your own generated mod folders here:
+  dekui/user/load/mm3d-models/dark-link/
+  dekui/user/load/mm3d-models/adult-link/
+
+Copy the complete generated folder, including romfs/, variants/ (Adult Link),
+voices/, and master-sword-icon.png when present. Do not combine their contents
+with the ordinary load/mods/ folder. Each appearance remains independently
+selectable in F1 > Mods > Player model. Restart the game after changing models.
+
+Matching HD textures belong under user/load/textures/0004000000125500/.
+Keep separate generated texture subfolders when transferring from Android.
+
+The desktop ROM/texture generator is not integrated yet; generated mod files
+from your own Android installation can be transferred for this test. No ROM,
+model, voice bank, texture pack, or save is bundled with the application.
+
+With interpolation enabled, item-aiming modes retain the native camera view.
+Normal gameplay interpolation resumes after the camera transition.
