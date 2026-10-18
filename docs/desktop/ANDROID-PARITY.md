@@ -69,8 +69,8 @@ matching texture replacements. Gameplay appearance remains a user playtest.
 Controller/HUD parity correction: configuration reload now replaces input-profile
 and touch-map collections rather than appending stale copies. A native regression
 changes the confirm binding repeatedly and checks both loaded bindings and stable
-collection sizes. Captured SDL face buttons display physical positions instead
-of generic Xbox names. Startup/resource checks reconstruct the Android fork's
+collection sizes. SDL button names remain unchanged; saved logical bindings
+determine gameplay actions. Startup/resource checks reconstruct the Android fork's
 authored HUD using a hash-guarded copy recipe, backed-up archive and presentation
 settings, and the same filter-safe 8x atlas as Android. Only recognized desktop
 HUD defaults migrate; custom archives and custom HUD positions are retained.
