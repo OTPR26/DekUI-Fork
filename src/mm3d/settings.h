@@ -82,6 +82,7 @@ struct Settings {
     float game_camera_fov = 65.f;
     float camera_distance = 1.f;
     bool adult_link_model = false;
+    bool dark_link_model = false;
     int adult_link_tunic_color = 0;
     bool adult_link_master_sword = false;
     float restoration_hud_scale = 1.f;

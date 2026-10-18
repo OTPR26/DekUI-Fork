@@ -3,6 +3,11 @@
 #include <cassert>
 int main() {
  using namespace MM3D;
+ assert(ModelMod::DarkSelected(R"({"dark_link_model":true})"));
+ assert(ModelMod::AppearanceSelected(R"({"dark_link_model":true,"adult_link_model":false})"));
+ assert(ModelMod::AppearanceSelected(R"({"adult_link_model":true})"));
+ assert(!ModelMod::AppearanceSelected(R"({"adult_link_model":false,"dark_link_model":false})"));
+ for(auto bad:{"", "null", "[]", "{}", R"({"dark_link_model":1})",R"({"dark_link_model":"true"})"})assert(!ModelMod::DarkSelected(bad));
  assert(ModelMod::AdultSelected(R"({"adult_link_model":true})"));
  assert(ModelMod::MasterSwordSelected(R"({"adult_link_master_sword":true})"));
  for(auto bad:{"", "null", "[]", "{}", R"({"adult_link_master_sword":1})",R"({"adult_link_master_sword":"true"})"})assert(!ModelMod::MasterSwordSelected(bad));
