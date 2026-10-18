@@ -2,6 +2,8 @@
 """Stage a complete desktop mod from user-selected ROMs; native frontend finalizes textures."""
 import argparse,hashlib,json,shutil,sys,tempfile,struct
 from pathlib import Path
+# Windows' isolated embedded runtime omits the script directory from sys.path.
+sys.path.insert(0,str(Path(__file__).resolve().parent))
 from binary import Reader,entries,decompress,u,h,require
 from model import Model,convert,tunic
 from voice import convert as convert_voices
