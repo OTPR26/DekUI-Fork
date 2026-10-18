@@ -56,6 +56,10 @@ QDialog,QWidget#Startup{background:#08070d;color:#f2f2f2;font-family:'Liberation
 QLabel{color:#eee;background:transparent;} QLabel#Heading{color:#b97df2;font-size:24px;}
 QPushButton,QComboBox,QDoubleSpinBox{color:#eee;background:#291c38;border:0;border-radius:5px;padding:10px;min-height:24px;}
 QPushButton:hover,QPushButton:focus,QComboBox:focus{background:#3d1468;color:#d9b5ff;}
+QComboBox QAbstractItemView{background:#17111f;color:#f2f2f2;alternate-background-color:#17111f;selection-background-color:#3d1468;selection-color:#ffffff;border:1px solid #76548d;outline:0;}
+QComboBox QAbstractItemView::item{background:#17111f;color:#f2f2f2;padding:8px;min-height:24px;}
+QComboBox QAbstractItemView::item:selected{background:#3d1468;color:#ffffff;}
+QComboBox QAbstractItemView::item:disabled{color:#9b90a6;}
 QPushButton:disabled{color:#777;background:#1b1721;}
 QListWidget{background:#08070d;color:#eee;border:0;outline:0;min-width:210px;}
 QListWidget::item{padding:12px;border-radius:4px;margin-bottom:8px;background:#291c38;}
