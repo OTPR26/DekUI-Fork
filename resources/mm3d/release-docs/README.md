@@ -33,7 +33,7 @@ No game ROM, imported player model, imported voices, save file, or personal text
 
 These appearance mods need broader gameplay testing. Some masks, facial expressions, and attachments still need broader testing with Adult Link. Texture replacement depends on a matching texture being present in the selected pack. The experimental Cheats page can remain disabled when its live save-layout check does not match; it is not advertised as a reliable save editor.
 
-The Android APK uses the existing installation ID to preserve saves and settings for testers; its historical `.debug` suffix does not mean that release is a debug build.
+Android uses `io.github.otpr26.dekuifork`. When moving from the prototype, grant file access to reuse Internal storage/mm3dport, then reselect external texture folders. Existing saves, generated mods, HUD settings, and shared controller bindings are retained. Close the prototype before using the new app.
 
 ## Credits and license
 

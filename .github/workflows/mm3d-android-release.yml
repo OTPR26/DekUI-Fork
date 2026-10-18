@@ -136,7 +136,7 @@ jobs:
           if not re.search(r'Signer #1 certificate SHA-256 digest: '+expected, cert):
               raise SystemExit('APK signing identity does not match existing installations')
           badging = subprocess.check_output([str(sdk/'aapt'), 'dump', 'badging', str(apk)], text=True)
-          if "name='io.github.tgacquin.dekui.experiment.debug'" not in badging.splitlines()[0]:
+          if "name='io.github.otpr26.dekuifork'" not in badging.splitlines()[0]:
               raise SystemExit('APK application ID changed')
           if "versionName='"+os.environ['RELEASE_VERSION']+"'" not in badging.splitlines()[0]:
               raise SystemExit('APK version does not match the release')

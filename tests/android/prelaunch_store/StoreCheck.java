@@ -1,4 +1,4 @@
-package io.github.tgacquin.dekui.settingscheck;
+package io.github.otpr26.dekuifork.settingscheck;
 
 import android.app.Instrumentation;
 import android.content.Context;

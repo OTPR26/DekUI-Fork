@@ -27,3 +27,13 @@ Swipe in from the left edge to open the full-screen menu. Set Nintendo/Xbox prom
 Touch overlay controls remain available for phones. Menu scale can be adjusted for smaller screens or handhelds. Field of View changes the view angle; Camera Distance moves the camera farther from or closer to Link. Movement speed controls are separate for walking, climbing, and swimming.
 
 Disk shader cache is currently disabled in this preview configuration after testing found startup stalls and geometry artifacts with the Adult Link model. Do not treat the experimental Cheats page as a save editor: its compatibility guards may leave it unavailable.
+
+## Upgrading from the prototype
+
+The release uses `io.github.otpr26.dekuifork`. Android treats it as a new app,
+so it installs beside the early prototype. Close the prototype first, grant
+file access in the new app, and keep Internal storage/mm3dport in place. The
+new app reuses its prepared game, saves, generated mods, HUD, and controller
+bindings. Reselect external texture folders; Android folder grants belong to
+the old app ID. Select the OoT3D source again only when regenerating a mod.
+After checking the new app, the prototype may be uninstalled.

@@ -7,6 +7,11 @@ import java.util.Arrays;
 import java.util.UUID;
 /** Copy, verify, then publish. Source data is never removed or modified. */
 public final class DekuiStorageMigration {
+    public static boolean hasPreparedGame(File target) {
+        File game=new File(target,"game/game.cci");
+        return new File(target,".dekui-storage-v1").isFile() && game.isFile() && game.length()>0 &&
+            new File(target,"load/mods/0004000000125500/code.bps").isFile();
+    }
     private static byte[] hash(File file) throws Exception {
         MessageDigest digest=MessageDigest.getInstance("SHA-256");
         try(InputStream in=new FileInputStream(file)){byte[] block=new byte[1024*1024];int n;while((n=in.read(block))!=-1)digest.update(block,0,n);}

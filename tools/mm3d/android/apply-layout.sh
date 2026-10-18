@@ -6,9 +6,9 @@ export DEKUI_ANDROID_QT_ROOT=${DEKUI_ANDROID_QT_ROOT:-"$HOME/Qt/6.12.0/android_a
 export DEKUI_HOST_QT_ROOT=${DEKUI_HOST_QT_ROOT:-"$HOME/Qt/6.12.0/macos"}
 adb_bin=${ADB:-"$HOME/Library/Android/sdk/platform-tools/adb"}
 rom=${1:-"$HOME/Documents/Legend of Zelda, The - Majora's Mask 3D (USA) (En,Fr,Es) (Rev 1).cci"}
-# This helper targets the user folder already selected for this experiment.
-remote=/sdcard/Azahar
-package=io.github.tgacquin.dekui.experiment.debug
+# This helper targets shared data used by the development build.
+remote=/sdcard/mm3dport
+package=io.github.otpr26.dekuifork.debug
 "$adb_bin" get-state
 "$adb_bin" shell test -d "$remote/config"
 stage=$(python3 "$repo_root/tools/mm3d/android/prepare-layouts.py" "$rom" --output "$repo_root/artifacts/android")

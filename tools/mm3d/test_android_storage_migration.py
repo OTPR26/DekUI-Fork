@@ -17,6 +17,11 @@ public class MigrationCheck {public static void main(String[] args)throws Except
  if(!java.util.Arrays.equals(Files.readAllBytes(new File(source,"save.bin").toPath()),Files.readAllBytes(new File(target,"save.bin").toPath())))throw new AssertionError("save mismatch");
  if(!game.isFile()||!new File(target,"game/game.cci").isFile()||!new File(source,"save.bin").isFile())throw new AssertionError("source lost");
  DekuiStorageMigration.migrate(source,game,target);
+ if(DekuiStorageMigration.hasPreparedGame(target))throw new AssertionError("partial setup accepted");
+ File patch=new File(target,"load/mods/0004000000125500/code.bps");patch.getParentFile().mkdirs();Files.write(patch.toPath(),new byte[]{8});
+ if(!DekuiStorageMigration.hasPreparedGame(target))throw new AssertionError("prepared game not recovered");
+ DekuiStorageMigration.migrate(new File(root,"new-private-app"),new File(root,"missing-game.cci"),target);
+ if(!DekuiStorageMigration.hasPreparedGame(target)||Files.readAllBytes(new File(target,"save.bin").toPath())[0]!=1)throw new AssertionError("new application identity lost existing data");
  File conflict=new File(root,"existing");conflict.mkdirs();Files.write(new File(conflict,"keep").toPath(),new byte[]{7});
  try{DekuiStorageMigration.migrate(source,game,conflict);throw new AssertionError("conflict accepted");}catch(IOException expected){}
  if(Files.readAllBytes(new File(conflict,"keep").toPath())[0]!=7)throw new AssertionError("conflict lost");

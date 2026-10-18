@@ -37,6 +37,12 @@ object DekuiStorage {
         NativeLibrary.playTimeManagerInit()
         controls(context)
     }
+    fun hasSharedBindings(context:Context):Boolean {
+        val file=File(root(context),"config/android-controls.json")
+        if(!file.isFile)return false
+        val json=JSONObject(file.readText())
+        return json.optInt("version")==1 && json.optJSONObject("bindings")?.length()?.let { it>0 }==true
+    }
     private var listener:android.content.SharedPreferences.OnSharedPreferenceChangeListener?=null
     private fun bindingKey(key:String):Boolean {
         val keys=org.citra.citra_emu.features.settings.model.Settings.run { buttonKeys+triggerKeys+dPadButtonKeys+circlePadKeys+cStickKeys+dPadAxisKeys }

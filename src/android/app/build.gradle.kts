@@ -98,7 +98,7 @@ android {
         // the Play Store listing, which was originally set up for Lime3DS, to still be used.
         applicationId = "org.azahar_emu.azahar"
         if (dekuiPresentation) {
-            applicationId = "io.github.tgacquin.dekui.experiment"
+            applicationId = "io.github.otpr26.dekuifork"
         }
         buildConfigField("boolean", "DEKUI_PRESENTATION", dekuiPresentation.toString())
         manifestPlaceholders["applicationLabel"] = if (dekuiPresentation) "DekUI Fork" else "@string/app_name"
@@ -214,7 +214,7 @@ android {
         // Optimized local DekUI build. Keep the installed app ID and signing key for in-place updates.
         register("performance") {
             initWith(getByName("release"))
-            applicationIdSuffix = ".debug"
+            applicationIdSuffix = if (dekuiPresentation) "" else ".debug"
             versionNameSuffix = if (dekuiPresentation) "" else "-performance"
             signingConfig = signingConfigs.getByName("debug")
             isDebuggable = false

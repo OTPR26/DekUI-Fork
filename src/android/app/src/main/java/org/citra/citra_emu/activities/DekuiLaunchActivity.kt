@@ -64,12 +64,18 @@ class DekuiLaunchActivity : AppCompatActivity() {
         }
     }
     private fun finishStorageSetup() {
-        if (!prefs.getBoolean("odin-controls-v1", false)) {
-            org.citra.citra_emu.features.settings.model.view.InputBindingSetting.applyDekuiDefaultBindings()
+        if (!prefs.getBoolean("controller-defaults-v1", prefs.getBoolean("odin-controls-v1", false))) {
+            if(!org.citra.citra_emu.utils.DekuiStorage.hasSharedBindings(this)) {
+                org.citra.citra_emu.features.settings.model.view.InputBindingSetting.applyDekuiDefaultBindings()
+            }
             org.citra.citra_emu.utils.EmulationMenuSettings.showOverlay = false
-            prefs.edit().putBoolean("odin-controls-v1", true).apply()
+            prefs.edit().putBoolean("controller-defaults-v1", true).apply()
         }
+        val recovered=!prefs.getBoolean("ready",false) &&
+            org.citra.citra_emu.utils.DekuiStorageMigration.hasPreparedGame(org.citra.citra_emu.utils.DekuiStorage.root(this))
+        if(recovered)check(prefs.edit().putBoolean("ready",true).commit())
         buildLauncher()
+        if(recovered)status.text="Existing game data restored. Re-select any external texture folder in Settings → Graphics."
     }
 
     private fun buildLauncher() {

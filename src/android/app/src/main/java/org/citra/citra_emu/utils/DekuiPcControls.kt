@@ -32,6 +32,10 @@ object DekuiPcControls {
         }
         val pc=context.assets.open("dekui-pc-controls/code.bps").use { it.readBytes() }
         check(hash(pc)==spec.getString("patch_sha256")) { "PC gameplay patch checksum mismatch" }
+        if(currentHash==spec.getString("patch_sha256") && DekuiStorage.hasSharedBindings(context)) {
+            check(prefs.edit().putBoolean("dekui-pc-input-v1",true).commit())
+            return
+        }
         val backups=File(root,"config/dekui-backups")
         val bindings=File(backups,"controls-before-pc-input.json")
         if(!bindings.exists())write(bindings,(JSONObject(prefs.all).toString(2)+"\n").toByteArray())
