@@ -11,7 +11,7 @@ import zipfile
 from package_deck import ROOT, SCRIPTS
 
 
-def package(bundle, output, python_archive):
+def package(bundle, output, python_archive, architecture='x64'):
     verify_layout_policy(ROOT / 'resources/mm3d')
     if output.exists():
         raise ValueError('Refusing to overwrite package')
@@ -22,7 +22,7 @@ def package(bundle, output, python_archive):
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / 'dekui'; root.mkdir()
         shutil.copy2(bundle / 'azahar.exe', root / 'Dekui.exe')
-        install_python(python_archive, root / 'runtime/python')
+        install_python(python_archive, root / 'runtime/python', architecture)
         # The CI bundle is clean; only deployment files are accepted here.
         for p in bundle.rglob('*'):
             rel = p.relative_to(bundle)
@@ -62,5 +62,6 @@ if __name__ == '__main__':
     parser.add_argument('bundle', type=Path)
     parser.add_argument('output', type=Path)
     parser.add_argument("--python-archive", type=Path, required=True)
+    parser.add_argument('--architecture', choices=('x64', 'arm64'), default='x64')
     args = parser.parse_args()
-    package(args.bundle, args.output, args.python_archive)
+    package(args.bundle, args.output, args.python_archive, args.architecture)

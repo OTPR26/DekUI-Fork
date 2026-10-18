@@ -1,13 +1,20 @@
 name: DekUI Fork Windows
 on:
   workflow_dispatch:
+    inputs:
+      architecture:
+        description: Desktop CPU architecture
+        type: choice
+        options: [all, x64, arm64]
+        default: all
 concurrency:
-  group: mm3d-windows-${{ github.ref }}
+  group: mm3d-windows-${{ github.ref }}-${{ inputs.architecture }}
   cancel-in-progress: true
 permissions:
   contents: read
 jobs:
   windows:
+    if: inputs.architecture != 'arm64'
     runs-on: windows-2022
     defaults:
       run:
@@ -77,4 +84,64 @@ jobs:
         with:
           name: DekUI-Fork-${{ steps.release.outputs.version }}-Source-${{ github.sha }}
           path: artifacts/DekUI-Fork-${{ steps.release.outputs.version }}-Source.tar.gz
+          if-no-files-found: error
+
+  windows-arm64:
+    if: inputs.architecture != 'x64'
+    runs-on: windows-11-arm
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          submodules: recursive
+          fetch-depth: 1
+      - name: Configure native ARM64 MSVC environment
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RUNNER_ARCH -ne 'ARM64') { throw 'Native ARM64 runner required' }
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installation = & $vswhere -latest -products '*' -property installationPath
+          if (!$installation) { throw 'Visual Studio not found' }
+          $devcmd = Join-Path $installation 'Common7\Tools\VsDevCmd.bat'
+          $environment = & cmd /d /s /c "`"$devcmd`" -arch=arm64 -host_arch=arm64 >nul && set"
+          if ($LASTEXITCODE -ne 0) { throw 'ARM64 compiler environment failed' }
+          foreach ($line in $environment) {
+            if ($line -match '^([^=]+)=(.*)$') {
+              $name, $value = $Matches[1], $Matches[2]
+              if ($name -notmatch '^(GITHUB_|RUNNER_|NODE_OPTIONS$)' -and
+                  [Environment]::GetEnvironmentVariable($name) -ne $value) {
+                Set-Item "Env:$name" $value
+                "$name=$value" >> $env:GITHUB_ENV
+              }
+            }
+          }
+          $compiler = (Get-Command cl).Source
+          if ($compiler -notmatch 'Hostarm64\\arm64\\cl.exe$') { throw "Unexpected compiler: $compiler" }
+          $compiler >> $env:GITHUB_STEP_SUMMARY
+      - name: Verify revision
+        run: |
+          if ((git rev-parse HEAD) -ne $env:GITHUB_SHA) { throw 'Build revision mismatch' }
+          git log -1 --format='%H %s' >> $env:GITHUB_STEP_SUMMARY
+      - name: Build, test, check ARM64 payloads and package
+        run: |
+          python tools/mm3d/windows/build-arm64.py *> windows-arm64-build.log
+          if ($LASTEXITCODE -ne 0) { Get-Content windows-arm64-build.log -Tail 100; exit 1 }
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: DekUI-Fork-Windows-arm64-Diagnostics-${{ github.sha }}
+          path: |
+            windows-arm64-build.log
+            build-windows-arm64/CMakeFiles/CMakeConfigureLog.yaml
+            build-windows-arm64/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v7
+        with:
+          name: DekUI-Fork-Windows-arm64-${{ github.sha }}
+          path: artifacts/DekUI-Fork-*-Windows-arm64*
           if-no-files-found: error

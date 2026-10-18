@@ -15,6 +15,21 @@ def fixture_archive(path):
 
 
 class WindowsPythonTests(unittest.TestCase):
+    def test_arm64_runtime_selection_rejects_x64_archive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); archive = root / 'python.zip'
+            digest = fixture_archive(archive)
+            with patch.object(runtime, 'ARM64_SHA256', digest):
+                runtime.install(archive, root / 'runtime', 'arm64')
+                notice = (root / 'runtime/DEKUI-NOTICE.txt').read_text()
+                self.assertIn('Windows arm64', notice)
+                self.assertIn('embed-arm64.zip', notice)
+            with patch.object(runtime, 'SHA256', digest):
+                with self.assertRaisesRegex(ValueError, 'checksum mismatch'):
+                    runtime.verify(archive, 'arm64')
+        with self.assertRaisesRegex(ValueError, 'Unsupported Windows architecture'):
+            runtime.distribution('arm32')
+
     def test_installs_isolated_runtime_with_license(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); archive = root / 'python.zip'
