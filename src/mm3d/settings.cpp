@@ -394,7 +394,7 @@ bool Settings::Load(const QString& path) {
     }
     scale = value("scale", 1, .5f, 2.f);
     android_menu_text_size = int(value("android_menu_text_size",20,0,40));
-    desktop_menu_text_size = int(value("desktop_menu_text_size",20,0,40));
+    desktop_menu_text_size = int(value("desktop_menu_text_size",5,0,40));
     opacity = value("opacity", .9f, .2f, 1.f);
     x = value("x", .02f, 0.f, .75f);
     y = value("y", .02f, 0.f, .9f);
