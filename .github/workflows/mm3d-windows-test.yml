@@ -72,6 +72,8 @@ jobs:
             build-windows/Testing/Temporary/LastTest.log
             build-windows/Testing/Temporary/LastTestsFailed.log
           if-no-files-found: ignore
+      - name: Check package privacy
+        run: python tools/mm3d/check_release_privacy.py artifacts/DekUI-Fork-${{ steps.release.outputs.version }}-Windows-x64.zip
       - uses: actions/upload-artifact@v7
         with:
           name: DekUI-Fork-${{ steps.release.outputs.version }}-Windows-x64-${{ github.sha }}
@@ -80,6 +82,8 @@ jobs:
       - name: Archive matching source
         timeout-minutes: 15
         run: python tools/mm3d/package_source.py artifacts/DekUI-Fork-${{ steps.release.outputs.version }}-Source.tar.gz
+      - name: Check package privacy
+        run: python tools/mm3d/check_release_privacy.py artifacts/DekUI-Fork-${{ steps.release.outputs.version }}-Source.tar.gz
       - uses: actions/upload-artifact@v7
         with:
           name: DekUI-Fork-${{ steps.release.outputs.version }}-Source-${{ github.sha }}
@@ -140,6 +144,8 @@ jobs:
             build-windows-arm64/CMakeFiles/CMakeConfigureLog.yaml
             build-windows-arm64/Testing/Temporary/LastTest.log
           if-no-files-found: ignore
+      - name: Check package privacy
+        run: python tools/mm3d/check_release_privacy.py artifacts/DekUI-Fork-*-Windows-arm64*
       - uses: actions/upload-artifact@v7
         with:
           name: DekUI-Fork-Windows-arm64-${{ github.sha }}

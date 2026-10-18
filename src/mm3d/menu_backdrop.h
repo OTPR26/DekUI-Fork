@@ -8,8 +8,8 @@ using namespace MenuPageSwitch;
 // Its first word is a vtable, not a pointer to another ScreenContext.
 constexpr U32 ScreenContext=0x72f5bc;
 constexpr U32 FirstSVC=0xfffe88;
-constexpr std::array<U32,5> PCs{0x5a6194,0x59930c,0x599350,0x5a5fc8,0x5970b0};
-constexpr std::array<U32,5> Words{0xe18160b7,0xe18100b5,0xe18100b5,0xe1a05000,0xe1a04000};
+constexpr std::array<U32,7> PCs{0x5a6194,0x59930c,0x599350,0x5a5fc8,0x5970b0,0x5a6a1c,0x5a5ff8};
+constexpr std::array<U32,7> Words{0xe18160b7,0xe18100b5,0xe18100b5,0xe1a05000,0xe1a04000,0xeb018d61,0xe5940100};
 inline U32 Instruction(U32 pc,U32 word) {
     for(unsigned i=0;i<PCs.size();++i)if(pc==PCs[i]&&word==Words[i])return 0xef000000|FirstSVC+i;
     return word;
@@ -18,13 +18,20 @@ template<class M> bool CodeMatches(M& m) {
     if(!MenuMemory::CodeMatches(m))return false;
     for(unsigned i=0;i<PCs.size();++i)if(m.Read(PCs[i])!=Words[i])return false;
     // Inventory Init borrows the persistent UpCommonBG; Close never frees it.
-    for(auto [at,w]:std::array<std::pair<U32,U32>,15>{{
+    for(auto [at,w]:std::array<std::pair<U32,U32>,27>{{
         {0x5bfbd8,0xe5960014},{0x5bfbdc,0xe5840028},{0x5bfbf4,0x6b7b8c},
         {0x5c2554,0xe5940028},{0x5c2558,0xe2812058},
         {0x5f8598,0xe5805010},{0x5f85ac,0xe5804010},{0x59936c,0xaac},
         {0x5970b4,0xe1a07001},{0x5970b8,0xe59f0374},
         {0x198864,0xe92d4070},{0x1988b8,0xe5845008},
-        {0x1b03b4,0xe59f0000},{0x1b03b8,0xe12fff1e},{0x1b03bc,ScreenContext}}})
+        {0x1b03b4,0xe59f0000},{0x1b03b8,0xe12fff1e},{0x1b03bc,ScreenContext},
+        // Gear's optional image import destroys the same capture that our
+        // shared backdrop owns. Verify both continuations and the destructor.
+        {0x5a6a14,0xe2870a11},{0x5a6a18,0xe2800010},
+        {0x5a6a20,0xe5c45194},{0x5a6a24,0xe320f000},{0x5a6a28,0xea000001},
+        {0x5a6a2c,0xe3a00001},{0x5a6a30,0xe5c40194},
+        {0x609fa8,0xe92d4070},{0x609fb8,0xebee3a29},{0x609fd8,0xe3a00006},
+        {0x609fe4,0xe1c108b6},{0x609fec,0x66889c}}})
         if(m.Read(at)!=w)return false;
     return true;
 }
@@ -32,6 +39,13 @@ struct Picture { U32 layout=0,textures=0;std::array<U32,2> geometry{}; };
 struct Hook {
     U32 owner=0,game=0,page=0; // Only the extra PauseDraw bit is owned.
     U32 prepare_context=0,prepare_game=0,prepare_source=0,prepare_target=0;
+    // Gear's saved pictograph and our scene backdrop normally share a native
+    // capture object. Retain the scene's resources while that object loads the
+    // photo, then restore or destroy them through the native Close lifecycle.
+    U32 retained_game=0,retained_page=0,retained_manager=0,retained_state=0;
+    std::array<U32,7> retained_capture{};
+    bool closing_photo=false,keep_scene_on_close=false;
+    bool HasRetainedCapture() const {return retained_game!=0;}
     static bool Enabled(){return NativeInventory::enabled.load()&&GearMenu::enabled.load();}
     template<class M> static U32 Game(M& m,U32 ctx) {
         if(!Pointer(ctx,20))return 0;
@@ -85,10 +99,17 @@ struct Hook {
         // Same two descriptor writes as native 0x5f857c, no new resources.
         for(unsigned eye=0;eye<2;++eye)m.Write(p.geometry[eye]+0x10,p.textures+eye*0x58);
     }
+    template<class M> std::optional<Picture> Background(M& m,U32 g) const {
+        if(g!=retained_game)return Source(m,g);
+        if(m.Read(ScreenContext+8)!=retained_page)return {};
+        auto picture=Source(m,g,false);
+        if(picture)picture->textures=retained_capture[2];
+        return picture;
+    }
     template<class M> bool Active(M& m) const {
         if(!Enabled())return false;
         auto current=m.Read(ScreenContext+8);const U32 g=Game(m,ScreenContext);
-        return g&&current&&Page(m,*current)&&Source(m,g).has_value();
+        return g&&current&&Page(m,*current)&&Background(m,g).has_value();
     }
     template<class M> void Release(M& m) {
         if(owner&&Game(m,owner)==game&&m.Read(owner+8)==page) {
@@ -112,6 +133,62 @@ struct Hook {
         if(prepare_context&&(Game(m,prepare_context)!=prepare_game||
            m.Read(prepare_context+12)!=prepare_target))
             prepare_context=prepare_game=prepare_source=prepare_target=0;
+    }
+    template<class M,class R> void GearImageImport(M& m,R& r) {
+        const bool retain=!HasRetainedCapture()&&owner==ScreenContext&&game==r[7]&&page==r[4]&&
+            r[0]==game+0x11010&&m.Read(ScreenContext+8)==page&&
+            m.Read(page)==GearVtable&&Game(m,ScreenContext)==game&&
+            (m.Read(game+0xaac).value_or(0)&0xffff)==3&&Active(m);
+        if(retain) {
+            std::array<U32,7> snapshot{};
+            bool valid=true;
+            for(unsigned i=0;i<snapshot.size();++i) {
+                auto word=m.Read(r[0]+i*4);
+                if(!word){valid=false;break;}
+                snapshot[i]=*word;
+            }
+            const U32 manager=m.Read(0x66889c).value_or(0);
+            const auto state=Pointer(manager,0x188)?m.Read(manager+0x184):std::nullopt;
+            if(valid&&state) {
+                retained_game=game;retained_page=page;retained_manager=manager;
+                retained_state=*state;retained_capture=snapshot;
+                // The import's destructor owns only these three allocations.
+                // Detach them first; do not copy or alias the photo's buffers.
+                for(unsigned i=0;i<3;++i)m.Write(r[0]+i*4,0);
+            }
+        }
+        // Always load the actual pictograph and retain native photo controls.
+        r[14]=PCs[5]+4;r[15]=0x609fa8;
+    }
+    template<class M,class R> bool CloseGearPhoto(M& m,R& r,bool keep_scene) {
+        if(!HasRetainedCapture()||r[0]!=retained_game+0x11010||
+           Game(m,ScreenContext)!=retained_game||m.Read(ScreenContext+8)!=retained_page)return false;
+        closing_photo=true;keep_scene_on_close=keep_scene;
+        // Even a tab handoff must destroy the photo before restoring the scene.
+        r[14]=PCs[6];r[15]=0x198864;return true;
+    }
+    template<class M,class R> void FinishGearPhoto(M& m,R& r) {
+        if(closing_photo&&r[4]==retained_game&&Game(m,ScreenContext)==retained_game) {
+            const U32 capture=retained_game+0x11010;
+            for(unsigned i=0;i<retained_capture.size();++i)m.Write(capture+i*4,retained_capture[i]);
+            const bool keep=keep_scene_on_close;
+            const bool shared_graphics=m.Read(retained_game+0x100)==retained_manager;
+            if(keep&&m.Read(0x66889c)==retained_manager) {
+                auto state=m.Read(retained_manager+0x184);
+                if(state)m.Write(retained_manager+0x184,(*state&0xffffu)|(retained_state&0xffff0000u));
+            }
+            retained_game=retained_page=retained_manager=retained_state=0;
+            retained_capture={};closing_photo=keep_scene_on_close=false;
+            if(!keep) {
+                // Real menu exit: dispose of the restored scene too, then
+                // return here to replay the original graphics-owner load.
+                r[0]=capture;r[14]=PCs[6];r[15]=0x198864;return;
+            }
+            // Match MenuPageSwitch's ordinary handoff: if graphics aliases
+            // the capture manager, do not zero its restored ready-state byte.
+            if(shared_graphics){r[15]=0x5a6000;return;}
+        }
+        r[0]=m.Read(r[4]+0x100).value_or(0); // original LDR r0,[r4,#0x100]
     }
     // Dedicated ordinary Map/Gear entry also takes a fresh native capture.
     // Recalled entries are handled first by MenuMemory, tab handoffs keep theirs.
@@ -148,7 +225,7 @@ struct Hook {
     }
     template<class M> void Pass(M& m,U32 manager,U32 pass) {
         if(pass!=0||!Active(m)||!Pointer(manager,0x24))return;
-        auto picture=Source(m,Game(m,ScreenContext));
+        auto picture=Background(m,Game(m,ScreenContext));
         auto queue=m.Read(manager+8);NativeInventory::Hook helper;NativeInventory::Hook::Buckets entries;
         if(!picture||!queue||!helper.ReadQueue(m,*queue,entries))return;
         for(const auto& bucket:entries)

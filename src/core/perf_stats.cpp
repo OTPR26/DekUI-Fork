@@ -115,12 +115,12 @@ void PerfStats::EndSystemFrame() {
     previous_frame_end = frame_end;
 }
 
-void PerfStats::EndGameFrame() {
+void PerfStats::EndGameFrame([[maybe_unused]] s64 guest_time_us) {
     std::scoped_lock lock{object_mutex};
 
     game_frames += 1;
 #ifdef ENABLE_MM3D_PRESENTATION
-    MM3D::OnGuestFrame();
+    MM3D::OnGuestFrame(guest_time_us);
 #endif
     PerfStats::game_frames_updated = true;
 }

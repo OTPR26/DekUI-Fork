@@ -113,7 +113,7 @@ class SecondaryDisplay(val context: Context) : DisplayManager.DisplayListener {
             val dm = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
             val default = dm.displays.first { it.displayId == Display.DEFAULT_DISPLAY }
             // prioritize displays that have a different name from the default display, as
-            // some devices such as the Odin 2 create a permanent virtual display with the same
+            // some devices create a permanent virtual display with the same
             // name as the default display that should be skipped in most cases
             currentDisplayId = availableDisplays.firstOrNull {
                 it.name != default.name && !it.name.contains("Built", true)

@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "previous_revision": "60b7aa18d",
   "previous": {
     "single_screen_text": true,
@@ -737,6 +737,36 @@
         "textures": 0,
         "vertices": 4,
         "width": 480
+      },
+      {
+        "blend": 65654,
+        "depth": 3840,
+        "height": 400,
+        "shader": "9b343fea686d98e0",
+        "swizzle": "ac22b79e29209c01",
+        "textures": 0,
+        "vertices": 12,
+        "width": 480
+      },
+      {
+        "blend": 65654,
+        "depth": 3856,
+        "height": 400,
+        "shader": "89b1ab98da3d9241",
+        "swizzle": "6f0b398b1fc186a9",
+        "textures": 3,
+        "vertices": 4,
+        "width": 480
+      },
+      {
+        "blend": 65654,
+        "depth": 3840,
+        "height": 400,
+        "shader": "9b343fea686d98e0",
+        "swizzle": "ac22b79e29209c01",
+        "textures": 0,
+        "vertices": 6,
+        "width": 480
       }
     ],
     "game_camera_fov": 65,
@@ -1187,7 +1217,31 @@
     "song_panel_darkness": 0,
     "song_panel_left_x": -16.100000381469727,
     "song_panel_right_x": 112.4000015258789,
-    "song_stone_darkness": 0.1599999964237213
+    "song_stone_darkness": 0.1599999964237213,
+    "mask_present_1_scale": 0.46000000834465027,
+    "mask_present_1_x": -8.899999618530273,
+    "mask_present_1_y": 76.9000015258789,
+    "mask_present_3_scale": 0.6000000238418579,
+    "mask_present_3_x": -32.20000076293945,
+    "mask_present_3_y": -67.4000015258789,
+    "mask_present_4_scale": 1,
+    "mask_present_4_x": -512,
+    "mask_present_4_y": 435.6000061035156,
+    "mask_present_5_scale": 1,
+    "mask_present_5_x": 435.6000061035156,
+    "mask_present_5_y": 481.3999938964844,
+    "mask_present_6_scale": 0.6299999952316284,
+    "mask_present_6_x": 80.5999984741211,
+    "mask_present_6_y": 5.599999904632568,
+    "mask_present_help_scale": 0.7200000286102295,
+    "mask_present_help_spacing": 0,
+    "mask_present_help_x": -5.699999809265137,
+    "mask_present_help_y": 210.60000610351562,
+    "mask_present_native": true,
+    "cutscene_camera_fov": 49,
+    "gear_6_x": 78.69999694824219,
+    "gear_6_y": -20.600000381469727,
+    "gear_6_scale": 0.8799999952316284
   },
   "legacy_fallbacks": {
     "song_banner_scale": 1,
@@ -1203,7 +1257,10 @@
     "song_panel_color_b": 1,
     "song_panel_darkness": 0,
     "song_panel_color_opacity": 0,
-    "file_select_sky_time_of_day": 0.65
+    "file_select_sky_time_of_day": 0.65,
+    "gear_6_x": 0,
+    "gear_6_y": 0,
+    "gear_6_scale": 1
   },
   "preserve_existing": [
     "carrots_scale",
@@ -1371,7 +1428,7 @@
   ],
   "profile_hashes": {
     "notebook.json": "2eec6780836b0a6ee2d8b413b98d64e6421269224973745a8ec70cc92eca0d40",
-    "presentation.json": "89e8b9db6632bf3e0c156473ca2a443d875a89142ae362e6e1bc03b14503c943"
+    "presentation.json": "84d538ed010eae110d475e46449ba6ba78cae7dd8f2ff18f205baa513fee7809"
   },
   "retired_profiles": {
     "config/mm3d-local/title-screen/version.json": "b88f3593ac34151989590bd439405bced9d76f3ab73b5638f4362d0d26b5f65f",
@@ -1388,5 +1445,57 @@
     "config/mm3d-local/hud/loading.json": "ad27d1818e66dbef3d738e0988d8cfc1e21fc0d1f458743886af3f7e5f5c21b0",
     "config/mm3d-local/hud/hearts.json": "c204f9ed35812bc0d3abfa1d4b432ad57bd6dc82cfd3398aaf6ce829aa9de00d",
     "config/mm3d-local/hud/hide_hud_signal.json": "4f87999e6e3a0ee4fa663e7532e5f94c4bae9a1017fc0a5e79d9946a649f9415"
-  }
+  },
+  "previous_fullscreen_draws": [
+    {
+      "blend": 65553,
+      "depth": 3905,
+      "height": 400,
+      "shader": "89b1ab98da3d9241",
+      "swizzle": "6f0b398b1fc186a9",
+      "textures": 3,
+      "vertices": 4,
+      "width": 480
+    },
+    {
+      "blend": 65654,
+      "depth": 3856,
+      "height": 400,
+      "shader": "89b1ab98da3d9241",
+      "swizzle": "6f0b398b1fc186a9",
+      "textures": 1,
+      "vertices": 4,
+      "width": 480
+    },
+    {
+      "blend": 65654,
+      "depth": 3905,
+      "height": 400,
+      "shader": "89b1ab98da3d9241",
+      "swizzle": "6f0b398b1fc186a9",
+      "textures": 3,
+      "vertices": 18,
+      "width": 480
+    },
+    {
+      "blend": 65537,
+      "depth": 3856,
+      "height": 400,
+      "shader": "89b1ab98da3d9241",
+      "swizzle": "6f0b398b1fc186a9",
+      "textures": 1,
+      "vertices": 4,
+      "width": 480
+    },
+    {
+      "blend": 65537,
+      "depth": 3856,
+      "height": 400,
+      "shader": "89b1ab98da3d9241",
+      "swizzle": "6f0b398b1fc186a9",
+      "textures": 0,
+      "vertices": 4,
+      "width": 480
+    }
+  ]
 }

@@ -90,6 +90,19 @@ if (MSVC)
     )
 endif()
 
+# Keep local checkout paths out of diagnostics embedded in distributable binaries.
+if (MSVC)
+    include(CheckCXXCompilerFlag)
+    check_cxx_compiler_flag("/pathmap:${CMAKE_SOURCE_DIR}=." HAS_PATHMAP)
+    if (HAS_PATHMAP)
+        add_compile_options("/pathmap:${CMAKE_SOURCE_DIR}=."
+                            "/pathmap:${CMAKE_BINARY_DIR}=/build")
+    endif()
+else()
+    add_compile_options("-ffile-prefix-map=${CMAKE_SOURCE_DIR}=."
+                        "-ffile-prefix-map=${CMAKE_BINARY_DIR}=/build")
+endif()
+
 # LTO takes too much memory and time using MSVC.
 if (NOT MSVC AND IS_RELEASE_BUILD)
     set(DEFAULT_ENABLE_LTO ON)

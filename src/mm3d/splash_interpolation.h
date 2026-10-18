@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 #include "mm3d/ripple_interpolation.h"
+#include "mm3d/water_particle_interpolation.h"
 namespace MM3D::SplashInterpolation {
 struct Sprite {
     std::array<RippleInterpolation::Point,5> points;
@@ -24,9 +25,27 @@ inline std::optional<int> Cell(const Sprite& s) {
     }
     return col+(v==.5f?8:0);
 }
+struct CpuSprite {Sprite sprite;std::array<std::uint32_t,4> indices;};
+inline std::optional<CpuSprite> Decode(std::span<const WaterParticleInterpolation::Vertex> inputs,
+                                     std::span<const std::uint32_t> order) {
+    if(order.size()!=6)return {};
+    const auto quads=WaterParticleInterpolation::DecodeQuads(inputs,order);
+    if(!quads || quads->size()!=1)return {};
+    CpuSprite out{};
+    constexpr unsigned corners[]{0,2,1,3};
+    for(unsigned i=0;i<4;++i) {
+        const auto& v=(*quads)[0].vertices[corners[i]];
+        out.indices[i]=(*quads)[0].indices[corners[i]];
+        for(unsigned c=0;c<3;++c)out.sprite.points[i][c]=v[0][c];
+        out.sprite.colors[i]=v[1];
+        out.sprite.uv[i]={v[2][0],v[2][1]};
+    }
+    return Cell(out.sprite)?std::optional{out}:std::nullopt;
+}
 class History {
     Sprite previous{};std::uint64_t frame{};std::uint32_t texture{},generation{};bool seen{};
 public:
+    void Reset(){seen=false;}
     std::optional<Result> Apply(std::uint64_t next,std::uint32_t tex,std::uint32_t gen,const Sprite& s) {
         const auto cell=Cell(s);if(!cell)return {};
         const auto old=Cell(previous);

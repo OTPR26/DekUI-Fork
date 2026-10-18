@@ -175,10 +175,10 @@ struct Hook {
         for(unsigned i=0;i<*count;++i){auto child=m.Read(*children+4*i);if(!child)return false;if(Named(m,*child,"popup_window00"))box=*child;}
         if(!box)return false;
         for(auto i=start;i<writes.size();++i)m.Write(writes[i].address,writes[i].after);
-        auto x=m.Read(box+0xec),y=m.Read(box+0xfc);
+        auto box_x=m.Read(box+0xec),box_y=m.Read(box+0xfc);
         std::vector<NativeInventory::Hook::Write> size;std::vector<U32> visited;
-        const bool ok=x&&y&&helper.Transform(m,box,size,visited,{width,0,0,height,
-            std::bit_cast<float>(*x)*(1-width),std::bit_cast<float>(*y)*(1-height)});
+        const bool ok=box_x&&box_y&&helper.Transform(m,box,size,visited,{width,0,0,height,
+            std::bit_cast<float>(*box_x)*(1-width),std::bit_cast<float>(*box_y)*(1-height)});
         for(auto i=writes.size();i>start;--i)m.Write(writes[i-1].address,writes[i-1].before);
         if(!ok)return false;
         writes.insert(writes.end(),size.begin(),size.end());return true;
@@ -321,9 +321,9 @@ struct Hook {
             auto node=m.Read(*children+i*4);if(!node)return false;
             if(!Named(m,*node,"direct_up")&&!Named(m,*node,"direct_down"))continue;
             const auto& p=frame[events?5:9];
-            const float scale=frame[events?0:3].scale;
+            const float frame_scale=frame[events?0:3].scale;
             // Offsets in final top-screen coordinates, independent of list scale.
-            if(!helper.Transform(m,*node,writes,seen,{1,0,0,1,p.x/scale,p.y/scale}))return false;
+            if(!helper.Transform(m,*node,writes,seen,{1,0,0,1,p.x/frame_scale,p.y/frame_scale}))return false;
         }
         return true;
     }
@@ -354,13 +354,13 @@ struct Hook {
                 const bool lower=Named(m,pane,"bb_pane02");
                 if(!lower&&!Named(m,pane,"bb_pane00"))continue;
                 auto geometry=m.Read(pane+0x28);if(!geometry||!Pointer(*geometry,0x28))return false;
-                auto x=f(*geometry+0x14),y=f(*geometry+0x18),w=f(*geometry+0x20),h=f(*geometry+0x24);
+                auto geometry_x=f(*geometry+0x14),geometry_y=f(*geometry+0x18),w=f(*geometry+0x20),h=f(*geometry+0x24);
                 auto sx=f(pane+0xe0),sy=f(pane+0xf4),tx=f(pane+0xec),ty=f(pane+0xfc);
-                if(!x||!y||!w||!h||!sx||!sy||!tx||!ty||*w<=0||*h<=0||*sx<=0||*sy<=0)return false;
-                left=std::min(left,*tx+*sx**x);right=std::max(right,*tx+*sx*(*x+*w));
-                top=std::min(top,*ty+*sy**y);bottom=std::max(bottom,*ty+*sy*(*y+*h));
-                native_left=std::min(native_left,*x);native_right=std::max(native_right,*x+*w);
-                const float extended_y=*y+(lower?120.f:0.f);
+                if(!geometry_x||!geometry_y||!w||!h||!sx||!sy||!tx||!ty||*w<=0||*h<=0||*sx<=0||*sy<=0)return false;
+                left=std::min(left,*tx+*sx**geometry_x);right=std::max(right,*tx+*sx*(*geometry_x+*w));
+                top=std::min(top,*ty+*sy**geometry_y);bottom=std::max(bottom,*ty+*sy*(*geometry_y+*h));
+                native_left=std::min(native_left,*geometry_x);native_right=std::max(native_right,*geometry_x+*w);
+                const float extended_y=*geometry_y+(lower?120.f:0.f);
                 native_top=std::min(native_top,extended_y);native_bottom=std::max(native_bottom,extended_y+*h);
                 ++found;
             }

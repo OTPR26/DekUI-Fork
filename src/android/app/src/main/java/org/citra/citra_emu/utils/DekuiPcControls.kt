@@ -9,7 +9,7 @@ import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 
-/** Install the actual Gaming PC input patch and its controller profile together, once. */
+/** Install the alternate input patch and its controller profile together, once. */
 object DekuiPcControls {
     private fun hash(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes)
         .joinToString("") { "%02x".format(it.toInt() and 255) }

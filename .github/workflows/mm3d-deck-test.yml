@@ -67,6 +67,8 @@ jobs:
         with:
           path: .ccache
           key: deck-ccache-v1-${{ github.sha }}-${{ github.run_id }}
+      - name: Check package privacy
+        run: python tools/mm3d/check_release_privacy.py artifacts/DekUI-Fork-${{ steps.release.outputs.version }}-Linux-x86_64.tar.gz
       - uses: actions/upload-artifact@v7
         with:
           name: DekUI-Fork-${{ steps.release.outputs.version }}-Linux-x86_64-${{ github.sha }}
@@ -75,6 +77,8 @@ jobs:
       - name: Archive matching source
         timeout-minutes: 15
         run: python3 tools/mm3d/package_source.py artifacts/DekUI-Fork-${{ steps.release.outputs.version }}-Source.tar.gz
+      - name: Check package privacy
+        run: python tools/mm3d/check_release_privacy.py artifacts/DekUI-Fork-${{ steps.release.outputs.version }}-Source.tar.gz
       - uses: actions/upload-artifact@v7
         with:
           name: DekUI-Fork-${{ steps.release.outputs.version }}-Source-${{ github.sha }}
@@ -129,6 +133,8 @@ jobs:
             build-linux-arm64/CMakeFiles/CMakeConfigureLog.yaml
             build-linux-arm64/Testing/Temporary/LastTest.log
           if-no-files-found: ignore
+      - name: Check package privacy
+        run: python tools/mm3d/check_release_privacy.py artifacts/DekUI-Fork-*-Linux-arm64*
       - uses: actions/upload-artifact@v7
         with:
           name: DekUI-Fork-Linux-arm64-${{ github.sha }}

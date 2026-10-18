@@ -8,7 +8,7 @@ Project Restoration and the required HUD layouts are included. Optional custom t
 
 ## Windows
 
-1. Extract `Dekui-1.0.0-beta.2-Windows-x64.zip` into a writable location and open the `dekui` folder.
+1. Extract `DekUI-Fork-Windows-x64.zip` into a writable location and open the `dekui` folder.
 2. Keep `Dekui.exe`, its DLLs, and the `plugins`, `tools`, `resources`, and `runtime` folders together.
 3. Open `Dekui.exe` and select your game from the startup screen.
 
@@ -16,7 +16,7 @@ Windows 10/11 x64 and a Vulkan-capable graphics driver are required. Python is b
 
 ## Linux
 
-1. Extract `Dekui-1.0.0-beta.2-Linux-x86_64.tar.gz` and open the `dekui` folder. If downloading a build artifact from Actions, extract its outer ZIP first.
+1. Extract `DekUI-Fork-Linux-x86_64.tar.gz` and open the `dekui` folder. If downloading a build artifact from Actions, extract its outer ZIP first.
 2. Put the extracted folder somewhere writable under your home directory. Keep `Dekui.AppImage`, `tools`, and `resources` together.
 3. Make the AppImage executable if needed; select your game from its startup screen.
 4. Launch `Dekui.AppImage`.
@@ -31,18 +31,18 @@ APPIMAGE_EXTRACT_AND_RUN=1 ./Dekui.AppImage
 
 ## macOS (Apple Silicon)
 
-1. Extract `Dekui-1.0.0-beta.2-macOS-arm64.zip`. If downloading a build artifact from Actions, extract its outer ZIP first.
-2. Move the entire `dekui` folder with Finder to a writable location, such as Documents. Keep `Dekui.app`, `tools`, and `resources` together; do not move only the app.
+1. Extract `DekUI-Fork-macOS-arm64.zip`. If downloading a build artifact from Actions, extract its outer ZIP first.
+2. Move `DekUI Fork.app` to Applications. The app bundles its setup tools and resources.
 3. Open the app and select your game from the startup screen.
 4. If macOS blocks the app because the developer cannot be verified, open **System Settings → Privacy & Security → Open Anyway**, then confirm **Open**.
 
 An Apple Silicon Mac (M1 or newer) running macOS 13.4 or newer is required. This package does not support Intel Macs. Python and app dependencies are bundled; Homebrew and developer tools are not required. The app is ad-hoc signed and is not Apple-notarized.
 
-If the app cannot find its adjacent files after downloading, quit it, move the entire extracted folder with Finder, and reopen it.
+macOS keeps generated files in `~/Library/Application Support/DekUI Fork`; external ROMs and textures remain where you selected them.
 
 ## First launch and later launches
 
-The startup screen offers Start game / Select ROM, Settings, About and Quit. First launch validates the selected game and prepares required files in `user/`, with a progress window. Unsupported files are rejected before changes are made.
+The startup screen offers Start game / Select ROM, Settings, About and Quit. First launch validates the selected game and prepares required files in the platform’s data directory, with a progress window. Unsupported files are rejected before changes are made.
 
 Setup references your selected game in place. Later launches check for resource upgrades while preserving saves and custom settings. Keep the complete application package together, including its tools and resources.
 

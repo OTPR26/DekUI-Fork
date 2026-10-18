@@ -620,8 +620,8 @@ class InputBindingSetting(val abstractSetting: AbstractSetting, titleId: Int) :
          * @param useAxisDpad true if the d-pad should be mapped as axis (HAT_X/HAT_Y),
          *   false if it should be mapped as individual button keycodes (DPAD_UP/DOWN/LEFT/RIGHT)
          */
-        /** Odin profile matching the PC's physical button positions. Installed once on first launch. */
-        fun applyDekuiOdinBindings() {
+        /** Default physical button positions. Installed once on first launch. */
+        fun applyDekuiDefaultBindings() {
             val buttons = xboxFaceButtonMappings + dpadButtonMappings + listOf(
                 DefaultButtonMapping(Settings.KEY_BUTTON_L, KeyEvent.KEYCODE_BUTTON_L2, NativeLibrary.ButtonType.TRIGGER_L),
                 DefaultButtonMapping(Settings.KEY_BUTTON_R, KeyEvent.KEYCODE_BUTTON_R2, NativeLibrary.ButtonType.TRIGGER_R),
@@ -636,7 +636,7 @@ class InputBindingSetting(val abstractSetting: AbstractSetting, titleId: Int) :
             ))
         }
 
-        /** Snapshot of the Gaming PC's active SDL profile, translated to Android key/axis IDs. */
+        /** Shared controller profile translated to Android key and axis IDs. */
         fun applyDekuiPcSnapshotBindings() {
             val prefs = PreferenceManager.getDefaultSharedPreferences(CitraApplication.appContext)
             val guestCodes = (700..718).toSet() + setOf(719,720,771,772,773,774,780)

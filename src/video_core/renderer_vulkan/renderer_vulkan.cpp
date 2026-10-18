@@ -4,6 +4,7 @@
 
 #ifdef ENABLE_MM3D_PRESENTATION
 #include "mm3d/interpolation_performance.h"
+#include "mm3d/effect_capture.h"
 #endif
 #include "common/assert.h"
 #include "common/file_util.h"
@@ -284,8 +285,12 @@ void RendererVulkan::RenderToWindow(PresentWindow& window, const Layout::Framebu
         using namespace MM3D::CameraMidpoint;
         auto status=rasterizer.MidpointStatus(MM3D::guest_frames.load());
         if(native_preview.load())status=PresentationStatus::Comparison;
+        const auto guest_us=MM3D::guest_frame_time_us.load();
         const auto plan=midpoint_clock.Next(MM3D::guest_frames.load(),now,
-            status==PresentationStatus::Active);
+            status==PresentationStatus::Active,guest_us>=0 ?
+                std::optional<std::int64_t>{guest_us/1000} : std::nullopt);
+        MM3D::EffectCapture::ObservePresentation({MM3D::guest_frames.load(),
+            static_cast<unsigned>(status),static_cast<unsigned>(plan),true});
         presentation_status=plan==Presentation::Skip || plan==Presentation::Pair ?
             PresentationStatus::Active : status==PresentationStatus::Active ?
             PresentationStatus::Cadence : status;
@@ -318,6 +323,8 @@ void RendererVulkan::RenderToWindow(PresentWindow& window, const Layout::Framebu
             passes=2;++MM3D::CameraMidpoint::presented_pairs;
         }
     } else {
+        MM3D::EffectCapture::ObservePresentation({MM3D::guest_frames.load(),
+            static_cast<unsigned>(MM3D::CameraMidpoint::PresentationStatus::Settings),0,false});
         midpoint_clock.Reset();
         midpoint_status_time=0;midpoint_status_pairs=0;midpoint_status_counts={};
         MM3D::CameraMidpoint::presentation_status=MM3D::CameraMidpoint::present_60.load() ?
@@ -329,6 +336,13 @@ void RendererVulkan::RenderToWindow(PresentWindow& window, const Layout::Framebu
     const auto capture_at=MM3D::CameraMidpoint::capture_pair_at_us.load();
     const bool capture_pair=passes==2 && capture_at && MM3D::InputLatency::Now()>=capture_at;
     if(capture_pair)MM3D::CameraMidpoint::capture_pair_at_us=0;
+    const auto menu_capture_at=MM3D::CameraMidpoint::capture_menu_pair_at_us.load();
+    const auto capture_now=menu_capture_at?MM3D::InputLatency::Now():0;
+    const bool menu_capture_pair=passes==2 && menu_capture_at && capture_now>=menu_capture_at &&
+        capture_now<menu_capture_at+20000000 &&
+        MM3D::CameraMidpoint::capture_menu_motion_frame.load()+1==MM3D::guest_frames.load();
+    if(menu_capture_pair || (menu_capture_at && capture_now>=menu_capture_at+20000000))
+        MM3D::CameraMidpoint::capture_menu_pair_at_us=0;
 #endif
     if (passes==2 || !Settings::values.use_skip_duplicate_frames.GetValue() ||
         Core::PerfStats::game_frames_updated) {
@@ -375,6 +389,8 @@ void RendererVulkan::RenderToWindow(PresentWindow& window, const Layout::Framebu
 #ifdef ENABLE_MM3D_PRESENTATION
         if(capture_pair)CaptureMidpointFrame(frame,FileUtil::GetUserPath(FileUtil::UserPath::LogDir)+
             "frame-pair-"+std::to_string(capture_at)+(pass==0?"-midpoint.ppm":"-native.ppm"));
+        if(menu_capture_pair)CaptureMidpointFrame(frame,FileUtil::GetUserPath(FileUtil::UserPath::LogDir)+
+            "menu-pair-"+std::to_string(menu_capture_at)+(pass==0?"-midpoint.ppm":"-native.ppm"));
 #endif
 #ifdef ENABLE_MM3D_PRESENTATION
         scheduler.SetPerformancePhase(static_cast<unsigned>(midpoint_presenting ?

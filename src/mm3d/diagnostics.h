@@ -15,12 +15,21 @@ void KeyInput(int key, bool down);
 inline std::atomic<bool> text_input_active{false};
 // Observation only: GSP submissions are not a verified simulation tick counter.
 inline std::atomic<std::uint64_t> guest_frames{0};
+// Emulated time at the completed top-screen buffer swap, not host presentation
+// time. GPU waits must not make a 30 Hz guest look like it changed update rate.
+inline std::atomic<std::int64_t> guest_frame_time_us{-1};
 inline std::atomic<unsigned> inspection_step_count{2};
 inline std::atomic<std::uint64_t> host_present_attempts{0};
 inline std::atomic<bool> overlay_visible{false};
 inline std::atomic<bool> presentation_available{false};
-inline void OnGuestFrame() { guest_frames.fetch_add(1, std::memory_order_relaxed); }
-inline void ResetGuestFrames() { guest_frames.store(0, std::memory_order_relaxed); }
+inline void OnGuestFrame(std::int64_t time_us=-1) {
+    guest_frame_time_us.store(time_us, std::memory_order_relaxed);
+    guest_frames.fetch_add(1, std::memory_order_relaxed);
+}
+inline void ResetGuestFrames() {
+    guest_frames.store(0, std::memory_order_relaxed);
+    guest_frame_time_us.store(-1, std::memory_order_relaxed);
+}
 inline bool ToggleOverlay() {
     if (!presentation_available.load()) return false;
     overlay_visible.store(!overlay_visible.load());

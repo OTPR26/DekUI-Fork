@@ -4,14 +4,39 @@
 
 #pragma once
 #include "mm3d/glare_interpolation.h"
+#include "mm3d/water_model_interpolation.h"
+#include "mm3d/moving_effect_interpolation.h"
 #ifdef ENABLE_MM3D_PRESENTATION
 #include <map>
 #include "mm3d/profiles.h"
 #include "mm3d/atlas_render.h"
 #include "mm3d/camera_midpoint.h"
+#include "mm3d/world_map_interpolation.h"
 #include "mm3d/link_interpolation.h"
 #include "mm3d/ripple_interpolation.h"
 #include "mm3d/forest_particle_interpolation.h"
+#include "mm3d/snow_interpolation.h"
+#include "mm3d/fire_impact_interpolation.h"
+#include "mm3d/torch_interpolation.h"
+#include "mm3d/water_particle_interpolation.h"
+#include "mm3d/burst_particle_interpolation.h"
+#include "mm3d/spark_interpolation.h"
+#include "mm3d/firework_interpolation.h"
+#include "mm3d/chest_particle_interpolation.h"
+#include "mm3d/sword_trail_interpolation.h"
+#include "mm3d/shockwave_interpolation.h"
+#include "mm3d/bubble_interpolation.h"
+#include "mm3d/leaf_particle_interpolation.h"
+#include "mm3d/moth_interpolation.h"
+#include "mm3d/message_interpolation.h"
+#include "mm3d/item_slide_interpolation.h"
+#include "mm3d/file_select_interpolation.h"
+#include "mm3d/inventory_interpolation.h"
+#include "mm3d/banner_interpolation.h"
+#include "mm3d/magic_meter_interpolation.h"
+#include "mm3d/lens_interpolation.h"
+#include "mm3d/letterbox_interpolation.h"
+#include "mm3d/heart_interpolation.h"
 #include "mm3d/splash_interpolation.h"
 #include "mm3d/song_effect_interpolation.h"
 #include "mm3d/pause_capture.h"
@@ -107,6 +132,8 @@ private:
     std::vector<MM3D::Profiles::Rule> panel_draw_identities;
     MM3D::Atlas::Uniforms atlas_uniforms{};
     MM3D::CameraMidpoint::History midpoint_history;
+    MM3D::WorldMapInterpolation::History world_map_history;
+    MM3D::CameraMidpoint::ColorClears midpoint_color_clears;
     // CPU replay uploads into the stream buffer before deferred commands are
     // recorded; those commands never retain pointers into this scratch storage.
     std::vector<HardwareVertex> midpoint_cpu_vertices;
@@ -130,10 +157,42 @@ private:
     std::array<u64,2> midpoint_transfer_logged{};
     u64 glare_trace_session{}, glare_trace_frame{};
     unsigned glare_trace_samples{};
+    MM3D::WaterModelInterpolation::History water_model_history;
+    MM3D::MovingEffectInterpolation::History moving_effect_history;
+    std::optional<MM3D::MovingEffectInterpolation::Colors> moving_effect_colors;
+    std::optional<std::pair<unsigned,float>> water_model_alpha_override;
     MM3D::GlareInterpolation glare_history;
+    MM3D::GlareInterpolation::ScreenHistory glare_cpu_history;
+    std::optional<float> glare_alpha_override;
     MM3D::RippleInterpolation::History ripple_history;
     MM3D::ForestParticleInterpolation::History forest_particle_history;
-    MM3D::SplashInterpolation::History splash_history;
+    MM3D::SnowInterpolation::History snow_history;
+    MM3D::FireImpactInterpolation::History fire_impact_history;
+    MM3D::LeafParticleInterpolation::History leaf_particle_history;
+    MM3D::MothInterpolation::History moth_history;
+    MM3D::MessageInterpolation::History message_history;
+    MM3D::ItemSlideInterpolation::History item_slide_history;
+    std::optional<MM3D::ItemSlideInterpolation::Pose> item_slide_override;
+    MM3D::InventoryInterpolation::History inventory_history;
+    MM3D::BannerInterpolation::History banner_history;
+    MM3D::MagicMeterInterpolation::History magic_meter_history;
+    MM3D::HeartInterpolation::History heart_history;
+    MM3D::LensInterpolation::History lens_history;
+    MM3D::LetterboxInterpolation::History letterbox_history;
+    std::optional<MM3D::InventoryInterpolation::Pose> inventory_override;
+    MM3D::FileSelectInterpolation::History file_select_history;
+    std::optional<MM3D::FileSelectInterpolation::Pose> file_select_override;
+    std::optional<MM3D::MessageInterpolation::Pose> message_override;
+    MM3D::TorchInterpolation::History torch_history;
+    MM3D::WaterParticleInterpolation::History water_particle_history;
+    MM3D::BurstParticleInterpolation::History burst_particle_history;
+    MM3D::SparkInterpolation::History spark_history;
+    MM3D::FireworkInterpolation::History firework_history;
+    MM3D::ChestParticleInterpolation::History chest_particle_history;
+    MM3D::SwordTrailInterpolation::History sword_trail_history;
+    MM3D::ShockwaveInterpolation::History shockwave_history;
+    MM3D::BubbleInterpolation::History bubble_history;
+    MM3D::SplashInterpolation::History splash_history, splash_cpu_history;
     std::optional<std::array<u32,3>> splash_offsets;
     bool splash_blend{};
     std::optional<std::array<u32,2>> ripple_offsets;

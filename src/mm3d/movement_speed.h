@@ -16,7 +16,7 @@ constexpr std::array<U32,4> PCs{0x1fbee4,0x1fbf00,0x1fbf18,0x1e5398};
 constexpr std::array<U32,4> Words{0xed901a19,0xed901a1a,0xed901a1b,0xed800a13};
 // Actor integration, ladder/vine playback calculation, and the player's call
 // into integration. Verified against the bundled v1.1 Restoration code and
-// the user's PC controls variant. Never patch ROM data or persistent velocity.
+// the supported alternate controls variant. Never patch ROM data or persistent velocity.
 struct Signature {U32 start,size,hash;};
 constexpr std::array<Signature,3> Signatures{{
     {0x1fbed8,0x58,0xed93387c},{0x1e5230,0x180,0x6cffbd6b},
