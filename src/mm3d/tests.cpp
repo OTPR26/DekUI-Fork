@@ -325,11 +325,17 @@ int main(int argc, char** argv) {
         settings.show_startup_settings_hint=false;
         settings.fullscreen_draws={MM3D::WidescreenProbe::Draw{
             0x89b1ab98da3d9241ULL,0xfedcba9876543210ULL,4,480,400,0,65536,4294967295u}};
+        settings.dark_link_model=true;
+        settings.adult_link_model=false;
+        settings.adult_link_tunic_color=2;
+        settings.adult_link_master_sword=true;
         Require(settings.Save(path), "initial atomic save");
         settings.scale = 1.75;
         Require(settings.Save(path), "atomic replacement");
         MM3D::Settings loaded;
         Require(loaded.Load(path) && loaded.scale == 1.75, "settings roundtrip");
+        Require(loaded.dark_link_model&&!loaded.adult_link_model,"Dark Link selection persists");
+        Require(loaded.adult_link_tunic_color==2&&loaded.adult_link_master_sword,"Adult Link options survive switching models");
         Require(loaded.double_prices&&loaded.price_multiplier==3,"3x purchase prices persist");
         Require(loaded.classic_double_time,"classic Double Time persists");
         Require(loaded.song_list.panel_color==settings.song_list.panel_color&&loaded.song_list.panel_color_opacity==.75f,"song panel color persists");
