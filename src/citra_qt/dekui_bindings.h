@@ -22,8 +22,8 @@ inline bool Save(const QString& path, int index, const QString& binding, bool an
                              : QString::fromUtf8(Settings::NativeButton::mapping[index]);
     ini.setValue(prefix + name, binding);
     ini.setValue(prefix + name + QStringLiteral("/default"), false);
-    // Even a deliberately chosen mapping identical to the automatic template
-    // belongs to the user. Never infer permission to remap it from its values.
+    // Explicit mappings remain custom even when their values match the
+    // automatic template.
     const bool automatic = ini.value(prefix + QStringLiteral("name")).toString() ==
                            QStringLiteral("Controller (automatic)");
     if (automatic) {

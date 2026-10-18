@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <cstring>
 #include <limits>
+#include <span>
 namespace MM3D::LinkInterpolation {
 using namespace LinkPoseMath;
 using Palette=std::array<Matrix,10>;
@@ -118,6 +119,294 @@ inline std::optional<Matrix> ResolvePalette(const Matrix& matrix,
     }
     return result;
 }
+// seaboss_base_01: the 528-vertex water surface uses direct bone 1.
+// It coincides with the stationary arena root while resting, so a generic
+// matrix-only lookup cannot establish ownership before the landing wobble.
+inline bool GyorgWaterBone(const Palette& palette,const LinkPoseCapture::LivePose& pose,unsigned vertices) {
+    return vertices==528 && pose.signature==0x265c0b54e456fdffull &&
+        pose.pose.bones.size()==2 && pose.bind.size()==2 &&
+        pose.words==std::vector<std::uint32_t>{0xffff0000,1} &&
+        PaletteNear(palette[0],Expand(pose.pose.bones[1]));
+}
+// Great Bay m2_KON_shuter1_ and Snowhead i2_H_shutter1 use direct bone 0.
+// Their tiny bind translation makes the
+// generic direct/skin lookup ambiguous; preserve the native direct transform.
+inline bool DungeonShutterBone(const Palette& palette,const LinkPoseCapture::LivePose& pose,unsigned vertices) {
+    auto bind=Identity();bind[2][3]=-.0006294240010902286;
+    return vertices==36 && (pose.signature==0x57306c6ee1db06efull || pose.signature==0x0425b0994521dcd5ull) &&
+        pose.pose.bones.size()==1 && pose.bind.size()==1 &&
+        pose.words==std::vector<std::uint32_t>{0xffff0000} &&
+        Near(Expand(pose.bind[0]),bind,1e-7) &&
+        PaletteNear(palette[0],Expand(pose.pose.bones[0]));
+}
+// Snowhead's broken snow-boulder halves can share their transform with a
+// shadow actor. The 210-vertex snow half belongs to this verified root model.
+inline bool SnowBoulderBone(const Palette& palette,const LinkPoseCapture::LivePose& pose,unsigned vertices) {
+    return vertices==210 && pose.signature==0xd67c27ec27487acbull &&
+        pose.pose.bones.size()==1 && pose.bind.size()==1 &&
+        pose.words==std::vector<std::uint32_t>{0xffff0000} &&
+        Near(Expand(pose.bind[0]),Identity(),1e-5) &&
+        PaletteNear(palette[0],Expand(pose.pose.bones[0]));
+}
+// The captured wing_warp model's long bone chains accumulate small differences
+// between reconstructed binds and guest skin matrices. Identify the complete
+// left/right wing palette, not an arbitrary bone with a wider global tolerance.
+inline std::optional<std::array<unsigned,10>> SoaringWingBones(
+        const Palette& palette,const LinkPoseCapture::LivePose& pose,unsigned vertices) {
+    if(vertices!=864 || pose.signature!=0xf4c419547d6f24a2ull ||
+       pose.pose.bones.size()!=42 || pose.bind.size()!=42 || pose.words.size()!=42)return {};
+    constexpr std::array<std::array<unsigned,10>,2> wings{{
+        {27,28,29,30,31,26,24,25,32,33},
+        {9,10,11,12,13,6,8,7,14,15}}};
+    std::optional<std::array<unsigned,10>> found;
+    for(const auto& wing:wings) {
+        bool matches=true;
+        for(unsigned slot=0;slot<wing.size() && matches;++slot) {
+            const auto skin=Multiply(Expand(pose.pose.bones[wing[slot]]),Expand(pose.bind[wing[slot]]));
+            if(!Inverse(skin) || !Inverse(palette[slot])) {matches=false;break;}
+            for(unsigned r=0;r<3;++r)for(unsigned c=0;c<4;++c)
+                matches &= std::isfinite(palette[slot][r][c]) && std::isfinite(skin[r][c]) &&
+                    std::abs(palette[slot][r][c]-skin[r][c])<=(c==3?.1:.0001);
+        }
+        if(matches) {if(found)return {};found=wing;}
+    }
+    return found;
+}
+// Dodongo's captured body/arm palettes differ from reconstructed skin matrices
+// by up to 1.54e-5 in their basis. Validate the whole known palette, preserving
+// that small native bind correction rather than widening generic matching.
+inline std::optional<std::vector<unsigned>> DodongoBones(
+        const Palette& palette,const LinkPoseCapture::LivePose& pose,unsigned vertices) {
+    if(pose.signature!=0x529d17c9d3dc4acbull || pose.pose.bones.size()!=18 ||
+       pose.bind.size()!=18 || pose.words.size()!=18 || (vertices!=756 && vertices!=408))return {};
+    const std::vector<unsigned> bones=vertices==756?std::vector<unsigned>{4,2,11,5,12,8,15,9}:
+        std::vector<unsigned>{13,6,10};
+    for(unsigned slot=0;slot<bones.size();++slot) {
+        const auto bone=bones[slot];
+        const auto skin=Multiply(Expand(pose.pose.bones[bone]),Expand(pose.bind[bone]));
+        if(!Inverse(skin) || !Inverse(palette[slot]))return {};
+        for(unsigned r=0;r<3;++r)for(unsigned c=0;c<4;++c)
+            if(!std::isfinite(palette[slot][r][c]) || !std::isfinite(skin[r][c]) ||
+               std::abs(palette[slot][r][c]-skin[r][c])>(c==3?.03:.00002))return {};
+    }
+    return bones;
+}
+// Goht's active skin palettes, verified against the local model and three
+// captures. Reconstructed binds differ by up to .05735 units / 1.009e-5.
+// Match the complete mesh palette and preserve its native bind correction.
+inline std::optional<std::span<const unsigned>> GohtSkinBones(
+        const Palette& palette,const LinkPoseCapture::LivePose& pose,unsigned vertices) {
+    if(pose.signature!=0x496431680f850b7full || pose.pose.bones.size()!=29 ||
+       pose.bind.size()!=29 || pose.words.size()!=29)return {};
+    struct Mesh {unsigned vertices,count;std::array<unsigned,10> bones;};
+    static constexpr Mesh meshes[]{
+        {129,2,{1,3}}, {756,3,{1,3,12}}, {1878,7,{1,5,9,23,3,12,27}},
+        {150,2,{3,12}}, {2100,7,{7,6,11,10,5,3,9}},
+        {2496,10,{19,1,25,22,21,26,28,27,23,20}}, {219,3,{1,3,12}},
+        {348,3,{12,14,3}}, {606,2,{12,14}}, {96,2,{12,14}}, {750,3,{1,15,3}}};
+    for(const auto& mesh:meshes) {
+        if(mesh.vertices!=vertices)continue;
+        for(unsigned slot=0;slot<mesh.count;++slot) {
+            const auto bone=mesh.bones[slot];
+            const auto skin=Multiply(Expand(pose.pose.bones[bone]),Expand(pose.bind[bone]));
+            // Bone 15 is deliberately collapsed in these captures. Validate
+            // its zero basis, but do not revive that hidden geometry.
+            bool collapsed=bone==15;
+            for(unsigned r=0;r<3;++r)for(unsigned c=0;c<3;++c)
+                collapsed &= skin[r][c]==0 && palette[slot][r][c]==0;
+            if(!collapsed && (!Inverse(skin) || !Inverse(palette[slot])))return {};
+            for(unsigned r=0;r<3;++r)for(unsigned c=0;c<4;++c)
+                if(!std::isfinite(palette[slot][r][c]) || !std::isfinite(skin[r][c]) ||
+                   std::abs(palette[slot][r][c]-skin[r][c])>(c==3?.06:.000012))return {};
+        }
+        return std::span<const unsigned>(mesh.bones.data(),mesh.count);
+    }
+    return {};
+}
+// These two verified NPC meshes start with coincident skin bones, so the
+// generic slot-zero owner check cannot choose a bone. The asset's entire active
+// palette establishes identity without relaxing any matrix tolerance.
+inline std::optional<std::span<const unsigned>> NpcSkinBones(
+        const Palette& palette,const LinkPoseCapture::LivePose& pose,unsigned vertices) {
+    static constexpr std::array<unsigned,2> tingle{1,3};
+    static constexpr std::array<unsigned,5> aroma{15,16,24,10,11};
+    std::span<const unsigned> bones;
+    unsigned count=0;
+    if(vertices==30 && pose.signature==0x2215c979d3103929ull) {bones=tingle;count=22;}
+    else if(vertices==144 && pose.signature==0x7900d5513a1e4e5dull) {bones=aroma;count=26;}
+    else return {};
+    if(pose.pose.bones.size()!=count || pose.bind.size()!=count || pose.words.size()!=count)return {};
+    for(unsigned slot=0;slot<bones.size();++slot) {
+        const auto bone=bones[slot];
+        const auto skin=Multiply(Expand(pose.pose.bones[bone]),Expand(pose.bind[bone]));
+        if(!Inverse(skin) || !Inverse(palette[slot]) || !PaletteNear(palette[slot],skin))return {};
+    }
+    return bones;
+}
+inline bool TwinmoldSkeleton(const LinkPoseCapture::LivePose& pose) {
+    if(pose.signature!=0x323a7bd77f6edea5ull || pose.pose.bones.size()!=32 ||
+       pose.bind.size()!=32 || pose.words.size()!=32 || pose.words[0]!=0xffff0000 ||
+       pose.words[19]!=0x00011013)return false;
+    for(unsigned i=20;i<32;++i)
+        if(pose.words[i]!=(((i-1)<<16)|0x1000|i))return false;
+    return true;
+}
+// Giant Link keeps the human skeleton but gives his limbs independent scales.
+// Verify the captured proportions so ordinary human Link retains its path.
+inline bool GiantLinkSkeleton(const LinkPoseCapture::LivePose& pose) {
+    if(pose.signature!=0x8025d822f84e8240ull || pose.pose.bones.size()!=26 ||
+       pose.bind.size()!=26 || pose.words.size()!=26 ||
+       !std::equal(pose.words.begin(),pose.words.end(),LinkPoseCapture::BoneWords.begin()))return false;
+    const auto length=[&](unsigned bone,unsigned column) {
+        double value=0;
+        for(unsigned row=0;row<3;++row)value+=std::pow(pose.pose.bones[bone][row*4+column],2);
+        return std::sqrt(value);
+    };
+    const double root=length(0,0);
+    if(!std::isfinite(root) || root<1e-5)return false;
+    constexpr std::array<unsigned,4> bones{3,10,17,21};
+    constexpr std::array<std::array<double,3>,4> scales{{{1,1.25,1.25},{1,1.4,1.4},{1.7,1.5,1.9},{1.7,1.5,1.9}}};
+    for(unsigned i=0;i<bones.size();++i)for(unsigned c=0;c<3;++c) {
+        const double ratio=length(bones[i],c)/root;
+        if(!std::isfinite(ratio) || std::abs(ratio-scales[i][c])>.015)return false;
+    }
+    return true;
+}
+// Giant Link magnifies the native hand bind rounding beyond the ordinary
+// matcher. Validate both hands and their connected arm palettes as a whole.
+inline std::optional<std::span<const unsigned>> GiantLinkBones(
+        const Palette& palette,const LinkPoseCapture::LivePose& pose,unsigned vertices) {
+    if((vertices!=234 && vertices!=423 && vertices!=747) || !GiantLinkSkeleton(pose))return {};
+    struct Mesh {unsigned vertices,count;std::array<unsigned,6> bones;};
+    static constexpr std::array<Mesh,4> meshes{{
+        {234,2,{17,16}},{234,2,{21,20}},
+        {423,6,{9,14,15,10,16,17}},{747,6,{7,8,19,6,20,21}},
+    }};
+    std::optional<std::span<const unsigned>> found;
+    for(const auto& mesh:meshes) {
+        if(mesh.vertices!=vertices)continue;
+        bool matches=true;
+        for(unsigned slot=0;slot<mesh.count && matches;++slot) {
+            const auto bone=mesh.bones[slot];
+            const auto skin=Multiply(Expand(pose.pose.bones[bone]),Expand(pose.bind[bone]));
+            if(!Inverse(skin) || !Inverse(palette[slot])) {matches=false;break;}
+            for(unsigned r=0;r<3;++r)for(unsigned c=0;c<4;++c)
+                matches &= std::isfinite(palette[slot][r][c]) && std::isfinite(skin[r][c]) &&
+                    std::abs(palette[slot][r][c]-skin[r][c])<=(c==3?.065:.000025);
+        }
+        if(matches) {
+            if(found)return {};
+            found=std::span<const unsigned>(mesh.bones.data(),mesh.count);
+        }
+    }
+    return found;
+}
+// Both verified Twinmold models share this skeleton and body palette ordering.
+// Their skin matrices differ from reconstructed binds by up to .000294 in the
+// basis and .063 units in translation. Require a complete known mesh palette;
+// preserve its native correction instead of loosening generic bone matching.
+inline std::optional<std::span<const unsigned>> TwinmoldBones(
+        const Palette& palette,const LinkPoseCapture::LivePose& pose,unsigned vertices) {
+    if(vertices!=300 && vertices!=2529 && vertices!=504 && vertices!=510 &&
+       vertices!=675 && vertices!=360 && vertices!=105 && vertices!=912)return {};
+    if(!TwinmoldSkeleton(pose))return {};
+    struct Mesh {unsigned vertices,count;std::array<unsigned,7> bones;};
+    static constexpr std::array<Mesh,19> meshes{{
+        {300,3,{19,20,1}},{300,3,{20,21,19}},{300,3,{21,22,20}},
+        {300,3,{22,23,21}},{300,3,{23,24,22}},{300,3,{24,25,23}},
+        {300,3,{25,26,24}},{300,3,{26,27,25}},{300,3,{27,28,26}},
+        {300,3,{28,29,27}},{300,3,{29,30,28}},{300,3,{30,31,29}},
+        {2529,6,{16,1,4,15,6,19}},{504,7,{11,13,14,1,7,9,10}},
+        {510,2,{1,19}},{675,2,{30,31}},{360,2,{31,30}},
+        {105,2,{30,31}},{912,2,{1,17}},
+    }};
+    std::optional<std::span<const unsigned>> found;
+    for(const auto& mesh:meshes) {
+        if(mesh.vertices!=vertices)continue;
+        bool matches=true;
+        for(unsigned slot=0;slot<mesh.count && matches;++slot) {
+            const auto bone=mesh.bones[slot];
+            const auto skin=Multiply(Expand(pose.pose.bones[bone]),Expand(pose.bind[bone]));
+            if(!Inverse(skin) || !Inverse(palette[slot])) {matches=false;break;}
+            for(unsigned r=0;r<3;++r)for(unsigned c=0;c<4;++c)
+                matches &= std::isfinite(palette[slot][r][c]) && std::isfinite(skin[r][c]) &&
+                    std::abs(palette[slot][r][c]-skin[r][c])<=(c==3?.075:.00035);
+        }
+        if(matches) {
+            if(found)return {};
+            found=std::span<const unsigned>(mesh.bones.data(),mesh.count);
+        }
+    }
+    return found;
+}
+inline constexpr std::array<unsigned,7> GiantLegPalette{13,14,12,10,9,11,5};
+inline bool GiantLegBones(const Palette& palette,const LinkPoseCapture::LivePose& pose,unsigned vertices) {
+    if(vertices!=1014 || pose.signature!=0x369a86dcc57ca979ull ||
+       pose.pose.bones.size()!=15 || pose.bind.size()!=15 || pose.words.size()!=15)return false;
+    // The giant's leg material differs by up to 1.91e-5 / .040 units from
+    // reconstructed binds. Match all seven slots, never a single nearby bone.
+    for(unsigned slot=0;slot<GiantLegPalette.size();++slot) {
+        const auto bone=GiantLegPalette[slot];
+        const auto skin=Multiply(Expand(pose.pose.bones[bone]),Expand(pose.bind[bone]));
+        if(!Inverse(skin) || !Inverse(palette[slot]))return false;
+        for(unsigned r=0;r<3;++r)for(unsigned c=0;c<4;++c)
+            if(!std::isfinite(palette[slot][r][c]) || !std::isfinite(skin[r][c]) ||
+               std::abs(palette[slot][r][c]-skin[r][c])>(c==3?.05:.00002))return false;
+    }
+    return true;
+}
+inline bool MajoraWhipSkeleton(const LinkPoseCapture::LivePose& pose) {
+    if(pose.signature!=0x18ccb05513137730ull || pose.pose.bones.size()!=113 ||
+       pose.bind.size()!=113 || pose.words.size()!=113 || pose.words[0]!=0xffff0000 ||
+       pose.words[17]!=0x000f1011 || pose.words[66]!=0x00401042)return false;
+    for(unsigned i=18;i<=109;++i) {
+        if(i>60 && i<67)continue;
+        if(pose.words[i]!=(((i-1)<<16)|0x1000|i))return false;
+    }
+    return true;
+}
+// Verified majora_demon whip palettes. Reconstructed binds differ from the
+// guest's skin matrices by about .041 units in this capture. Validate the complete
+// active palette, then preserve that small correction at the midpoint.
+inline std::optional<std::span<const unsigned>> MajoraWhipBones(
+        const Palette& palette,const LinkPoseCapture::LivePose& pose,unsigned vertices) {
+    if(vertices!=576 && vertices!=600 && vertices!=624 && vertices!=672 &&
+       vertices!=768 && vertices!=816)return {};
+    if(!MajoraWhipSkeleton(pose))return {};
+    struct Mesh {unsigned vertices,count;std::array<unsigned,10> bones;};
+    static constexpr std::array<Mesh,12> meshes{{
+        {768,9,{92,91,93,94,95,96,97,98,99}},
+        {672,10,{68,69,67,66,64,100,101,102,99,103}},
+        {768,10,{76,69,77,75,74,73,72,71,70,103}},
+        {600,10,{104,105,106,107,108,109,72,71,70,103}},
+        {672,10,{20,19,18,17,15,36,37,38,39,40}},
+        {768,10,{20,21,22,24,23,28,27,26,25,40}},
+        {816,10,{32,31,30,29,33,28,34,35,36,40}},
+        {768,10,{46,47,48,49,50,51,52,53,54,40}},
+        {576,10,{46,41,42,43,44,45,52,53,54,40}},
+        {624,10,{80,81,79,78,77,82,83,53,54,40}},
+        {600,10,{56,57,55,58,59,60,83,53,54,40}},
+        {768,10,{87,86,85,84,88,89,83,90,91,40}},
+    }};
+    std::optional<std::span<const unsigned>> found;
+    for(const auto& mesh:meshes) {
+        if(mesh.vertices!=vertices)continue;
+        bool matches=true;
+        for(unsigned slot=0;slot<mesh.count && matches;++slot) {
+            const auto bone=mesh.bones[slot];
+            const auto skin=Multiply(Expand(pose.pose.bones[bone]),Expand(pose.bind[bone]));
+            if(!Inverse(skin) || !Inverse(palette[slot])) {matches=false;break;}
+            for(unsigned r=0;r<3;++r)for(unsigned c=0;c<4;++c)
+                matches &= std::isfinite(palette[slot][r][c]) && std::isfinite(skin[r][c]) &&
+                    std::abs(palette[slot][r][c]-skin[r][c])<=(c==3?.05:.00001);
+        }
+        if(matches) {
+            if(found)return {};
+            found=std::span<const unsigned>(mesh.bones.data(),mesh.count);
+        }
+    }
+    return found;
+}
 // Like Like's scale-compensated joints produce local shear. For small changes,
 // affine averaging preserves that shear without treating it as a rigid rotation.
 // Restrict this fallback to the captured skeleton and bounded relative motion.
@@ -185,6 +474,28 @@ inline std::optional<Matrix> ExtendedZoraFin(const Matrix& matrix,
     }
     return result;
 }
+// Majora's ten-joint strands cancel inherited scale at each joint. Using the
+// scaled parent to recover local rotations introduces shear, so ordinary Half
+// rejects every child. Retain the hierarchy in unscaled parent frames instead.
+inline bool MajoraStrand(const LinkPoseCapture::LivePose& pose,unsigned vertices) {
+    if(vertices!=240 || pose.signature!=0x5a77df48ac4918b7ull ||
+       pose.pose.bones.size()!=10 || pose.bind.size()!=10 || pose.words.size()!=10 ||
+       pose.words[0]!=0xffff0000)return false;
+    for(unsigned i=1;i<10;++i)
+        if(pose.words[i]!=((i-1)<<16 | 0x1000 | i))return false;
+    return true;
+}
+inline std::optional<Matrix> UnscaledJoint(const Matrix& matrix) {
+    auto result=matrix;
+    for(unsigned c=0;c<3;++c) {
+        double length=0;
+        for(unsigned r=0;r<3;++r)length+=matrix[r][c]*matrix[r][c];
+        length=std::sqrt(length);
+        if(!std::isfinite(length) || length<1e-5)return {};
+        for(unsigned r=0;r<3;++r)result[r][c]/=length;
+    }
+    return Rigid(result)?std::optional{result}:std::nullopt;
+}
 class ActorHistory {
     std::uint64_t frame{};
     std::int64_t time{};
@@ -210,17 +521,36 @@ public:
             for(unsigned i=0;i<current.size();++i)current[i]=Multiply(camera,Expand(pose->pose.bones[i]));
             if(continuous) {
                 double movement=0;for(unsigned i=0;i<3;++i)movement+=std::pow(old[0][i][3]-current[0][i][3],2);
-                continuous=movement<10000;
+                // Standing grass05 bushes are compacted between model slots
+                // after cutting. A slot can then describe a different bush
+                // tens of units away, still within the ordinary actor limit.
+                // Compare world-space roots so camera movement remains smooth.
+                const bool standing_bush=pose->signature==0x5985261146a459c5ull && current.size()==1;
+                continuous=movement<(standing_bush?1.:10000.);
             }
             ready=continuous;
+            const bool strand=MajoraStrand(*pose,vertices);
+            // This is a property of the skeleton, not the first mesh drawn:
+            // the body normally seeds history before either whip is submitted.
+            const bool whips=MajoraWhipSkeleton(*pose);
+            const bool twinmold=TwinmoldSkeleton(*pose);
+            const bool giant_link=GiantLinkSkeleton(*pose);
             if(ready)for(unsigned i=0;i<current.size();++i) {
                 if(i==0 && attached_root) {half[i]=*attached_root;continue;}
                 const auto parent=pose->words[i]>>16;
                 auto a=old[i],b=current[i];
+                Matrix parent_half=Identity();
                 if(parent!=65535) {
-                    const auto ai=Inverse(old[parent]),bi=Inverse(current[parent]);
+                    const bool compensated=strand || (whips && ((i>=18 && i<=60) || (i>=67 && i<=109))) ||
+                        (twinmold && i>=20) || giant_link;
+                    const auto pa=compensated?UnscaledJoint(old[parent]):std::optional{old[parent]};
+                    const auto pb=compensated?UnscaledJoint(current[parent]):std::optional{current[parent]};
+                    const auto ph=compensated?UnscaledJoint(half[parent]):std::optional{half[parent]};
+                    if(!pa || !pb || !ph){half[i]=current[i];continue;}
+                    const auto ai=Inverse(*pa),bi=Inverse(*pb);
                     if(!ai||!bi){half[i]=current[i];continue;}
                     a=Multiply(*ai,a);b=Multiply(*bi,b);
+                    parent_half=*ph;
                 }
                 // Zora combat fins switch between .4 and 1 local scale.
                 // Permit that captured transition only on their two bones.
@@ -229,7 +559,7 @@ public:
                 auto local=Half(a,b,zora_fin?2.51:2.);
                 if(!local)local=LikeLikeHalf(a,b,*pose);
                 if(!local)local=SlimeHalf(a,b,*pose,vertices);
-                half[i]=local?(parent==65535?*local:Multiply(half[parent],*local)):current[i];
+                half[i]=local?Multiply(parent_half,*local):current[i];
             }
             frame=next;time=now;instance=pose->pose.instance;model=pose->model;
             generation=pose->generation;signature=pose->signature;view_camera=camera;seen=true;
@@ -248,7 +578,84 @@ public:
         }
         for(unsigned slot=0;slot<10;++slot)
             result[slot]=ResolvePalette(palette[slot],*pose,half,view);
+        if(GyorgWaterBone(palette,*pose,vertices))result[0]=Multiply(view,half[1]);
+        if(DungeonShutterBone(palette,*pose,vertices))result[0]=Multiply(view,half[0]);
+        if(const auto wing=SoaringWingBones(palette,*pose,vertices)) {
+            for(unsigned slot=0;slot<wing->size();++slot) {
+                const auto bone=(*wing)[slot];
+                const auto bind=Expand(pose->bind[bone]);
+                const auto skin=Multiply(Expand(pose->pose.bones[bone]),bind);
+                // Carry the guest's small bind difference into the midpoint.
+                // A stationary pose therefore reproduces the native palette.
+                const auto correction=Multiply(*Inverse(skin),palette[slot]);
+                result[slot]=Multiply(Multiply(Multiply(view,half[bone]),bind),correction);
+            }
+        }
         if(const auto fin=ExtendedZoraFin(palette[0],*pose,half,view,vertices))result[0]=fin;
+        if(const auto bones=DodongoBones(palette,*pose,vertices)) {
+            for(unsigned slot=0;slot<bones->size();++slot) {
+                const auto bone=(*bones)[slot];
+                const auto bind=Expand(pose->bind[bone]);
+                const auto skin=Multiply(Expand(pose->pose.bones[bone]),bind);
+                const auto correction=Multiply(*Inverse(skin),palette[slot]);
+                result[slot]=Multiply(Multiply(Multiply(view,half[bone]),bind),correction);
+            }
+        }
+        if(const auto bones=MajoraWhipBones(palette,*pose,vertices)) {
+            for(unsigned slot=0;slot<bones->size();++slot) {
+                const auto bone=(*bones)[slot];
+                const auto bind=Expand(pose->bind[bone]);
+                const auto skin=Multiply(Expand(pose->pose.bones[bone]),bind);
+                const auto correction=Multiply(*Inverse(skin),palette[slot]);
+                result[slot]=Multiply(Multiply(Multiply(view,half[bone]),bind),correction);
+            }
+        }
+        if(const auto bones=GohtSkinBones(palette,*pose,vertices)) {
+            for(unsigned slot=0;slot<bones->size();++slot) {
+                const auto bone=(*bones)[slot];
+                const auto bind=Expand(pose->bind[bone]);
+                const auto inverse=Inverse(Multiply(Expand(pose->pose.bones[bone]),bind));
+                if(!inverse) {result[slot].reset();continue;}
+                const auto correction=Multiply(*inverse,palette[slot]);
+                result[slot]=Multiply(Multiply(Multiply(view,half[bone]),bind),correction);
+            }
+        }
+        if(const auto bones=NpcSkinBones(palette,*pose,vertices)) {
+            for(unsigned slot=0;slot<bones->size();++slot) {
+                const auto bone=(*bones)[slot];
+                const auto bind=Expand(pose->bind[bone]);
+                const auto skin=Multiply(Expand(pose->pose.bones[bone]),bind);
+                const auto correction=Multiply(*Inverse(skin),palette[slot]);
+                result[slot]=Multiply(Multiply(Multiply(view,half[bone]),bind),correction);
+            }
+        }
+        if(const auto bones=GiantLinkBones(palette,*pose,vertices)) {
+            for(unsigned slot=0;slot<bones->size();++slot) {
+                const auto bone=(*bones)[slot];
+                const auto bind=Expand(pose->bind[bone]);
+                const auto skin=Multiply(Expand(pose->pose.bones[bone]),bind);
+                const auto correction=Multiply(*Inverse(skin),palette[slot]);
+                result[slot]=Multiply(Multiply(Multiply(view,half[bone]),bind),correction);
+            }
+        }
+        if(const auto bones=TwinmoldBones(palette,*pose,vertices)) {
+            for(unsigned slot=0;slot<bones->size();++slot) {
+                const auto bone=(*bones)[slot];
+                const auto bind=Expand(pose->bind[bone]);
+                const auto skin=Multiply(Expand(pose->pose.bones[bone]),bind);
+                const auto correction=Multiply(*Inverse(skin),palette[slot]);
+                result[slot]=Multiply(Multiply(Multiply(view,half[bone]),bind),correction);
+            }
+        }
+        if(GiantLegBones(palette,*pose,vertices)) {
+            for(unsigned slot=0;slot<GiantLegPalette.size();++slot) {
+                const auto bone=GiantLegPalette[slot];
+                const auto bind=Expand(pose->bind[bone]);
+                const auto skin=Multiply(Expand(pose->pose.bones[bone]),bind);
+                const auto correction=Multiply(*Inverse(skin),palette[slot]);
+                result[slot]=Multiply(Multiply(Multiply(view,half[bone]),bind),correction);
+            }
+        }
         if(deku_pipes)for(unsigned slot=1;slot<=PipeBones.size();++slot) {
             const auto bone=PipeBones[slot-1];
             const auto bind=Expand(pose->bind[bone]);
@@ -260,6 +667,9 @@ public:
 };
 // One bounded history per skeleton instance, never shared between actors.
 class History {
+    // Song of Time draws 128 clock instances plus Link and the lost items.
+    // Keep room for that scene without dropping histories by submission order.
+    static constexpr std::size_t MaxActors=256;
     struct Entry { ActorHistory history; std::uint64_t frame{}; };
     std::unordered_map<std::uint32_t,Entry> actors;
     struct CandidateEntry { BoneCandidates candidates;std::uint64_t frame{},query{};const LinkPoseCapture::LivePose* source{}; };
@@ -268,7 +678,7 @@ class History {
     std::optional<std::uint64_t> cleanup_frame;
     std::optional<Match> IdentifyCached(std::uint64_t frame,const Matrix& matrix,
                                       const LinkPoseCapture::LivePose& pose) {
-        if(!candidate_cache.contains(pose.pose.instance) && candidate_cache.size()>=128)
+        if(!candidate_cache.contains(pose.pose.instance) && candidate_cache.size()>=MaxActors)
             return Identify(matrix,pose);
         auto& entry=candidate_cache[pose.pose.instance];entry.frame=frame;
         if(entry.query!=query_serial || entry.source!=&pose) {
@@ -288,7 +698,7 @@ class History {
     Overrides ApplyKnown(std::uint64_t frame,std::int64_t now,const Matrix& camera,
                          const Palette& palette,const LinkPoseCapture::LivePose& pose,
                          bool allow,bool glow=false,bool pipes=false,unsigned vertices=0,std::optional<Matrix> attached_root={}) {
-        if(!actors.contains(pose.pose.instance) && actors.size()>=128)return {};
+        if(!actors.contains(pose.pose.instance) && actors.size()>=MaxActors)return {};
         auto& entry=actors[pose.pose.instance];entry.frame=frame;
         return entry.history.Apply(frame,now,camera,palette,pose,allow,glow,pipes,vertices,attached_root);
     }
@@ -303,6 +713,69 @@ public:
             std::erase_if(actors,expired);std::erase_if(candidate_cache,expired);
             std::erase_if(actor_attachments,expired);cleanup_frame=frame;
         }
+        const LinkPoseCapture::LivePose* direct_owner=nullptr;
+        if(vertices==528 || vertices==36 || vertices==210)for(const auto& pose:poses) {
+            if(!GyorgWaterBone(palette,pose,vertices) && !DungeonShutterBone(palette,pose,vertices) && !SnowBoulderBone(palette,pose,vertices))continue;
+            if(direct_owner)return {};
+            direct_owner=&pose;
+        }
+        if(direct_owner)return ApplyKnown(frame,now,camera,palette,*direct_owner,allow,false,false,vertices);
+        const LinkPoseCapture::LivePose* wing_owner=nullptr;
+        if(vertices==864)for(const auto& pose:poses) {
+            if(!SoaringWingBones(palette,pose,vertices))continue;
+            if(wing_owner)return {}; // Coincident instances remain ambiguous.
+            wing_owner=&pose;
+        }
+        if(wing_owner)return ApplyKnown(frame,now,camera,palette,*wing_owner,allow,false,false,vertices);
+        const LinkPoseCapture::LivePose* dodongo_owner=nullptr;
+        for(const auto& pose:poses) {
+            if(!DodongoBones(palette,pose,vertices))continue;
+            if(dodongo_owner)return {};
+            dodongo_owner=&pose;
+        }
+        if(dodongo_owner)return ApplyKnown(frame,now,camera,palette,*dodongo_owner,allow,false,false,vertices);
+        const LinkPoseCapture::LivePose* whip_owner=nullptr;
+        for(const auto& pose:poses) {
+            if(!MajoraWhipBones(palette,pose,vertices))continue;
+            if(whip_owner)return {};
+            whip_owner=&pose;
+        }
+        if(whip_owner)return ApplyKnown(frame,now,camera,palette,*whip_owner,allow,false,false,vertices);
+        const LinkPoseCapture::LivePose* goht_owner=nullptr;
+        for(const auto& pose:poses) {
+            if(!GohtSkinBones(palette,pose,vertices))continue;
+            if(goht_owner)return {};
+            goht_owner=&pose;
+        }
+        if(goht_owner)return ApplyKnown(frame,now,camera,palette,*goht_owner,allow,false,false,vertices);
+        const LinkPoseCapture::LivePose* npc_owner=nullptr;
+        if(vertices==30 || vertices==144)for(const auto& pose:poses) {
+            if(!NpcSkinBones(palette,pose,vertices))continue;
+            if(npc_owner)return {};
+            npc_owner=&pose;
+        }
+        if(npc_owner)return ApplyKnown(frame,now,camera,palette,*npc_owner,allow,false,false,vertices);
+        const LinkPoseCapture::LivePose* giant_link_owner=nullptr;
+        for(const auto& pose:poses) {
+            if(!GiantLinkBones(palette,pose,vertices))continue;
+            if(giant_link_owner)return {};
+            giant_link_owner=&pose;
+        }
+        if(giant_link_owner)return ApplyKnown(frame,now,camera,palette,*giant_link_owner,allow,false,false,vertices);
+        const LinkPoseCapture::LivePose* twinmold_owner=nullptr;
+        for(const auto& pose:poses) {
+            if(!TwinmoldBones(palette,pose,vertices))continue;
+            if(twinmold_owner)return {};
+            twinmold_owner=&pose;
+        }
+        if(twinmold_owner)return ApplyKnown(frame,now,camera,palette,*twinmold_owner,allow,false,false,vertices);
+        const LinkPoseCapture::LivePose* giant_owner=nullptr;
+        for(const auto& pose:poses) {
+            if(!GiantLegBones(palette,pose,vertices))continue;
+            if(giant_owner)return {};
+            giant_owner=&pose;
+        }
+        if(giant_owner)return ApplyKnown(frame,now,camera,palette,*giant_owner,allow,false,false,vertices);
         const LinkPoseCapture::LivePose* found=nullptr;
         bool fairy_glow=false;
         std::vector<const LinkPoseCapture::LivePose*> owners;
@@ -400,6 +873,37 @@ public:
                 return result;
             }
         }
+        // Swordsman school logs draw multiple cut-piece models at a shared
+        // transform. These eight one-bone models are verified in zelda2_maruta.
+        // Preserve their separate histories and require agreement, as for signs.
+        if(owners.size()>1 && owners.size()<=8 &&
+           (vertices==12 || vertices==30 || vertices==36 || vertices==39 || vertices==42)) {
+            constexpr std::array<std::uint64_t,8> log_fragments{
+                0x25691ac68afb02e2ull,0x7bb6e2032873c32eull,0xa8858ef16d4f6e4bull,
+                0x15032d07b3410790ull,0x1ccc2f131d7a89cfull,0x981fa132959572f9ull,
+                0xa5a4cdf77e3ead22ull,0x10167bcfce7776c8ull};
+            bool verified=true;
+            for(unsigned i=0;i<owners.size();++i) {
+                const auto& p=*owners[i];
+                auto bind=Identity();
+                if(p.signature==0xa5a4cdf77e3ead22ull)
+                    for(unsigned c=0;c<3;++c)bind[c][c]=.38303905725479126;
+                verified &= p.pose.bones.size()==1 && p.bind.size()==1 && p.words.size()==1 &&
+                    p.words[0]==0xffff0000 && Near(Expand(p.bind[0]),bind,1e-5) &&
+                    std::find(log_fragments.begin(),log_fragments.end(),p.signature)!=log_fragments.end();
+                for(unsigned j=0;j<i;++j)verified &= p.signature!=owners[j]->signature &&
+                    p.model!=owners[j]->model && p.pose.instance!=owners[j]->pose.instance;
+            }
+            if(verified) {
+                auto result=ApplyKnown(frame,now,camera,palette,*owners[0],allow);
+                for(unsigned i=1;i<owners.size();++i) {
+                    const auto other=ApplyKnown(frame,now,camera,palette,*owners[i],allow);
+                    for(unsigned slot=0;slot<result.size();++slot)
+                        if(!result[slot] || !other[slot] || !PaletteNear(*result[slot],*other[slot]))result[slot].reset();
+                }
+                return result;
+            }
+        }
         if(owners.size()>1) {
             // Verified attachments/paired marker passes: never pick an arbitrary owner.
             // A shared slot is usable only when both independent histories agree.
@@ -410,18 +914,20 @@ public:
             struct AttachedModel {
                 std::uint64_t body,item;
                 unsigned bones,parent;
-                std::array<unsigned,2> draws;
+                std::array<unsigned,3> draws;
             };
-            static constexpr std::array<AttachedModel,3> attached_models{{
-                {0xbf2f38bb6502de36ull,0x10aa2e239eaea424ull,15,14,{204,96}}, // Postman cap
-                {0xbf2f38bb6502de36ull,0x61a2e0e2eed80dccull,15,7,{414,414}}, // Postman bag
-                {0x228b499bc4c2bef7ull,0xa81ec0d047c2eaadull,20,8,{36,36}}, // Carpenter wood
+            static constexpr std::array<AttachedModel,5> attached_models{{
+                {0xbf2f38bb6502de36ull,0x10aa2e239eaea424ull,15,14,{204,96,96}}, // Postman cap
+                {0xbf2f38bb6502de36ull,0x61a2e0e2eed80dccull,15,7,{414,414,414}}, // Postman bag
+                {0x228b499bc4c2bef7ull,0xa81ec0d047c2eaadull,20,8,{36,36,36}}, // Carpenter wood
+                {0x228b499bc4c2bef7ull,0x06d0beac6055ea2cull,20,19,{120,36,36}}, // Milk Road pickaxe
+                {0xe6a4db84a5b61d37ull,0x09b0267833ca8895ull,9,8,{120,180,540}}, // Real Bombchu tail bomb
             }};
             for(unsigned index=0;index<2;++index) {
                 const auto& body=*owners[index];const auto& item=*owners[1-index];
                 const auto model=std::find_if(attached_models.begin(),attached_models.end(),[&](const auto& m) {
                     return body.signature==m.body && item.signature==m.item &&
-                        (vertices==m.draws[0] || vertices==m.draws[1]);
+                        std::find(m.draws.begin(),m.draws.end(),vertices)!=m.draws.end();
                 });
                 if(model==attached_models.end() || body.pose.bones.size()!=model->bones ||
                    body.bind.size()!=model->bones || body.words.size()!=model->bones ||
@@ -492,7 +998,18 @@ public:
             const bool marker_pair=marker(*owners[0]) && marker(*owners[1]) &&
                 owners[0]->signature==owners[1]->signature &&
                 owners[0]->pose.instance!=owners[1]->pose.instance && owners[0]->model!=owners[1]->model;
-            if(!(marker_pair || (mask(*owners[0])&&human(*owners[1])) ||
+            // Tingle's sphere and knot are separate one-bone models sharing
+            // the same root. Keep both histories and require midpoint agreement.
+            const auto balloon=[](const auto& p) {
+                return p.pose.bones.size()==1 && p.bind.size()==1 && p.words.size()==1 &&
+                    p.words[0]==0xffff0000 && Near(Expand(p.bind[0]),Identity(),1e-5) &&
+                    (p.signature==0x486289ad769db138ull || p.signature==0x6ea7a4a7d451310cull);
+            };
+            const bool balloon_pair=(vertices==72 || vertices==576) &&
+                balloon(*owners[0]) && balloon(*owners[1]) &&
+                owners[0]->signature!=owners[1]->signature &&
+                owners[0]->pose.instance!=owners[1]->pose.instance && owners[0]->model!=owners[1]->model;
+            if(!(marker_pair || balloon_pair || (mask(*owners[0])&&human(*owners[1])) ||
                  (mask(*owners[1])&&human(*owners[0]))))return {};
             auto a=ApplyKnown(frame,now,camera,palette,*owners[0],allow);
             const auto b=ApplyKnown(frame,now,camera,palette,*owners[1],allow);
@@ -504,17 +1021,43 @@ public:
         if(!found)for(const auto& pose:poses) {
             // Verified effects, pickups, Bomber and intro trees have equivalent bones.
             // ResolvePalette still rejects them if their midpoint poses diverge.
-            const unsigned count=pose.signature==0xdfe0c7f5a2531807ull ? 4 :
+            const unsigned count=(pose.signature==0x496431680f850b7full &&
+                (vertices==12 || vertices==129 || vertices==150 || vertices==219 ||
+                 vertices==750 || vertices==756 || vertices==1878)) ? 29 : // Goht shared body/limb bones
+                (pose.signature==0x71a6a9af29d2e93full &&
+                (vertices==24 || vertices==276)) ? 20 : // Snowhead flag (ht_hata)
+                (pose.signature==0x2839c49538bf9e2aull &&
+                (vertices==12 || vertices==24)) ? 3 : // Blue Bubble flame (torch4_soul)
+                (pose.signature==0x3f33b43a6cf98ad4ull &&
+                (vertices==732 || vertices==108)) ? 8 : // Gyorg small fish (minibus_b)
+                (pose.signature==0x6a038b2b40fd9fbfull &&
+                 (vertices==138 || vertices==96 || vertices==72)) ? 4 : // Great Bay wheel water
+                (pose.signature==0xbfecd47d742679fdull &&
+                 (vertices==216 || vertices==252 || vertices==108)) ? 6 : // Great Bay water jet
+                pose.signature==0xdfe0c7f5a2531807ull ? 4 :
                 pose.signature==0xdf35e5b3de06d85eull ? 7 :
+                (pose.signature==0x93dff8d74c226412ull && (vertices==30 || vertices==126 || vertices==402)) ? 4 : // Removed Deku mask
+                (pose.signature==0x3b9945c18d4a600full && vertices==180) ? 4 : // Hinged door
+                (pose.signature==0xbb44d2bc24eb2cd6ull &&
+                 (vertices==12 || vertices==42 || vertices==81 || vertices==564 || vertices==768)) ? 20 : // Captain Keeta head/root
+                (pose.signature==0xc4bab09e9917b4aeull &&
+                 (vertices==36 || vertices==72 || vertices==78 || vertices==360)) ? 20 : // Gabora head/shared bones
+                (pose.signature==0x89c1c57e8d857e3bull && vertices==384) ? 2 : // Skull Kid's tossed ocarina
+                (pose.signature==0xb8b55777b90f150eull &&
+                 (vertices==180 || vertices==42 || vertices==408)) ? 3 : // Held Piece of Heart
+                (pose.signature==0x9917e505ef9503eaull && vertices==96) ? 7 : // Reset rupees
+                (pose.signature==0x110f9bdb5eb0dd7aull && (vertices==12 || vertices==306)) ? 3 : // Reset Deku stick
                 pose.signature==0xce5abb274d304de4ull ? 3 :
                 pose.signature==0x69e723ba0b961e6bull ? 4 :
                 pose.signature==0xc299a4754ffae267ull ? 17 :
+                pose.signature==0x3d654b8a99a21237ull ? 27 : // Business Scrub head/shared bones
                 pose.signature==0x04e3fb346228fd20ull ? 4 :
                 pose.signature==0xd56b42acae52759full ? 7 :
                 pose.signature==0x7526de611fb49ce3ull ? 8 :
                 pose.signature==0x3ed3e32e1ee38993ull ? 3 :
                 pose.signature==0x6735aa3cacc26ca6ull ? 3 : // Zora electric barrier
                 pose.signature==0xe26d2bb9ac2e87b6ull ? 3 : // Intro forest trees
+                (pose.signature==0x31d188026f978991ull && vertices==198) ? 2 : // Deku nut projectile
                 pose.signature==0x76a7e789464b75d3ull ? 2 :
                 pose.signature==0xe40ebd58d8b46adaull ? 2 :
                 pose.signature==0x2507dd32b95b7c14ull ? 24 : 0;

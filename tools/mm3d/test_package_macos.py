@@ -18,7 +18,11 @@ class MacPackageTests(unittest.TestCase):
             (app/'Contents/Info.plist').write_bytes(plistlib.dumps({}))
             captured=root/'captured'
             def run(args,**kwargs):
-                if args[0]=='ditto':shutil.copytree(Path(args[-2]),captured)
+                if args[0]=='ditto':
+                    self.assertIn('--norsrc', args)
+                    self.assertIn('--noextattr', args)
+                    self.assertNotIn('--sequesterRsrc', args)
+                    shutil.copytree(Path(args[-2]),captured)
                 elif args[0]!='codesign':raise AssertionError(args)
             with patch.object(package_macos,'verify_dependencies'),patch.object(package_macos,'install'),patch.object(package_macos.subprocess,'run',side_effect=run):
                 package_macos.package(app,root/'out.zip',root/'python.tar.gz')

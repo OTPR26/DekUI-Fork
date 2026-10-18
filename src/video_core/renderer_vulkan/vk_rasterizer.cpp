@@ -189,7 +189,9 @@ void RasterizerVulkan::TickFrame() {
     MM3D::CameraMidpoint::rejected_draws=midpoint_rejected;
     MM3D::CameraMidpoint::fallback_draws=midpoint_fallback;
     midpoint_copies=midpoint_rejected=midpoint_fallback=0;
-    if(!MM3D::CameraMidpoint::enabled.load())midpoint_history.Reset();
+    if(!MM3D::CameraMidpoint::enabled.load()) {
+        midpoint_history.Reset();world_map_history.Reset();glare_cpu_history.Reset();message_history.Reset();message_override.reset();item_slide_history.Reset();item_slide_override.reset();file_select_history.Reset();file_select_override.reset();inventory_history.Reset();banner_history.Reset();magic_meter_history.Reset();heart_history.Reset();lens_history.Reset();letterbox_history.Reset();inventory_override.reset();
+    }
     MM3D::Minimap::NextFrame();
     MM3D::Profiles::CompleteDetectionFrame();
     const auto preview_now=std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -737,6 +739,12 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
     const bool replay_world = accelerate || (cpu_interpolation && pica.CanReplayCpuVertices());
     MM3D::InterpolationPerformance::Scope performance_draw{MM3D::InterpolationPerformance::Part::Draw};
     MM3D::Profiles::ClearDrawTexcoordBounds();
+    const auto midpoint_background = [&] {
+        const auto& fb=regs.framebuffer.framebuffer;
+        return midpoint_color_clears.Background(MM3D::guest_frames.load(),
+            fb.GetColorBufferPhysicalAddress(),fb.GetWidth(),fb.GetHeight(),
+            fb.color_format==Pica::FramebufferRegs::ColorFormat::RGBA8);
+    };
 #endif
     SyncDrawState();
 
@@ -747,6 +755,14 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
     const bool write_depth_fb = pipeline_info.IsDepthWriteEnabled();
     const bool using_color_fb =
         regs.framebuffer.framebuffer.GetColorBufferPhysicalAddress() != 0 && write_color_fb;
+#ifdef ENABLE_MM3D_PRESENTATION
+    if(using_color_fb) {
+        const auto& fb=regs.framebuffer.framebuffer;
+        const auto address=fb.GetColorBufferPhysicalAddress();
+        midpoint_scene_copies.InvalidatePadded(address,u64(address)+u64(fb.GetWidth())*
+            fb.GetHeight()*Pica::FramebufferRegs::BytesPerColorPixel(fb.color_format));
+    }
+#endif
     const bool using_depth_fb =
         !shadow_rendering && regs.framebuffer.framebuffer.GetDepthBufferPhysicalAddress() != 0 &&
         (write_depth_fb || regs.framebuffer.output_merger.depth_test_enable != 0 ||
@@ -781,6 +797,35 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
     const auto wide_viewport=regs.rasterizer.GetViewportRect();
     const bool wide_top=MM3D::Widescreen::Active() && !shadow_rendering && using_color_fb &&
         MM3D::Widescreen::IsTopViewport(wide_viewport.GetWidth(),wide_viewport.GetHeight());
+    std::optional<unsigned> lens_kind,letterbox_kind;
+    MM3D::LensInterpolation::Values lens_values{};
+    if(!shadow_rendering && using_color_fb &&
+       MM3D::Widescreen::IsTopViewport(wide_viewport.GetWidth(),wide_viewport.GetHeight()) &&
+       (regs.pipeline.num_vertices==18 || regs.pipeline.num_vertices==4) &&
+       pica.vs_setup.GetProgramCodeHash()==0x89b1ab98da3d9241ULL &&
+       pica.vs_setup.GetSwizzleDataHash()==0x6f0b398b1fc186a9ULL) {
+        MM3D::LensInterpolation::Material material;
+        const auto& b=pipeline_info.state.blending;
+        const auto& ds=pipeline_info.state.depth_stencil;
+        const auto& di=pipeline_info.dynamic_info;
+        const auto& textures=regs.texturing.main_config;
+        material.state={unsigned(b.blend_enable),unsigned(b.src_color_blend_factor.Value()),
+            unsigned(b.dst_color_blend_factor.Value()),unsigned(b.color_blend_eq.Value()),
+            unsigned(b.color_write_mask),unsigned(ds.depth_test_enable),unsigned(ds.stencil_test_enable)};
+        material.stencil={unsigned(ds.stencil_test_enable),unsigned(ds.stencil_compare_op.Value()),
+            di.stencil_reference,di.stencil_compare_mask,di.stencil_write_mask,
+            unsigned(ds.stencil_fail_op.Value()),unsigned(ds.stencil_depth_fail_op.Value()),unsigned(ds.stencil_pass_op.Value())};
+        const auto& alpha=regs.framebuffer.output_merger.alpha_test;
+        material.alpha={unsigned(alpha.enable),unsigned(alpha.func.Value()),unsigned(alpha.ref)};
+        material.textures=unsigned(textures.texture0_enable)|(unsigned(textures.texture1_enable)<<1)|(unsigned(textures.texture2_enable)<<2);
+        material.depth_write=bool(ds.depth_write_enable);
+        const auto stages=regs.texturing.GetTevStages();
+        for(unsigned i=0;i<6;++i)material.tev[i]={stages[i].sources_raw,stages[i].modifiers_raw,
+            stages[i].ops_raw,stages[i].const_color,stages[i].scales_raw};
+        for(unsigned r=0;r<96;++r)for(unsigned c=0;c<4;++c)lens_values[r][c]=pica.vs_setup.uniforms.f[r][c].ToFloat32();
+        if(regs.pipeline.num_vertices==18)lens_kind=MM3D::LensInterpolation::Identify(lens_values,material);
+        else letterbox_kind=MM3D::LetterboxInterpolation::Identify(lens_values,material);
+    }
     bool wide_bypass=false;
     if(wide_top && regs.pipeline.num_vertices<=24 && !write_depth_fb) {
         const auto& textures=regs.texturing.main_config;
@@ -795,7 +840,22 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
                 (unsigned(merger.alpha_blending.blend_equation_rgb.Value())<<8)|
                 (unsigned(merger.alphablend_enable)<<16),u32(merger.depth_color_mask)},
             {int(scissor.left),int(scissor.top),int(scissor.right),int(scissor.bottom)});
+        if(wide_bypass) {
+            const auto row=[&](unsigned r) {
+                std::array<float,4> result{};
+                for(unsigned c=0;c<4;++c)result[c]=pica.vs_setup.uniforms.f[r][c].ToFloat32();
+                return result;
+            };
+            if(MM3D::WidescreenProbe::LocalLayoutPane(pica.vs_setup.GetProgramCodeHash(),
+                pica.vs_setup.GetSwizzleDataHash(),u32(regs.pipeline.num_vertices),
+                unsigned(textures.texture0_enable)|(unsigned(textures.texture1_enable)<<1)|
+                    (unsigned(textures.texture2_enable)<<2),row(10),row(11),row(12)))
+                wide_bypass=false;
+        }
     }
+    // All three lens passes must cover the same full viewport. Compressing
+    // only the stencil masks leaves visible-state strips beside the purple cover.
+    wide_bypass |= lens_kind.has_value();
     const float wide_scale=wide_top && !wide_bypass?MM3D::Widescreen::HorizontalScale:1.f;
     // Depth testing is a provisional world-draw filter, not a verified camera identity.
     // Keep zoom independent of the widescreen checkbox and exclude shadow/offscreen layouts.
@@ -818,6 +878,7 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
     mm3d_draw_profiles.clear();
     panel_excluded = false;
     panel_draw_identities.clear();
+    std::optional<std::array<float,4>> native_uv_bounds;
     if (accelerate) {
         Pica::VertexLoader loader(memory, regs.pipeline);
         Pica::AttributeBuffer input{}, defaults{};
@@ -828,10 +889,14 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
             min_x=std::min(min_x,input[attr_reg][0].ToFloat32()); min_y=std::min(min_y,input[attr_reg][1].ToFloat32());
             max_x=std::max(max_x,input[attr_reg][0].ToFloat32()); max_y=std::max(max_y,input[attr_reg][1].ToFloat32());
         }
-        if (max_x>=min_x && max_y>=min_y) MM3D::Profiles::SetDrawTexcoordBounds(min_x,min_y,max_x,max_y);
+        if (max_x>=min_x && max_y>=min_y) {
+            native_uv_bounds=std::array{min_x,min_y,max_x,max_y};
+            MM3D::Profiles::SetDrawTexcoordBounds(min_x,min_y,max_x,max_y);
+        }
     } else if (!vertex_batch.empty()) {
         float min_x=1.f,min_y=1.f,max_x=0.f,max_y=0.f;
         for (const auto& v:vertex_batch) { min_x=std::min(min_x,v.tex_coord0.x); min_y=std::min(min_y,v.tex_coord0.y); max_x=std::max(max_x,v.tex_coord0.x); max_y=std::max(max_y,v.tex_coord0.y); }
+        if(max_x>=min_x && max_y>=min_y)native_uv_bounds=std::array{min_x,min_y,max_x,max_y};
         MM3D::Profiles::SetDrawTexcoordBounds(min_x,min_y,max_x,max_y);
     }
     MM3D::Minimap::marker_draw=false;
@@ -839,6 +904,58 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
     SyncTextureUnits(framebuffer);
     SyncUtilityTextures(framebuffer);
 #ifdef ENABLE_MM3D_PRESENTATION
+    const bool use_pause=pause_draw[0]||pause_draw[1]||pause_draw[2]||pause_draw[3];
+    const auto inventory_owner=MM3D::InventoryInterpolation::Owner(MM3D::guest_frames.load(),
+        MM3D::LinkPoseCapture::interpolation_generation.load());
+    const bool padded_scene_copy=[&] {
+        if(!MM3D::CameraMidpoint::present_60.load() || !replay_geometry || shadow_rendering ||
+           !using_color_fb || use_pause ||
+           !MM3D::Widescreen::IsTopViewport(wide_viewport.GetWidth(),wide_viewport.GetHeight()) ||
+           pica.vs_setup.GetProgramCodeHash()!=0x89b1ab98da3d9241ULL ||
+           pica.vs_setup.GetSwizzleDataHash()!=0x6f0b398b1fc186a9ULL)return false;
+        const auto frame=MM3D::guest_frames.load();
+        const auto& row=pica.vs_setup.uniforms.f[3];
+        const bool ortho=row.x.ToFloat32()==0 && row.y.ToFloat32()==0 &&
+            row.z.ToFloat32()==0 && row.w.ToFloat32()==1;
+        const auto& blend=pipeline_info.state.blending;
+        const auto& textures=regs.texturing.main_config;
+        const unsigned texture_mask=unsigned(textures.texture0_enable)|
+            (unsigned(textures.texture1_enable)<<1)|(unsigned(textures.texture2_enable)<<2);
+        using BF=Pica::FramebufferRegs::BlendFactor;
+        const bool opaque=blend.blend_enable && blend.src_color_blend_factor==BF::One &&
+            blend.dst_color_blend_factor==BF::Zero &&
+            blend.color_blend_eq==Pica::FramebufferRegs::BlendEquation::Add && blend.color_write_mask==15;
+        if(!MM3D::ScreenShrink::native_normalized.load() || !ortho || !opaque ||
+           regs.pipeline.num_vertices!=4 || texture_mask!=1 || !native_uv_bounds ||
+           !midpoint_scene_clear.Pending(frame) ||
+           midpoint_scene_clear.target!=regs.framebuffer.framebuffer.GetColorBufferPhysicalAddress() ||
+           pipeline_info.state.depth_stencil.depth_test_enable ||
+           regs.framebuffer.output_merger.alpha_test.enable ||
+           regs.texturing.texture0.type!=Pica::TexturingRegs::TextureConfig::Texture2D ||
+           !midpoint_scene_copies.PaddedTextureContains(frame,
+               regs.texturing.texture0.GetPhysicalAddress(),regs.texturing.texture0.width,
+               regs.texturing.texture0.height,
+               regs.texturing.texture0_format==Pica::TexturingRegs::TextureFormat::RGBA8))return false;
+        const auto stages=regs.texturing.GetTevStages();
+        for(unsigned i=0;i<stages.size();++i) {
+            const auto& stage=stages[i];
+            if(stage.sources_raw!=(i?0x0fff0fffU:0x0ee30ee3U) || stage.modifiers_raw ||
+               stage.ops_raw || stage.scales_raw || stage.const_color!=(i?0xffffffffU:0U))return false;
+        }
+        MM3D::CameraMidpoint::Matrix projection{},model=MM3D::CameraMidpoint::Identity();
+        for(unsigned r=0;r<4;++r)for(unsigned c=0;c<4;++c) {
+            projection[r][c]=pica.vs_setup.uniforms.f[r][c].ToFloat32();
+            if(r<3)model[r][c]=pica.vs_setup.uniforms.f[20+r][c].ToFloat32();
+        }
+        return MM3D::CameraMidpoint::NormalizedShrinkMesh(projection,model,*native_uv_bounds);
+    }();
+    // This texture already contains the widescreen-corrected scene and HUD.
+    // A second clip correction squeezes only native frames: midpoint replay
+    // omits this redundant copy. Keep both presentations at the same width.
+    if(padded_scene_copy && (vs_data.clip_scale_x!=1.f || vs_data.clip_scale_y!=1.f)) {
+        vs_data.clip_scale_x=vs_data.clip_scale_y=1.f;
+        vs_data_dirty=true;
+    }
     using AtlasBF=Pica::FramebufferRegs::BlendFactor;
     const auto& atlas_blend=pipeline_info.state.blending;
     const bool atlas_supported=!shadow_rendering &&
@@ -864,18 +981,18 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
         for(int i=0;i<mask.info[0];++i) if(!MM3D::Atlas::Add(combined,mask.regions[i])) {++MM3D::prompt_unsupported;return true;}
         guest_regions=combined;return false;
     });
-    const bool had_atlas=atlas_uniforms.info[0]>0||atlas_uniforms.pause[0]||atlas_uniforms.pause[1]||atlas_uniforms.pause[2]||atlas_uniforms.pause[3];
+    const bool had_atlas=atlas_uniforms.info[0]>0||atlas_uniforms.info[2]||atlas_uniforms.pause[0]||atlas_uniforms.pause[1]||atlas_uniforms.pause[2]||atlas_uniforms.pause[3];
     guest_regions.pause=pause_draw;
+    guest_regions.info[2]=padded_scene_copy?1:0;
     atlas_uniforms=guest_regions;
     atlas_uniforms.info[1]=1; // Original pass keeps everything outside the selected regions.
-    const bool use_pause=pause_draw[0]||pause_draw[1]||pause_draw[2]||pause_draw[3];
-    fs_data_dirty |= had_atlas || guest_regions.info[0]>0 || use_pause;
+    fs_data_dirty |= had_atlas || guest_regions.info[0]>0 || use_pause || padded_scene_copy;
 #endif
 
     // Sync and bind the shader
     pipeline_cache.UseFragmentShader(regs, user_config
 #ifdef ENABLE_MM3D_PRESENTATION
-        , guest_regions.info[0]>0 || use_pause
+        , guest_regions.info[0]>0 || use_pause || padded_scene_copy
 #endif
     );
 
@@ -912,6 +1029,28 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
     }
 #endif
 #ifdef ENABLE_MM3D_PRESENTATION
+    const bool glare_candidate=[&] {
+        using BF=Pica::FramebufferRegs::BlendFactor;
+        const auto& blend=pipeline_info.state.blending;
+        const auto& depth=pipeline_info.state.depth_stencil;
+        const auto& texture=regs.texturing.main_config;
+        if(!MM3D::CameraMidpoint::present_60.load() || shadow_rendering || !using_color_fb ||
+           !MM3D::Widescreen::IsTopViewport(wide_viewport.GetWidth(),wide_viewport.GetHeight()) ||
+           pica.vs_setup.GetProgramCodeHash()!=0x89b1ab98da3d9241ULL ||
+           pica.vs_setup.GetSwizzleDataHash()!=0x6f0b398b1fc186a9ULL ||
+           regs.pipeline.num_vertices!=72 || !blend.blend_enable ||
+           blend.src_color_blend_factor!=BF::SourceAlpha || blend.dst_color_blend_factor!=BF::One ||
+           blend.color_blend_eq!=Pica::FramebufferRegs::BlendEquation::Add || blend.color_write_mask!=15 ||
+           depth.depth_test_enable || depth.depth_write_enable || depth.stencil_test_enable ||
+           !texture.texture0_enable || texture.texture1_enable || texture.texture2_enable)return false;
+        MM3D::CameraMidpoint::Matrix projection{},model=MM3D::CameraMidpoint::Identity();
+        for(unsigned r=0;r<4;++r)for(unsigned c=0;c<4;++c)projection[r][c]=pica.vs_setup.uniforms.f[r][c].ToFloat32();
+        for(unsigned r=0;r<3;++r)for(unsigned c=0;c<4;++c)model[r][c]=pica.vs_setup.uniforms.f[20+r][c].ToFloat32();
+        MM3D::GlareInterpolation::Tev tev{};const auto stages=regs.texturing.GetTevStages();
+        for(unsigned i=0;i<6;++i)tev[i]={stages[i].sources_raw,stages[i].modifiers_raw,
+            stages[i].ops_raw,stages[i].const_color,stages[i].scales_raw};
+        return MM3D::GlareInterpolation::ScreenDraw(projection,model,tev);
+    }();
     // The original PICA palette is still available when vertices ran on the CPU.
     // Capture both methods so actor poses can be correlated with their actual draws.
     if(MM3D::LinkPoseCapture::Recording() && !shadow_rendering && using_color_fb &&
@@ -941,14 +1080,54 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
         d.state={unsigned(b.blend_enable),unsigned(b.src_color_blend_factor.Value()),unsigned(b.dst_color_blend_factor.Value()),
             unsigned(b.color_blend_eq.Value()),unsigned(b.color_write_mask),
             unsigned(pipeline_info.state.depth_stencil.depth_test_enable),unsigned(pipeline_info.state.depth_stencil.stencil_test_enable)};
+        d.depth_write=bool(pipeline_info.state.depth_stencil.depth_write_enable);
+        const auto& native_fb=regs.framebuffer.framebuffer;
+        d.framebuffer=native_fb.GetColorBufferPhysicalAddress();
+        d.framebuffer_width=native_fb.GetWidth();d.framebuffer_height=native_fb.GetHeight();
+        d.framebuffer_format=unsigned(native_fb.color_format.Value());
+        const auto& texture_units=regs.texturing.main_config;
+        d.texture_mask=unsigned(texture_units.texture0_enable)|
+            (unsigned(texture_units.texture1_enable)<<1)|(unsigned(texture_units.texture2_enable)<<2);
+        d.alpha_blend={unsigned(b.src_alpha_blend_factor.Value()),unsigned(b.dst_alpha_blend_factor.Value()),
+            unsigned(b.alpha_blend_eq.Value())};
+        const auto& merger=regs.framebuffer.output_merger;
+        d.alpha_test={unsigned(merger.alpha_test.enable),unsigned(merger.alpha_test.func.Value()),unsigned(merger.alpha_test.ref)};
+        const auto& stencil_state=pipeline_info.state.depth_stencil;
+        const auto& dynamic=pipeline_info.dynamic_info;
+        d.stencil={unsigned(stencil_state.stencil_test_enable),unsigned(stencil_state.stencil_compare_op.Value()),
+            dynamic.stencil_reference,dynamic.stencil_compare_mask,dynamic.stencil_write_mask,
+            unsigned(stencil_state.stencil_fail_op.Value()),unsigned(stencil_state.stencil_depth_fail_op.Value()),
+            unsigned(stencil_state.stencil_pass_op.Value())};
+        d.clip_scale={vs_data.clip_scale_x,vs_data.clip_scale_y};
+        const bool small_stencil=stencil_state.stencil_test_enable && d.vertices<=144;
+        if(small_stencil && !accelerate && vertex_batch.size()<=432) {
+            for(const auto& vertex:vertex_batch)
+                d.clip_positions.push_back({vertex.position.x,vertex.position.y,vertex.position.z,vertex.position.w});
+        }
+        d.blend_constant=merger.blend_const.raw;
+        const auto stages=regs.texturing.GetTevStages();
+        for(unsigned i=0;i<stages.size();++i)
+            d.tev[i]={stages[i].sources_raw,stages[i].modifiers_raw,stages[i].ops_raw,
+                stages[i].const_color,stages[i].scales_raw};
         for(unsigned r=0;r<96;++r)for(unsigned c=0;c<4;++c)d.uniforms[r][c]=pica.vs_setup.uniforms.f[r][c].ToFloat32();
+        // Capture full ripple and four-attribute debris strips, including
+        // Majora's hundred-fragment burst (600 submitted vertices).
+        const bool particle_strip=d.vertices<=768 &&
+            regs.pipeline.triangle_topology==Pica::PipelineRegs::TriangleTopology::Strip &&
+            regs.vs.GetRegisterForAttribute(0)==0 &&
+            ((regs.vs.max_input_attribute_index==2 && regs.vs.GetRegisterForAttribute(1)==3 &&
+              regs.vs.GetRegisterForAttribute(2)==4) ||
+             (regs.vs.max_input_attribute_index==3 && regs.vs.GetRegisterForAttribute(1)==1 &&
+              regs.vs.GetRegisterForAttribute(2)==3 && regs.vs.GetRegisterForAttribute(3)==4));
+        const unsigned cpu_capture_limit=particle_strip?768u:144u;
         if(cpu_interpolation && pica.CanReplayCpuVertices() &&
-           d.shader==0x89b1ab98da3d9241ULL && d.vertices<=144 &&
-           b.blend_enable && b.src_color_blend_factor==Pica::FramebufferRegs::BlendFactor::SourceAlpha &&
-           pipeline_info.state.depth_stencil.depth_test_enable) {
+           d.shader==0x89b1ab98da3d9241ULL && d.vertices<=cpu_capture_limit &&
+           (glare_candidate || small_stencil || (b.blend_enable && b.src_color_blend_factor==Pica::FramebufferRegs::BlendFactor::SourceAlpha &&
+           (pipeline_info.state.depth_stencil.depth_test_enable || d.vertices==4)))) {
             const auto& replay=pica.GetCpuVertexReplay();
-            if(replay.Inputs().size()<=144 && replay.Order().size()<=144) {
+            if(replay.Inputs().size()<=cpu_capture_limit && replay.Order().size()<=cpu_capture_limit) {
                 d.cpu_topology=unsigned(regs.pipeline.triangle_topology.Value());
+                d.cpu_attribute_count=unsigned(regs.vs.max_input_attribute_index)+1;
                 for(unsigned a=0;a<16;++a)d.cpu_input_registers[a]=regs.vs.GetRegisterForAttribute(a);
                 d.cpu_inputs.resize(replay.Inputs().size());
                 for(std::size_t i=0;i<replay.Inputs().size();++i)
@@ -958,8 +1137,8 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
             }
         }
         if(accelerate && d.shader==0x89b1ab98da3d9241ULL && d.vertices<=144 &&
-           b.blend_enable && b.src_color_blend_factor==Pica::FramebufferRegs::BlendFactor::SourceAlpha &&
-           pipeline_info.state.depth_stencil.depth_test_enable) {
+           (glare_candidate || small_stencil || (b.blend_enable && b.src_color_blend_factor==Pica::FramebufferRegs::BlendFactor::SourceAlpha &&
+           (pipeline_info.state.depth_stencil.depth_test_enable || d.vertices==4)))) {
             const auto& attributes=regs.pipeline.vertex_attributes;
             for(unsigned i=0;i<12;++i)d.formats[i]={unsigned(attributes.GetFormat(i)),
                 attributes.GetNumElements(i),regs.vs.GetRegisterForAttribute(i)};
@@ -999,7 +1178,7 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
     // CPU geometry must be uploaded outside recording scopes: Map can drain
     // batches or submit work. Retain immutable offsets for both target draws.
     struct CpuDraw { u32 offset{}, count{}; };
-    CpuDraw native_cpu_draw{}, midpoint_cpu_draw{};
+    CpuDraw native_cpu_draw{}, midpoint_cpu_draw{}, splash_old_cpu_draw{};
     bool use_midpoint_cpu_draw = false;
     const auto upload_cpu_draw = [&](const std::vector<HardwareVertex>& vertices) {
         CpuDraw draw;
@@ -1072,7 +1251,7 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
         pica.vs_setup.GetProgramCodeHash(), regs.pipeline.num_vertices,
         pipeline_info.dynamic_info.scissor.left, pipeline_info.dynamic_info.scissor.top,
         pipeline_info.dynamic_info.scissor.right, pipeline_info.dynamic_info.scissor.bottom);
-    if(guest_regions.info[0]>0) pipeline_cache.BindPipeline(pipeline_info,true);
+    if(guest_regions.info[0]>0 || padded_scene_copy) pipeline_cache.BindPipeline(pipeline_info,true);
 #endif
 
     // Every replay must use the same geometry path as the original draw. CPU
@@ -1154,6 +1333,27 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
     // Depth-disabled/always-pass perspective draws include sky and translucent
     // effects. Keep their native depth/blending state and original draw order;
     // perspective + verified shader identify this path, not depth testing alone.
+    std::optional<MM3D::EffectCapture::MapReplay> map_trace;
+    if(MM3D::EffectCapture::Recording(MM3D::guest_frames.load()) &&
+       pica.vs_setup.GetProgramCodeHash()==0x89b1ab98da3d9241ULL &&
+       pica.vs_setup.GetSwizzleDataHash()==0x6f0b398b1fc186a9ULL) {
+        MM3D::CameraMidpoint::Matrix p{};
+        for(unsigned r=0;r<4;++r)for(unsigned c=0;c<4;++c)p[r][c]=pica.vs_setup.uniforms.f[r][c].ToFloat32();
+        if(MM3D::WorldMapInterpolation::Projection(p)) {
+            map_trace.emplace();auto& t=*map_trace;
+            t.frame=MM3D::guest_frames.load();t.texture=regs.texturing.texture0.GetPhysicalAddress();
+            t.vertices=regs.pipeline.num_vertices;
+            t.owner=MM3D::InventoryInterpolation::Owner(t.frame,MM3D::LinkPoseCapture::interpolation_generation.load(),true);
+            t.flags=(pica.CanReplayCpuVertices()?4u:0u)|(cpu_interpolation?32u:0u)|
+                (use_pause?64u:0u)|(succeeded?128u:0u);
+            t.gates=(MM3D::CameraMidpoint::enabled.load()?1u:0u)|(replay_world?2u:0u)|
+                (MM3D::Widescreen::supported_layout.load()?4u:0u)|(!shadow_rendering&&using_color_fb?8u:0u)|
+                (MM3D::Widescreen::IsTopViewport(wide_viewport.GetWidth(),wide_viewport.GetHeight())?16u:0u)|
+                ((!pipeline_info.state.depth_stencil.stencil_test_enable||midpoint_stencil_frame==t.frame)?32u:0u)|
+                (!guest_regions.info[0]?64u:0u)|
+                (viewport.x==0&&viewport.y==0&&viewport.width>0&&viewport.height>0?128u:0u);
+        }
+    }
     if(MM3D::CameraMidpoint::enabled.load() && !midpoint_title_logo && replay_world && succeeded &&
        MM3D::Widescreen::supported_layout.load() && !shadow_rendering && using_color_fb &&
        MM3D::Widescreen::IsTopViewport(wide_viewport.GetWidth(),wide_viewport.GetHeight()) &&
@@ -1190,7 +1390,7 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
         const auto epoch=generation.load();
         if(epoch!=midpoint_generation || midpoint_width!=unsigned(viewport.width) || midpoint_height!=unsigned(viewport.height)) {
             midpoint_scene_clear.Reset();
-            midpoint_history.Reset();forest_particle_history.Reset();midpoint_target_frame.reset();midpoint_world_frame.reset();midpoint_opaque_world_frame.reset();midpoint_stencil_frame.reset();midpoint_generation=epoch;
+            midpoint_history.Reset();world_map_history.Reset();glare_cpu_history.Reset();forest_particle_history.Reset();snow_history.Reset();fire_impact_history.Reset();leaf_particle_history.Reset();moth_history.Reset();message_history.Reset();message_override.reset();item_slide_history.Reset();item_slide_override.reset();file_select_history.Reset();file_select_override.reset();inventory_history.Reset();banner_history.Reset();magic_meter_history.Reset();heart_history.Reset();lens_history.Reset();letterbox_history.Reset();inventory_override.reset();torch_history.Reset();water_particle_history.Reset();water_model_history.Reset();moving_effect_history.Reset();splash_cpu_history.Reset();burst_particle_history.Reset();spark_history.Reset();firework_history.Reset();chest_particle_history.Reset();sword_trail_history.Reset();shockwave_history.Reset();bubble_history.Reset();midpoint_target_frame.reset();midpoint_world_frame.reset();midpoint_opaque_world_frame.reset();midpoint_stencil_frame.reset();midpoint_generation=epoch;
             link_history.Reset();song_history.Reset();song_overrides.reset();link_frame.reset();link_overrides={};
             midpoint_width=unsigned(viewport.width);midpoint_height=unsigned(viewport.height);
         }
@@ -1200,6 +1400,7 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
             compare==CF::Always || compare==CF::LessThan || compare==CF::LessThanOrEqual ||
             compare==CF::GreaterThan || compare==CF::GreaterThanOrEqual;
         if(valid_transform && valid_depth) {
+            if(map_trace)map_trace->gates|=256;
             // Sample both accepted and rejected cameras together. Title/attract
             // rendering can mix cameras; rejection counters alone cannot tell
             // an auxiliary draw from a stale CPU snapshot. Bound trace volume.
@@ -1220,8 +1421,31 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
                 }
             }
             bool fallback=false;
-            const auto selected=midpoint_history.Preview(MM3D::guest_frames.load(),now,
-                camera,projection,matches,native_preview.load(),fallback,cpu.CameraContext(),cpu.NativeAiming());
+            const auto map_owner=MM3D::InventoryInterpolation::Owner(MM3D::guest_frames.load(),
+                MM3D::LinkPoseCapture::interpolation_generation.load(),true);
+            auto map_model_view=MM3D::CameraMidpoint::Identity();
+            for(unsigned r=0;r<3;++r)for(unsigned c=0;c<4;++c)
+                map_model_view[r][c]=pica.vs_setup.uniforms.f[20+r][c].ToFloat32();
+            const bool map_camera=world_map_history.Recognize(MM3D::guest_frames.load(),
+                map_owner,epoch,camera,projection,map_model_view);
+            const auto map_half=world_map_history.Apply(MM3D::guest_frames.load(),now,
+                map_owner,epoch,camera,projection,map_model_view,native_preview.load());
+            // Map geometry already contains its current view transform. The
+            // private projection applies the halfway camera/lens to every map
+            // material; its shared skeleton must not interpolate it a second time.
+            Matrix selected;
+            if(map_camera) {
+                fallback=!map_half;
+                selected=map_half.value_or(projection);
+                if(map_trace) {
+                    map_trace->flags|=1u|(map_half?2u:0u);
+                    for(unsigned r=0;r<4;++r)for(unsigned c=0;c<4;++c)
+                        map_trace->uniform_delta=std::max(map_trace->uniform_delta,float(std::abs(selected[r][c]-projection[r][c])));
+                }
+            } else {
+                selected=midpoint_history.Preview(MM3D::guest_frames.load(),now,
+                    camera,projection,matches,native_preview.load(),fallback,cpu.CameraContext(),cpu.NativeAiming());
+            }
             {
                 auto& layer=prompt_layers["@camera_midpoint"];
                 if(!layer) {
@@ -1231,7 +1455,7 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
                 }
                 const auto frame=MM3D::guest_frames.load();
                 if(midpoint_target_frame!=frame) {
-                    layer->NextFrame();
+                    layer->NextFrame(midpoint_background());
                     midpoint_target_frame=frame;
                     midpoint_frame_interpolated=false;
                     if(midpoint_fade_frame!=frame) {
@@ -1241,10 +1465,10 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
                 }
                 const auto saved=pipeline_info;
                 midpoint_projection=selected;
-                if(MM3D::LinkPoseCapture::Enabled()) {
+                if(MM3D::LinkPoseCapture::Enabled() && !map_camera) {
                     const auto link_epoch=MM3D::LinkPoseCapture::interpolation_generation.load();
                     if(link_epoch!=link_generation) {
-                        link_history.Reset();song_history.Reset();song_overrides.reset();link_frame.reset();link_generation=link_epoch;
+                        link_history.Reset();song_history.Reset();leaf_particle_history.Reset();moth_history.Reset();message_history.Reset();message_override.reset();item_slide_history.Reset();item_slide_override.reset();file_select_history.Reset();file_select_override.reset();inventory_history.Reset();banner_history.Reset();magic_meter_history.Reset();heart_history.Reset();lens_history.Reset();letterbox_history.Reset();inventory_override.reset();torch_history.Reset();water_particle_history.Reset();water_model_history.Reset();moving_effect_history.Reset();splash_cpu_history.Reset();burst_particle_history.Reset();spark_history.Reset();firework_history.Reset();chest_particle_history.Reset();sword_trail_history.Reset();shockwave_history.Reset();bubble_history.Reset();song_overrides.reset();link_frame.reset();link_generation=link_epoch;
                     }
                     if(link_frame!=frame) {
                         link_poses=MM3D::LinkPoseCapture::ForFrame(frame);link_frame=frame;
@@ -1290,22 +1514,54 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
                     if(pica.vs_setup.GetProgramCodeHash()==0x89b1ab98da3d9241ULL &&
                        pica.vs_setup.GetSwizzleDataHash()==0x6f0b398b1fc186a9ULL) {
                         MM3D::SongEffectInterpolation::Values values{};
-                        for(unsigned r=0;r<4;++r)for(unsigned c=0;c<4;++c)
+                        for(unsigned r=0;r<MM3D::SongEffectInterpolation::Rows.size();++r)for(unsigned c=0;c<4;++c)
                             values[r][c]=pica.vs_setup.uniforms.f[MM3D::SongEffectInterpolation::Rows[r]][c].ToFloat32();
                         const auto& blend=pipeline_info.state.blending;
                         using BF=Pica::FramebufferRegs::BlendFactor;
-                        if(MM3D::SongEffectInterpolation::Recognized(regs.pipeline.num_vertices,values) &&
-                           blend.blend_enable && blend.src_color_blend_factor==BF::SourceAlpha &&
-                           (blend.dst_color_blend_factor==BF::One || blend.dst_color_blend_factor==BF::OneMinusSourceAlpha) &&
-                           blend.color_blend_eq==Pica::FramebufferRegs::BlendEquation::Add &&
+                        const bool portal=MM3D::SongEffectInterpolation::BossEntrance(regs.pipeline.num_vertices,values);
+                        const auto& textures=regs.texturing.main_config;
+                        const unsigned texture_mask=unsigned(textures.texture0_enable) |
+                            (unsigned(textures.texture1_enable)<<1) | (unsigned(textures.texture2_enable)<<2);
+                        const auto* waterfall=MM3D::SongEffectInterpolation::WoodfallWater(regs.pipeline.num_vertices,values,texture_mask);
+                        const bool epona=MM3D::SongEffectInterpolation::EponaSingleTexture(regs.pipeline.num_vertices,values,texture_mask).has_value();
+                        const auto* moon=MM3D::SongEffectInterpolation::MoonEffect(regs.pipeline.num_vertices,values,texture_mask);
+                        namespace Bay=MM3D::GreatBayWaterInterpolation;
+                        const auto bay=Bay::Identify(regs.pipeline.num_vertices,texture_mask,values);
+                        const auto coastal=MM3D::CoastalWaterInterpolation::Identify(regs.pipeline.num_vertices,texture_mask,values);
+                        bool bay_material=false,coastal_material=false;
+                        if(bay || coastal) {
+                            Bay::Tev tev{};const auto stages=regs.texturing.GetTevStages();
+                            for(unsigned i=0;i<6;++i)tev[i]={stages[i].sources_raw,stages[i].modifiers_raw,
+                                stages[i].ops_raw,stages[i].const_color,stages[i].scales_raw};
+                            if(bay)bay_material=Bay::MatchesMaterial(*bay,unsigned(blend.src_color_blend_factor.Value()),
+                                unsigned(blend.dst_color_blend_factor.Value()),
+                                pipeline_info.state.depth_stencil.depth_write_enable,tev);
+                            if(coastal)coastal_material=MM3D::CoastalWaterInterpolation::MatchesMaterial(*coastal,
+                                unsigned(blend.src_color_blend_factor.Value()),unsigned(blend.dst_color_blend_factor.Value()),
+                                pipeline_info.state.depth_stencil.depth_write_enable,tev);
+                        }
+                        if((coastal_material || bay_material || (MM3D::SongEffectInterpolation::Recognized(regs.pipeline.num_vertices,values,texture_mask) &&
+                           (!moon || (!pipeline_info.state.depth_stencil.depth_write_enable &&
+                            unsigned(blend.color_blend_eq.Value())==moon->equation &&
+                            blend.dst_color_blend_factor==(moon->additive?BF::One:BF::OneMinusSourceAlpha))) &&
+                           (!epona || (!pipeline_info.state.depth_stencil.depth_write_enable && blend.dst_color_blend_factor==BF::One)) &&
+                           (!waterfall || (texture_mask==waterfall->texture_mask &&
+                            !pipeline_info.state.depth_stencil.depth_write_enable &&
+                            blend.dst_color_blend_factor==(waterfall->additive?BF::One:BF::OneMinusSourceAlpha))) &&
+                           (!portal || (textures.texture0_enable && textures.texture1_enable && textures.texture2_enable &&
+                            !pipeline_info.state.depth_stencil.depth_write_enable && blend.dst_color_blend_factor==BF::One)) &&
+                           blend.src_color_blend_factor==BF::SourceAlpha &&
+                           (blend.dst_color_blend_factor==BF::One || blend.dst_color_blend_factor==BF::OneMinusSourceAlpha))) &&
+                           blend.blend_enable &&
+                           (blend.color_blend_eq==Pica::FramebufferRegs::BlendEquation::Add || (moon && moon->equation==2)) &&
                            pipeline_info.state.depth_stencil.depth_test_enable &&
                            !pipeline_info.state.depth_stencil.stencil_test_enable && blend.color_write_mask==15) {
                             song_overrides=song_history.Apply(frame,{
                                 regs.pipeline.vertex_attributes.GetPhysicalBaseAddress(),
-                                regs.texturing.texture0.GetPhysicalAddress(),regs.texturing.texture1.GetPhysicalAddress(),
-                                regs.texturing.texture2.GetPhysicalAddress(),unsigned(blend.dst_color_blend_factor.Value()),
+                                regs.texturing.texture0.GetPhysicalAddress(),(epona || (coastal_material && !(texture_mask&2)))?0u:regs.texturing.texture1.GetPhysicalAddress(),
+                                (epona || (coastal_material && !(texture_mask&4)))?0u:regs.texturing.texture2.GetPhysicalAddress(),unsigned(blend.dst_color_blend_factor.Value())|(texture_mask<<8)|(unsigned(blend.color_blend_eq.Value())<<16)|(coastal_material?1u<<24:0u),
                                 regs.pipeline.num_vertices,is_indexed?u32(regs.pipeline.index_array.offset):0},
-                                values,!fallback && !native_preview.load());
+                                values,!fallback && !native_preview.load(),texture_mask,coastal_material?coastal:std::nullopt);
                         }
                     }
                     {
@@ -1349,16 +1605,179 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
                                 scale(palette[slot]),link_overrides[slot]?scale(*link_overrides[slot]):-1.0);
                     }
                 }
+                // Water impacts use independent model instances, not actor bones.
+                // Recover their world transforms so camera movement is applied
+                // once by the ordinary midpoint projection on both CPU and GPU.
+                {
+                    using BF=Pica::FramebufferRegs::BlendFactor;
+                    const auto& blend=pipeline_info.state.blending;
+                    const auto& depth=pipeline_info.state.depth_stencil;
+                    const auto& tex=regs.texturing.main_config;
+                    const unsigned count=regs.pipeline.num_vertices;
+                    if((count==120 || count==192 || count==288) && !map_camera &&
+                       blend.blend_enable && blend.src_color_blend_factor==BF::SourceAlpha &&
+                       blend.color_blend_eq==Pica::FramebufferRegs::BlendEquation::Add &&
+                       blend.color_write_mask==15 && depth.depth_test_enable &&
+                       !depth.depth_write_enable && !depth.stencil_test_enable) {
+                        namespace W=MM3D::WaterModelInterpolation;
+                        W::Sample sample{};auto model=Identity();
+                        for(unsigned r=0;r<3;++r)for(unsigned c=0;c<4;++c)
+                            model[r][c]=pica.vs_setup.uniforms.f[20+r][c].ToFloat32();
+                        sample.model=MM3D::CameraMidpoint::Multiply(camera,model);
+                        for(unsigned r=0;r<6;++r)for(unsigned c=0;c<4;++c)
+                            sample.uv[r][c]=pica.vs_setup.uniforms.f[MM3D::SongEffectInterpolation::Rows[r]][c].ToFloat32();
+                        const unsigned mask=unsigned(tex.texture0_enable)|(unsigned(tex.texture1_enable)<<1)|
+                            (unsigned(tex.texture2_enable)<<2);
+                        W::Tev tev{};const auto stages=regs.texturing.GetTevStages();
+                        for(unsigned i=0;i<6;++i)tev[i]={stages[i].sources_raw,stages[i].modifiers_raw,
+                            stages[i].ops_raw,stages[i].const_color,stages[i].scales_raw};
+                        if(const auto kind=W::Identify(count,mask,unsigned(blend.dst_color_blend_factor.Value()),sample.uv,tev)) {
+                            const auto alpha_stage=W::Patterns[*kind].alpha_stage;
+                            sample.alpha=float(tev[alpha_stage][3]>>24)/255.f;
+                            const auto half=water_model_history.Apply(frame,
+                                {regs.texturing.texture0.GetPhysicalAddress(),
+                                 tex.texture1_enable?regs.texturing.texture1.GetPhysicalAddress():0u,
+                                 tex.texture2_enable?regs.texturing.texture2.GetPhysicalAddress():0u,epoch,*kind},sample);
+                            if(half && !fallback && !native_preview.load()) {
+                                link_overrides[0]=MM3D::CameraMidpoint::Multiply(MM3D::CameraMidpoint::InverseRigid(camera),half->model);
+                                song_overrides=half->uv;
+                                water_model_alpha_override=std::pair{alpha_stage,half->alpha};fs_data_dirty=true;
+                            }
+                        }
+                    }
+                }
+                // Moving flame and wake layers need per-instance histories;
+                // sharing only texture addresses would mix nearby enemies.
+                {
+                    using BF=Pica::FramebufferRegs::BlendFactor;
+                    const auto& blend=pipeline_info.state.blending;
+                    const auto& depth=pipeline_info.state.depth_stencil;
+                    const unsigned count=regs.pipeline.num_vertices;
+                    if((count==12 || count==24 || count==144 || count==180 || count==324) && !map_camera &&
+                       blend.blend_enable && blend.src_color_blend_factor==BF::SourceAlpha &&
+                       blend.dst_color_blend_factor==BF::One &&
+                       blend.color_blend_eq==Pica::FramebufferRegs::BlendEquation::Add &&
+                       blend.color_write_mask==15 && depth.depth_test_enable &&
+                       !depth.depth_write_enable && !depth.stencil_test_enable) {
+                        namespace E=MM3D::MovingEffectInterpolation;
+                        E::Sample sample{};auto model=Identity();
+                        for(unsigned r=0;r<3;++r)for(unsigned c=0;c<4;++c)
+                            model[r][c]=pica.vs_setup.uniforms.f[20+r][c].ToFloat32();
+                        sample.model=Multiply(camera,model);
+                        for(unsigned r=0;r<6;++r)for(unsigned c=0;c<4;++c)
+                            sample.uv[r][c]=pica.vs_setup.uniforms.f[MM3D::SongEffectInterpolation::Rows[r]][c].ToFloat32();
+                        const auto& tex=regs.texturing.main_config;
+                        const unsigned mask=unsigned(tex.texture0_enable)|(unsigned(tex.texture1_enable)<<1)|(unsigned(tex.texture2_enable)<<2);
+                        E::Tev tev{};const auto stages=regs.texturing.GetTevStages();
+                        for(unsigned i=0;i<6;++i)tev[i]={stages[i].sources_raw,stages[i].modifiers_raw,
+                            stages[i].ops_raw,stages[i].const_color,stages[i].scales_raw};
+                        if(const auto kind=E::Identify(count,mask,sample.uv,tev)) {
+                            if(E::AnimatedColors(*kind))for(unsigned stage=0;stage<6;++stage)for(unsigned c=0;c<4;++c)
+                                sample.colors[stage][c]=fs_data.const_color[stage][c];
+                            const auto half=moving_effect_history.Apply(frame,
+                                {regs.texturing.texture0.GetPhysicalAddress(),regs.texturing.texture1.GetPhysicalAddress(),
+                                 tex.texture2_enable?regs.texturing.texture2.GetPhysicalAddress():0u,epoch,*kind},sample);
+                            if(half && !fallback && !native_preview.load()) {
+                                link_overrides[0]=Multiply(InverseRigid(camera),half->model);
+                                song_overrides=half->uv;
+                                if(E::AnimatedColors(*kind)){moving_effect_colors=half->colors;fs_data_dirty=true;}
+                            }
+                        }
+                    }
+                }
                 if (cpu_interpolation) {
                     MM3D::InterpolationPerformance::Scope cpu_replay_timing{
                         MM3D::InterpolationPerformance::Part::CpuVertexReplay};
-                    // Override only the verified forest sprite input layout. Work
+                    // Override only verified particle input layouts. Work
                     // on a copy; the native draw and its replay cache stay intact.
-                    std::vector<Pica::AttributeBuffer> particle_inputs;
+                    std::vector<Pica::AttributeBuffer> particle_inputs, splash_old_inputs;
+                    std::optional<Matrix> moth_override;
                     const auto& blend = pipeline_info.state.blending;
                     using BF = Pica::FramebufferRegs::BlendFactor;
+                    const bool burst_flame = regs.vs.max_input_attribute_index == 4 &&
+                        regs.vs.GetRegisterForAttribute(3) == 5 && regs.vs.GetRegisterForAttribute(4) == 6 &&
+                        regs.texturing.main_config.texture1_enable && regs.texturing.main_config.texture2_enable &&
+                        blend.dst_color_blend_factor == BF::One;
+                    const bool burst_sprite = regs.vs.max_input_attribute_index == 2 &&
+                        !regs.texturing.main_config.texture1_enable && !regs.texturing.main_config.texture2_enable &&
+                        blend.dst_color_blend_factor == BF::OneMinusSourceAlpha;
+                    if ((burst_flame || burst_sprite) &&
+                        pica.vs_setup.GetProgramCodeHash() == 0x89b1ab98da3d9241ULL &&
+                        pica.vs_setup.GetSwizzleDataHash() == 0x6f0b398b1fc186a9ULL &&
+                        regs.pipeline.triangle_topology == Pica::PipelineRegs::TriangleTopology::Strip &&
+                        regs.pipeline.num_vertices <= 768 && pica.GetCpuVertexReplay().Inputs().size() <= 513 &&
+                        regs.vs.GetRegisterForAttribute(0) == 0 && regs.vs.GetRegisterForAttribute(1) == 3 &&
+                        regs.vs.GetRegisterForAttribute(2) == 4 && regs.texturing.main_config.texture0_enable &&
+                        blend.blend_enable && blend.src_color_blend_factor == BF::SourceAlpha &&
+                        blend.color_blend_eq == Pica::FramebufferRegs::BlendEquation::Add && blend.color_write_mask == 15 &&
+                        pipeline_info.state.depth_stencil.depth_test_enable &&
+                        !pipeline_info.state.depth_stencil.depth_write_enable &&
+                        !pipeline_info.state.depth_stencil.stencil_test_enable) {
+                        const auto& replay = pica.GetCpuVertexReplay();
+                        const unsigned attributes = burst_flame ? 5 : 3;
+                        std::vector<MM3D::BurstParticleInterpolation::Vertex> inputs(replay.Inputs().size());
+                        for (unsigned i = 0; i < inputs.size(); ++i)
+                            for (unsigned a = 0; a < attributes; ++a)
+                                for (unsigned c = 0; c < 4; ++c)
+                                    inputs[i][a][c] = replay.Inputs()[i][a][c].ToFloat32();
+                        std::array<std::array<u32,5>,6> burst_tev{};
+                        const auto stages=regs.texturing.GetTevStages();
+                        for(unsigned i=0;i<6;++i)burst_tev[i]={stages[i].sources_raw,stages[i].modifiers_raw,
+                            stages[i].ops_raw,stages[i].const_color,stages[i].scales_raw};
+                        if (const auto quads = MM3D::BurstParticleInterpolation::Decode(inputs, replay.Order(), attributes,
+                            MM3D::BurstParticleInterpolation::BombMaterial(burst_tev))) {
+                            const auto half = burst_particle_history.Apply(frame, {
+                                regs.texturing.texture0.GetPhysicalAddress(), regs.texturing.texture1.GetPhysicalAddress(),
+                                regs.texturing.texture2.GetPhysicalAddress(), epoch, static_cast<u32>(quads->front().kind)}, *quads);
+                            if (half && !fallback && !native_preview.load()) {
+                                particle_inputs = replay.Inputs();
+                                for (const auto& q : *half)
+                                    for (unsigned v = 0; v < 4; ++v)
+                                        for (unsigned a = 0; a < attributes; ++a)
+                                            for (unsigned c = 0; c < 4; ++c)
+                                                particle_inputs[q.indices[v]][a][c] = Pica::f24::FromFloat32(q.vertices[v][a][c]);
+                            }
+                        }
+                    }
+                    if(regs.pipeline.triangle_topology==Pica::PipelineRegs::TriangleTopology::Strip &&
+                       regs.pipeline.num_vertices<=384 && pica.GetCpuVertexReplay().Inputs().size()<=257 &&
+                       regs.vs.max_input_attribute_index==2 && regs.vs.GetRegisterForAttribute(0)==0 &&
+                       regs.vs.GetRegisterForAttribute(1)==3 && regs.vs.GetRegisterForAttribute(2)==4 &&
+                       pica.vs_setup.GetProgramCodeHash()==0x89b1ab98da3d9241ULL &&
+                       pica.vs_setup.GetSwizzleDataHash()==0x6f0b398b1fc186a9ULL &&
+                       blend.blend_enable && blend.src_color_blend_factor==BF::SourceAlpha &&
+                       blend.dst_color_blend_factor==BF::OneMinusSourceAlpha &&
+                       blend.color_blend_eq==Pica::FramebufferRegs::BlendEquation::Add && blend.color_write_mask==15 &&
+                       pipeline_info.state.depth_stencil.depth_test_enable &&
+                       !pipeline_info.state.depth_stencil.depth_write_enable &&
+                       !pipeline_info.state.depth_stencil.stencil_test_enable && regs.texturing.main_config.texture0_enable &&
+                       !regs.texturing.main_config.texture1_enable && !regs.texturing.main_config.texture2_enable) {
+                        MM3D::SnowInterpolation::Tev tev{};
+                        const auto stages=regs.texturing.GetTevStages();
+                        for(unsigned i=0;i<stages.size();++i)
+                            tev[i]={stages[i].sources_raw,stages[i].modifiers_raw,stages[i].ops_raw,
+                                stages[i].const_color,stages[i].scales_raw};
+                        if(MM3D::SnowInterpolation::Material(tev)) {
+                            const auto& replay=pica.GetCpuVertexReplay();
+                            std::vector<MM3D::SnowInterpolation::Vertex> inputs(replay.Inputs().size());
+                            for(unsigned i=0;i<inputs.size();++i)for(unsigned a=0;a<3;++a)for(unsigned c=0;c<4;++c)
+                                inputs[i][a][c]=replay.Inputs()[i][a][c].ToFloat32();
+                            if(const auto quads=MM3D::SnowInterpolation::Decode(inputs,replay.Order())) {
+                                const auto half=snow_history.Apply(frame,{regs.texturing.texture0.GetPhysicalAddress(),epoch},*quads);
+                                if(half && !fallback && !native_preview.load()) {
+                                    particle_inputs=replay.Inputs();
+                                    for(const auto& q:*half)for(unsigned v=0;v<4;++v) {
+                                        for(unsigned c=0;c<3;++c)
+                                            particle_inputs[q.indices[v]][0][c]=Pica::f24::FromFloat32(q.vertices[v][0][c]);
+                                        particle_inputs[q.indices[v]][1][3]=Pica::f24::FromFloat32(q.vertices[v][1][3]);
+                                    }
+                                }
+                            }
+                        }
+                    }
                     if (regs.pipeline.triangle_topology == Pica::PipelineRegs::TriangleTopology::Strip &&
-                        regs.pipeline.num_vertices <= 144 &&
+                        regs.pipeline.num_vertices <= 768 &&
+                        pica.GetCpuVertexReplay().Inputs().size() <= 513 &&
                         regs.vs.max_input_attribute_index == 2 &&
                         regs.vs.GetRegisterForAttribute(0) == 0 &&
                         regs.vs.GetRegisterForAttribute(1) == 3 &&
@@ -1374,21 +1793,244 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
                             for (unsigned a = 0; a < 3; ++a)
                                 for (unsigned c = 0; c < 4; ++c)
                                     inputs[i][a][c] = replay.Inputs()[i][a][c].ToFloat32();
-                        if (const auto quads = MM3D::ForestParticleInterpolation::Decode(inputs, replay.Order())) {
-                            const auto half = forest_particle_history.Apply(frame,
-                                regs.texturing.texture0.GetPhysicalAddress(), epoch, *quads);
-                            if (half && !fallback && !native_preview.load()) {
-                                particle_inputs = replay.Inputs();
-                                for (const auto& q : *half)
-                                    for (unsigned v = 0; v < 4; ++v)
-                                        for (unsigned a = 0; a < 3; ++a)
-                                            for (unsigned c = 0; c < 4; ++c)
-                                                particle_inputs[q.indices[v]][a][c] =
-                                                    Pica::f24::FromFloat32(q.vertices[v][a][c]);
+                        std::optional<std::vector<MM3D::ForestParticleInterpolation::Quad>> half;
+                        auto quads = MM3D::ForestParticleInterpolation::Decode(inputs, replay.Order());
+                        if (!quads) quads = MM3D::ForestParticleInterpolation::Decode(inputs, replay.Order(), true);
+                        if (quads) {
+                            const auto& textures=regs.texturing.main_config;
+                            const bool doubled_sparkle=MM3D::ForestParticleInterpolation::Kind(quads->front().vertices[0])>=3;
+                            if(!doubled_sparkle || (textures.texture0_enable && !textures.texture1_enable &&
+                               !textures.texture2_enable && !pipeline_info.state.depth_stencil.depth_write_enable))
+                                half = forest_particle_history.Apply(frame,
+                                    regs.texturing.texture0.GetPhysicalAddress(), epoch, *quads);
+                        } else if (pica.vs_setup.GetProgramCodeHash() == 0x89b1ab98da3d9241ULL &&
+                                   pica.vs_setup.GetSwizzleDataHash() == 0x6f0b398b1fc186a9ULL) {
+                            const MM3D::WaterParticleInterpolation::Key key{
+                                regs.texturing.texture0.GetPhysicalAddress(),
+                                regs.texturing.texture1.GetPhysicalAddress(),
+                                regs.texturing.texture2.GetPhysicalAddress(), epoch};
+                            const auto& textures = regs.texturing.main_config;
+                            const auto sparks = textures.texture0_enable && !textures.texture1_enable &&
+                                !textures.texture2_enable && !pipeline_info.state.depth_stencil.depth_write_enable
+                                ? MM3D::SparkInterpolation::Decode(inputs, replay.Order()) : std::nullopt;
+                            const auto ribbon = textures.texture0_enable && !textures.texture1_enable &&
+                                !textures.texture2_enable && !pipeline_info.state.depth_stencil.depth_write_enable
+                                ? MM3D::SwordTrailInterpolation::Decode(inputs, replay.Order()) : std::nullopt;
+                            const auto& tev0 = regs.texturing.tev_stage0;
+                            const auto& tev1 = regs.texturing.tev_stage1;
+                            const bool shockwave_material = tev0.modifiers_raw == 0 &&
+                                ((tev0.sources_raw == 0x0ee00e30 && tev0.ops_raw == 0x10001 && tev0.scales_raw == 0) ||
+                                 (tev0.sources_raw == 0x0ee00ee3 && tev0.ops_raw == 0 && tev0.scales_raw == 2 &&
+                                  tev1.sources_raw == 0x0eee0efe && tev1.modifiers_raw == 0 &&
+                                  tev1.ops_raw == 1 && tev1.scales_raw == 0));
+                            const auto shockwaves = shockwave_material && textures.texture0_enable && !textures.texture1_enable &&
+                                !textures.texture2_enable && !pipeline_info.state.depth_stencil.depth_write_enable
+                                ? MM3D::ShockwaveInterpolation::Decode(inputs, replay.Order()) : std::nullopt;
+                            const bool bubble_material = tev0.sources_raw == 0x0ee00ee3 &&
+                                tev0.modifiers_raw == 0 && tev0.ops_raw == 0 && tev0.scales_raw == 2 &&
+                                tev1.sources_raw == 0x0eee0efe && tev1.modifiers_raw == 0 &&
+                                tev1.ops_raw == 1 && tev1.scales_raw == 0;
+                            const auto bubbles = bubble_material && textures.texture0_enable && !textures.texture1_enable &&
+                                !textures.texture2_enable && !pipeline_info.state.depth_stencil.depth_write_enable
+                                ? MM3D::BubbleInterpolation::Decode(inputs, replay.Order()) : std::nullopt;
+                            std::array<std::array<u32,5>,6> firework_tev{};
+                            const auto stages=regs.texturing.GetTevStages();
+                            for(unsigned i=0;i<stages.size();++i)
+                                firework_tev[i]={stages[i].sources_raw,stages[i].modifiers_raw,stages[i].ops_raw,
+                                    stages[i].const_color,stages[i].scales_raw};
+                            const auto fireworks=MM3D::FireworkInterpolation::Material(firework_tev)&&
+                                textures.texture0_enable&&!textures.texture1_enable&&!textures.texture2_enable&&
+                                !pipeline_info.state.depth_stencil.depth_write_enable
+                                ?MM3D::FireworkInterpolation::Decode(inputs,replay.Order()):std::nullopt;
+                            const auto chest_particles=MM3D::ChestParticleInterpolation::Material(firework_tev)&&
+                                textures.texture0_enable&&!textures.texture1_enable&&!textures.texture2_enable&&
+                                !pipeline_info.state.depth_stencil.depth_write_enable
+                                ?MM3D::ChestParticleInterpolation::Decode(inputs,replay.Order()):std::nullopt;
+                            const auto fire_impact_kind=MM3D::FireImpactInterpolation::Material(firework_tev);
+                            const auto fire_impact=textures.texture0_enable&&!textures.texture1_enable&&
+                                !textures.texture2_enable&&!pipeline_info.state.depth_stencil.depth_write_enable
+                                ?MM3D::FireImpactInterpolation::Decode(inputs,replay.Order(),fire_impact_kind):std::nullopt;
+                            if(fire_impact) {
+                                half=fire_impact_history.Apply(frame,regs.texturing.texture0.GetPhysicalAddress(),
+                                    epoch,fire_impact_kind,*fire_impact);
+                            } else if(fireworks) {
+                                half=firework_history.Apply(frame,
+                                    {regs.texturing.texture0.GetPhysicalAddress(),epoch},*fireworks);
+                            } else if (chest_particles) {
+                                half=chest_particle_history.Apply(frame,
+                                    {regs.texturing.texture0.GetPhysicalAddress(),epoch},*chest_particles);
+                            } else if (sparks) {
+                                half = spark_history.Apply(frame,
+                                    {regs.texturing.texture0.GetPhysicalAddress(), epoch}, *sparks);
+                            } else if (bubbles) {
+                                half = bubble_history.Apply(frame,
+                                    {regs.texturing.texture0.GetPhysicalAddress(), epoch}, *bubbles);
+                            } else if (shockwaves) {
+                                half = shockwave_history.Apply(frame,
+                                    {regs.texturing.texture0.GetPhysicalAddress(), epoch}, *shockwaves);
+                            } else if (ribbon) {
+                                auto model_view = Identity();
+                                for (unsigned r = 0; r < 3; ++r) for (unsigned c = 0; c < 4; ++c)
+                                    model_view[r][c] = pica.vs_setup.uniforms.f[20+r][c].ToFloat32();
+                                const auto trail = sword_trail_history.Apply(frame,
+                                    {regs.texturing.texture0.GetPhysicalAddress(), epoch}, *ribbon,
+                                    MM3D::LinkPoseMath::Multiply(camera, model_view));
+                                if (trail && !fallback && !native_preview.load() && !link_overrides[0]) {
+                                    particle_inputs = replay.Inputs();
+                                    for (unsigned i = 0; i < trail->indices.size(); ++i) {
+                                        const auto index = trail->indices[i];
+                                        for (unsigned c = 0; c < 3; ++c)
+                                            particle_inputs[index][0][c] = Pica::f24::FromFloat32(trail->vertices[i][0][c]);
+                                        particle_inputs[index][1][3] = Pica::f24::FromFloat32(trail->vertices[i][1][3]);
+                                    }
+                                }
+                            } else if (const auto drops = MM3D::WaterParticleInterpolation::DecodeDrops(inputs, replay.Order())) {
+                                half = water_particle_history.ApplyDrops(frame, key, *drops);
+                            } else if (const auto rings = MM3D::WaterParticleInterpolation::DecodeRipples(inputs, replay.Order())) {
+                                const auto mesh = water_particle_history.ApplyRipples(frame, key, *rings);
+                                if (mesh && !fallback && !native_preview.load()) {
+                                    particle_inputs = replay.Inputs();
+                                    for (unsigned v = 0; v < rings->indices.size(); ++v) {
+                                        const auto index = rings->indices[v];
+                                        for (unsigned c = 0; c < 3; ++c)
+                                            particle_inputs[index][0][c] = Pica::f24::FromFloat32(mesh->points[v][c]);
+                                        particle_inputs[index][1][3] = Pica::f24::FromFloat32(mesh->colors[v][3]);
+                                    }
+                                }
+                            }
+                        }
+                        const auto splash_tev=regs.texturing.GetTevStages();
+                        if(regs.texturing.main_config.texture0_enable && !regs.texturing.main_config.texture1_enable &&
+                           !regs.texturing.main_config.texture2_enable && !pipeline_info.state.depth_stencil.depth_write_enable &&
+                           splash_tev[0].sources_raw==249564899 && splash_tev[0].modifiers_raw==2 &&
+                           splash_tev[0].ops_raw==0 && splash_tev[0].scales_raw==2 &&
+                           splash_tev[1].sources_raw==250482430 && splash_tev[1].ops_raw==1 &&
+                           splash_tev[2].sources_raw==249564976 && splash_tev[2].modifiers_raw==32 && splash_tev[2].ops_raw==8) {
+                            if(const auto splash=MM3D::SplashInterpolation::Decode(inputs,replay.Order())) {
+                                const auto mid=splash_cpu_history.Apply(frame,regs.texturing.texture0.GetPhysicalAddress(),epoch,splash->sprite);
+                                if(mid && !fallback && !native_preview.load()) {
+                                    particle_inputs=replay.Inputs();
+                                    for(unsigned i=0;i<4;++i) {
+                                        const auto at=splash->indices[i];
+                                        for(unsigned c=0;c<3;++c)particle_inputs[at][0][c]=Pica::f24::FromFloat32(mid->sprite.points[i][c]);
+                                        particle_inputs[at][1][3]=Pica::f24::FromFloat32(mid->sprite.colors[i][3]);
+                                    }
+                                    if(mid->blend) {
+                                        splash_old_inputs=particle_inputs;
+                                        for(unsigned i=0;i<4;++i)for(unsigned c=0;c<2;++c)
+                                            splash_old_inputs[splash->indices[i]][2][c]=Pica::f24::FromFloat32(mid->old_uv[i][c]);
+                                    }
+                                }
+                            }
+                        }
+                        if (half && !fallback && !native_preview.load()) {
+                            particle_inputs = replay.Inputs();
+                            for (const auto& q : *half)
+                                for (unsigned v = 0; v < 4; ++v)
+                                    for (unsigned a = 0; a < 3; ++a)
+                                        for (unsigned c = 0; c < 4; ++c)
+                                            particle_inputs[q.indices[v]][a][c] =
+                                                Pica::f24::FromFloat32(q.vertices[v][a][c]);
+                        }
+                    }
+                    if(regs.pipeline.triangle_topology==Pica::PipelineRegs::TriangleTopology::Strip &&
+                       regs.pipeline.num_vertices<=768 && pica.GetCpuVertexReplay().Inputs().size()<=513 &&
+                       regs.vs.max_input_attribute_index==3 && regs.vs.GetRegisterForAttribute(0)==0 &&
+                       regs.vs.GetRegisterForAttribute(1)==1 && regs.vs.GetRegisterForAttribute(2)==3 &&
+                       regs.vs.GetRegisterForAttribute(3)==4 && blend.blend_enable &&
+                       blend.src_color_blend_factor==BF::SourceAlpha && blend.dst_color_blend_factor==BF::OneMinusSourceAlpha &&
+                       blend.color_blend_eq==Pica::FramebufferRegs::BlendEquation::Add && blend.color_write_mask==15 &&
+                       pipeline_info.state.depth_stencil.depth_test_enable && !pipeline_info.state.depth_stencil.depth_write_enable &&
+                       !pipeline_info.state.depth_stencil.stencil_test_enable && regs.texturing.main_config.texture0_enable &&
+                       !regs.texturing.main_config.texture1_enable && !regs.texturing.main_config.texture2_enable) {
+                        const auto& replay=pica.GetCpuVertexReplay();
+                        std::vector<MM3D::LeafParticleInterpolation::Vertex> inputs(replay.Inputs().size());
+                        for(unsigned i=0;i<inputs.size();++i)for(unsigned a=0;a<4;++a)for(unsigned c=0;c<4;++c)
+                            inputs[i][a][c]=replay.Inputs()[i][a][c].ToFloat32();
+                        if(const auto leaves=MM3D::LeafParticleInterpolation::Decode(inputs,replay.Order())) {
+                            const auto half=leaf_particle_history.Apply(frame,
+                                {regs.texturing.texture0.GetPhysicalAddress(),epoch},*leaves);
+                            if(half && !fallback && !native_preview.load()) {
+                                particle_inputs=replay.Inputs();
+                                for(const auto& q:*half)for(unsigned k=0;k<4;++k)
+                                    for(unsigned a=0;a<2;++a)for(unsigned c=0;c<3;++c)
+                                        particle_inputs[q.indices[k]][a][c]=Pica::f24::FromFloat32(q.vertices[k][a][c]);
                             }
                         }
                     }
+                    if(regs.pipeline.triangle_topology==Pica::PipelineRegs::TriangleTopology::Shader &&
+                       regs.pipeline.num_vertices==12 && pica.GetCpuVertexReplay().Inputs().size()==6 &&
+                       regs.vs.max_input_attribute_index==2 && regs.vs.GetRegisterForAttribute(0)==0 &&
+                       regs.vs.GetRegisterForAttribute(1)==1 && regs.vs.GetRegisterForAttribute(2)==4 &&
+                       blend.blend_enable && blend.src_color_blend_factor==BF::SourceAlpha &&
+                       blend.dst_color_blend_factor==BF::OneMinusSourceAlpha &&
+                       blend.color_blend_eq==Pica::FramebufferRegs::BlendEquation::Add && blend.color_write_mask==15 &&
+                       pipeline_info.state.depth_stencil.depth_test_enable && !pipeline_info.state.depth_stencil.depth_write_enable &&
+                       !pipeline_info.state.depth_stencil.stencil_test_enable && regs.texturing.main_config.texture0_enable &&
+                       regs.texturing.main_config.texture1_enable && !regs.texturing.main_config.texture2_enable) {
+                        const auto& replay=pica.GetCpuVertexReplay();
+                        std::array<MM3D::MothInterpolation::Vertex,6> inputs{};
+                        for(unsigned i=0;i<6;++i)for(unsigned a=0;a<3;++a)for(unsigned c=0;c<4;++c)
+                            inputs[i][a][c]=replay.Inputs()[i][a][c].ToFloat32();
+                        if(MM3D::MothInterpolation::Recognized(inputs,replay.Order())) {
+                            auto model=Identity();
+                            for(unsigned r=0;r<3;++r)for(unsigned c=0;c<4;++c)
+                                model[r][c]=pica.vs_setup.uniforms.f[20+r][c].ToFloat32();
+                            const auto half=moth_history.Apply(frame,{
+                                regs.texturing.texture0.GetPhysicalAddress(),
+                                regs.texturing.texture1.GetPhysicalAddress(),epoch},Multiply(camera,model));
+                            // Projection supplies the midpoint camera. Keep the
+                            // model in the current view to avoid applying it twice.
+                            if(half && !fallback && !native_preview.load())
+                                moth_override=Multiply(InverseRigid(camera),*half);
+                        }
+                    }
                     auto uniforms = pica.vs_setup.uniforms;
+                    if (regs.pipeline.num_vertices == 6 &&
+                        pica.vs_setup.GetProgramCodeHash() == 0x89b1ab98da3d9241ULL &&
+                        pica.vs_setup.GetSwizzleDataHash() == 0x6f0b398b1fc186a9ULL &&
+                        regs.pipeline.triangle_topology == Pica::PipelineRegs::TriangleTopology::Shader &&
+                        regs.vs.max_input_attribute_index == 2 &&
+                        regs.vs.GetRegisterForAttribute(0) == 0 &&
+                        regs.vs.GetRegisterForAttribute(1) == 4 &&
+                        regs.vs.GetRegisterForAttribute(2) == 1 &&
+                        blend.blend_enable && blend.src_color_blend_factor == BF::SourceAlpha &&
+                        blend.dst_color_blend_factor == BF::One &&
+                        blend.color_blend_eq == Pica::FramebufferRegs::BlendEquation::Add &&
+                        blend.color_write_mask == 15 && pipeline_info.state.depth_stencil.depth_test_enable &&
+                        !pipeline_info.state.depth_stencil.stencil_test_enable) {
+                        const auto& replay = pica.GetCpuVertexReplay();
+                        if (replay.Inputs().size() == 4) {
+                            std::array<MM3D::TorchInterpolation::Vertex, 4> inputs{};
+                            for (unsigned i = 0; i < 4; ++i)
+                                for (unsigned a = 0; a < 3; ++a)
+                                    for (unsigned c = 0; c < 4; ++c)
+                                        inputs[i][a][c] = replay.Inputs()[i][a][c].ToFloat32();
+                            MM3D::TorchInterpolation::Values uv{};
+                            for (unsigned r = 0; r < uv.size(); ++r)
+                                for (unsigned c = 0; c < 4; ++c)
+                                    uv[r][c] = uniforms.f[MM3D::TorchInterpolation::Rows[r]][c].ToFloat32();
+                            if (MM3D::TorchInterpolation::Recognized(inputs, replay.Order(), uv)) {
+                                // Palette zero is in view space; camera is the
+                                // inverse view. Recover the stationary torch origin.
+                                MM3D::TorchInterpolation::Point origin{};
+                                for (unsigned r = 0; r < 3; ++r) {
+                                    double position = camera[r][3];
+                                    for (unsigned c = 0; c < 3; ++c)
+                                        position += camera[r][c] * uniforms.f[20 + c][3].ToFloat32();
+                                    origin[r] = static_cast<float>(position);
+                                }
+                                const auto half = torch_history.Apply(frame, {
+                                    regs.texturing.texture0.GetPhysicalAddress(),
+                                    regs.texturing.texture1.GetPhysicalAddress(),
+                                    regs.texturing.texture2.GetPhysicalAddress(), epoch}, origin, uv[3][3]);
+                                if (half && !fallback && !native_preview.load()) {
+                                    uniforms.f[15][3] = Pica::f24::FromFloat32((*half)[0]);
+                                    uniforms.f[18][3] = Pica::f24::FromFloat32((*half)[1]);
+                                }
+                            }
+                        }
+                    }
                     for (unsigned row = 0; row < 4; ++row)
                         for (unsigned col = 0; col < 4; ++col)
                             uniforms.f[row][col] = Pica::f24::FromFloat32(float((*midpoint_projection)[row][col]));
@@ -1398,8 +2040,11 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
                             uniforms.f[20 + bone * 3 + i / 4][i % 4] = Pica::f24::FromFloat32(
                                 float((*link_overrides[bone])[i / 4][i % 4]));
                     }
+                    if(moth_override)
+                        for(unsigned r=0;r<3;++r)for(unsigned c=0;c<4;++c)
+                            uniforms.f[20+r][c]=Pica::f24::FromFloat32(float((*moth_override)[r][c]));
                     if (song_overrides)
-                        for (unsigned row = 0; row < 4; ++row)
+                        for (unsigned row = 0; row < MM3D::SongEffectInterpolation::Rows.size(); ++row)
                             uniforms.f[MM3D::SongEffectInterpolation::Rows[row]][3] =
                                 Pica::f24::FromFloat32((*song_overrides)[row][3]);
                     auto& vertices = midpoint_cpu_vertices;
@@ -1408,7 +2053,19 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
                     pica.ReplayCpuVertices(uniforms, [&](const auto& a, const auto& b, const auto& c) {
                         AppendTriangle(vertices, a, b, c);
                     }, particle_inputs);
+                    if(map_trace && vertices.size()==vertex_batch.size() && !vertices.empty()) {
+                        map_trace->flags|=8;
+                        for(unsigned i=0;i<vertices.size();++i)for(unsigned c=0;c<4;++c)
+                            map_trace->position_delta=std::max(map_trace->position_delta,
+                                std::abs(vertices[i].position[c]-vertex_batch[i].position[c]));
+                    }
                     midpoint_cpu_draw = upload_cpu_draw(vertices);
+                    if(!splash_old_inputs.empty()) {
+                        vertices.clear();
+                        if(pica.ReplayCpuVertices(uniforms,[&](const auto& a,const auto& b,const auto& c){
+                            AppendTriangle(vertices,a,b,c);
+                        },splash_old_inputs))splash_old_cpu_draw=upload_cpu_draw(vertices);
+                    }
                     use_midpoint_cpu_draw = true;
                 }
                 UploadUniforms(accelerate);
@@ -1428,7 +2085,10 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
                     Matrix world_model=Identity();
                     for(unsigned row=0;row<3;++row)for(unsigned col=0;col<4;++col)
                         world_model[row][col]=pica.vs_setup.uniforms.f[20+row][col].ToFloat32();
-                    if(!OpaqueSkyDome(regs.pipeline.num_vertices,projection,world_model) &&
+                    const auto& world_textures=regs.texturing.main_config;
+                    const unsigned world_texture_mask=unsigned(world_textures.texture0_enable)|
+                        (unsigned(world_textures.texture1_enable)<<1)|(unsigned(world_textures.texture2_enable)<<2);
+                    if(!OpaqueSkyDome(regs.pipeline.num_vertices,projection,world_model,world_texture_mask) &&
                        pipeline_info.state.depth_stencil.depth_test_enable &&
                        native_blend.color_write_mask==15 &&
                        (!native_blend.blend_enable ||
@@ -1453,11 +2113,19 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
                         }
                     }
                     draw_batch();
+                    if(cpu_interpolation && splash_old_cpu_draw.count) {
+                        const auto current=midpoint_cpu_draw;midpoint_cpu_draw=splash_old_cpu_draw;
+                        draw_batch();midpoint_cpu_draw=current;
+                    }
                     binding_offsets=native_bindings;
                     layer->x=viewport.x;layer->y=viewport.y;
                     layer->viewport_width=viewport.width;layer->viewport_height=viewport.height;
                     layer->End(false);++midpoint_copies;midpoint_last_draw_ms=now;
-                    midpoint_scene_copies.Begin(frame,regs.framebuffer.framebuffer.GetColorBufferPhysicalAddress());
+                    if(map_trace)map_trace->flags|=16;
+                    const auto& scene_fb=regs.framebuffer.framebuffer;
+                    midpoint_scene_copies.Begin(frame,scene_fb.GetColorBufferPhysicalAddress(),
+                        scene_fb.GetWidth(),scene_fb.GetHeight(),
+                        scene_fb.color_format==Pica::FramebufferRegs::ColorFormat::RGBA8);
                     if(fallback)++midpoint_fallback;
                     else midpoint_frame_interpolated=true;
                     const auto bones=std::count_if(link_overrides.begin(),link_overrides.end(),
@@ -1469,11 +2137,14 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
                 }
                 }
                 pipeline_info=saved;midpoint_projection.reset();link_overrides={};song_overrides.reset();
+                if(water_model_alpha_override){water_model_alpha_override.reset();fs_data_dirty=true;}
+                if(moving_effect_colors){moving_effect_colors.reset();fs_data_dirty=true;}
                 use_midpoint_cpu_draw = false;
                 pica.vs_setup.uniforms_dirty=true;UploadUniforms(accelerate);
             }
         } else ++midpoint_rejected;
     }
+    if(map_trace)MM3D::EffectCapture::ObserveMapReplay(*map_trace);
 #endif
 
     // Replay verified UI draws using the same shader/uniforms/geometry. Guest target is untouched.
@@ -1577,7 +2248,8 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
             "vertices={} viewport={}x{} origin={},{} accelerated={} succeeded={} "
             "stencil={} blend={} src={} dst={} equation={} mask={} "
             "texture0={:08x} framebuffer={:08x} shrink={} normalized={} "
-            "textures={} frame={} source_frame={} sources={:08x},{:08x},{:08x},{:08x}",
+            "textures={} frame={} source_frame={} sources={:08x},{:08x},{:08x},{:08x} "
+            "padded={:08x} texture_size={}x{} texture_format={} uv={},{},{},{}",
             reason,pica.vs_setup.GetProgramCodeHash(),pica.vs_setup.GetSwizzleDataHash(),
             u32(regs.pipeline.num_vertices),viewport.width,viewport.height,viewport.x,viewport.y,
             accelerate,succeeded,unsigned(pipeline_info.state.depth_stencil.stencil_test_enable),
@@ -1591,11 +2263,15 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
                 (unsigned(regs.texturing.main_config.texture2_enable)<<2),
             MM3D::guest_frames.load(),midpoint_scene_copies.frame,
             midpoint_scene_copies.addresses[0],midpoint_scene_copies.addresses[1],
-            midpoint_scene_copies.addresses[2],midpoint_scene_copies.addresses[3]);
+            midpoint_scene_copies.addresses[2],midpoint_scene_copies.addresses[3],
+            midpoint_scene_copies.padded_destination,u32(regs.texturing.texture0.width),
+            u32(regs.texturing.texture0.height),unsigned(regs.texturing.texture0_format.Value()),
+            native_uv_bounds?(*native_uv_bounds)[0]:-1.f,native_uv_bounds?(*native_uv_bounds)[1]:-1.f,
+            native_uv_bounds?(*native_uv_bounds)[2]:-1.f,native_uv_bounds?(*native_uv_bounds)[3]:-1.f);
     };
     if(MM3D::CameraMidpoint::present_60.load() &&
        !shadow_rendering &&
-       using_color_fb && !use_pause &&
+       using_color_fb && (!use_pause || inventory_owner) &&
        MM3D::Widescreen::IsTopViewport(wide_viewport.GetWidth(),wide_viewport.GetHeight())) {
         const auto frame=MM3D::guest_frames.load();
         if(midpoint_hud_frame!=frame) {
@@ -1627,7 +2303,7 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
             blend.color_write_mask==15;
         const bool scene_copy=MM3D::CameraMidpoint::NormalizedSceneCopy(
             MM3D::ScreenShrink::native_normalized.load(),
-            midpoint_scene_copies.Contains(frame,regs.texturing.texture0.GetPhysicalAddress()),
+            midpoint_scene_copies.Contains(frame,regs.texturing.texture0.GetPhysicalAddress()) || padded_scene_copy,
             ortho,u32(regs.pipeline.num_vertices),
             texture_mask,opaque,
             pipeline_info.state.depth_stencil.stencil_test_enable);
@@ -1669,12 +2345,7 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
         // changing occlusion on every midpoint frame.
         // The lens mask can follow translucent sky draws. It still precedes
         // opaque scenery; sky alone must not disqualify the stencil pass.
-        const bool lens_mask=ortho && regs.pipeline.num_vertices==18 &&
-            pipeline_info.state.depth_stencil.stencil_test_enable &&
-            midpoint_opaque_world_frame!=frame && blend.blend_enable &&
-            blend.src_color_blend_factor==BF::One && blend.dst_color_blend_factor==BF::One &&
-            blend.color_blend_eq==BE::Add && blend.color_write_mask==15 &&
-            textures.texture0_enable && !textures.texture1_enable && !textures.texture2_enable;
+        const bool lens_mask=lens_kind && *lens_kind<2 && midpoint_opaque_world_frame!=frame;
         if(lens_mask && replay_geometry && succeeded)midpoint_stencil_frame=frame;
         if((ortho || layout || fade || midpoint_title_logo) && !scene_copy && !scene_clear) {
             if(!replay_geometry || (pipeline_info.state.depth_stencil.stencil_test_enable &&
@@ -1693,6 +2364,273 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
         } else if(!world && !layout) {
             // Unknown top-screen draws must not silently vanish on alternate frames.
             reject_midpoint_hud(2);
+        }
+    }
+    // Only the private midpoint HUD receives the animated MessageWindow plate.
+    // Snapshot once per native draw, outside replay scopes; never write guest
+    // uniforms or retain a "currently drawing dialogue" flag across GPU work.
+    std::optional<MM3D::MessageInterpolation::Pose> message_half;
+    std::optional<MM3D::MessageInterpolation::Source> message_source;
+    CpuDraw message_cpu_draw{};
+    if (MM3D::CameraMidpoint::present_60.load() && replay_geometry && succeeded &&
+        !shadow_rendering && using_color_fb && !use_pause &&
+        MM3D::Widescreen::IsTopViewport(wide_viewport.GetWidth(), wide_viewport.GetHeight()) &&
+        MM3D::MessageInterpolation::Candidate(pica.vs_setup.GetProgramCodeHash(),
+            pica.vs_setup.GetSwizzleDataHash(), regs.pipeline.num_vertices,
+            pica.vs_setup.uniforms.f[10].w.ToFloat32(),true)) {
+        const auto& blend = pipeline_info.state.blending;
+        const auto& depth = pipeline_info.state.depth_stencil;
+        const auto& textures = regs.texturing.main_config;
+        using BF = Pica::FramebufferRegs::BlendFactor;
+        if (blend.blend_enable && blend.src_color_blend_factor == BF::SourceAlpha &&
+            blend.dst_color_blend_factor == BF::OneMinusSourceAlpha &&
+            blend.color_blend_eq == Pica::FramebufferRegs::BlendEquation::Add &&
+            blend.color_write_mask == 15 && !depth.depth_test_enable &&
+            !depth.stencil_test_enable && textures.texture0_enable &&
+            !textures.texture1_enable && !textures.texture2_enable) {
+            MM3D::MessageInterpolation::Values values{};
+            for (unsigned r = 0; r < values.size(); ++r)
+                for (unsigned c = 0; c < 4; ++c)
+                    values[r][c] = pica.vs_setup.uniforms.f[r][c].ToFloat32();
+            message_source=MM3D::MessageInterpolation::SourceFor(MM3D::guest_frames.load(),
+                MM3D::LinkPoseCapture::interpolation_generation.load(),values);
+            message_half = message_history.Apply(MM3D::guest_frames.load(), {
+                regs.texturing.texture0.GetPhysicalAddress(),
+                regs.framebuffer.framebuffer.GetColorBufferPhysicalAddress(),
+                MM3D::LinkPoseCapture::interpolation_generation.load()}, values, message_source);
+            if (MM3D::CameraMidpoint::native_preview.load() || (!midpoint_frame_interpolated && !inventory_owner))
+                message_half.reset();
+            if (message_half && cpu_interpolation) {
+                auto uniforms = pica.vs_setup.uniforms;
+                for (unsigned r = 0; r < MM3D::MessageInterpolation::Rows.size(); ++r)
+                    for (unsigned c = 0; c < 4; ++c)
+                        uniforms.f[MM3D::MessageInterpolation::Rows[r]][c] =
+                            Pica::f24::FromFloat32((*message_half)[r][c]);
+                auto& vertices = midpoint_cpu_vertices;
+                vertices.clear();
+                if (pica.ReplayCpuVertices(uniforms, [&](const auto& a, const auto& b, const auto& c) {
+                        AppendTriangle(vertices, a, b, c);
+                    }) && vertices.size() == vertex_batch.size())
+                    message_cpu_draw = upload_cpu_draw(vertices);
+            }
+        }
+    }
+    std::optional<MM3D::ItemSlideInterpolation::Pose> item_slide_half;
+    CpuDraw item_slide_cpu_draw{};
+    if (MM3D::CameraMidpoint::present_60.load() && replay_geometry && succeeded &&
+        !shadow_rendering && using_color_fb && !use_pause &&
+        MM3D::Widescreen::IsTopViewport(wide_viewport.GetWidth(),wide_viewport.GetHeight()) &&
+        !pipeline_info.state.depth_stencil.depth_test_enable &&
+        !pipeline_info.state.depth_stencil.stencil_test_enable &&
+        MM3D::ItemSlideInterpolation::Candidate(pica.vs_setup.GetProgramCodeHash(),
+            pica.vs_setup.GetSwizzleDataHash(),regs.pipeline.num_vertices)) {
+        MM3D::ItemSlideInterpolation::Values values{};
+        for(unsigned r=0;r<values.size();++r)for(unsigned c=0;c<4;++c)
+            values[r][c]=pica.vs_setup.uniforms.f[r][c].ToFloat32();
+        const auto frame=MM3D::guest_frames.load();
+        const auto generation=MM3D::LinkPoseCapture::interpolation_generation.load();
+        item_slide_half=item_slide_history.Apply(frame,{
+            regs.texturing.texture0.GetPhysicalAddress(),
+            regs.framebuffer.framebuffer.GetColorBufferPhysicalAddress(),generation},values,
+            regs.pipeline.num_vertices,MM3D::ItemSlideInterpolation::Recent(frame,generation));
+        if(MM3D::CameraMidpoint::native_preview.load()||!midpoint_frame_interpolated)
+            item_slide_half.reset();
+        if(item_slide_half&&cpu_interpolation) {
+            auto uniforms=pica.vs_setup.uniforms;
+            for(unsigned q=0;q<item_slide_half->count;++q)
+                uniforms.f[11+q*4][0]=Pica::f24::FromFloat32(item_slide_half->x[q]);
+            auto& vertices=midpoint_cpu_vertices;vertices.clear();
+            if(pica.ReplayCpuVertices(uniforms,[&](const auto& a,const auto& b,const auto& c){
+                    AppendTriangle(vertices,a,b,c);
+                })&&vertices.size()==vertex_batch.size())
+                item_slide_cpu_draw=upload_cpu_draw(vertices);
+        }
+    }
+    std::optional<MM3D::FileSelectInterpolation::Pose> file_select_half;
+    CpuDraw file_select_cpu_draw{};
+    {
+        const auto& blend=pipeline_info.state.blending;
+        const auto& depth=pipeline_info.state.depth_stencil;
+        const auto& textures=regs.texturing.main_config;
+        const unsigned texture_mask=unsigned(textures.texture0_enable) |
+            (unsigned(textures.texture1_enable)<<1) | (unsigned(textures.texture2_enable)<<2);
+        if (MM3D::CameraMidpoint::present_60.load() && replay_geometry && succeeded &&
+            !shadow_rendering && using_color_fb && !use_pause &&
+            MM3D::Widescreen::IsTopViewport(wide_viewport.GetWidth(),wide_viewport.GetHeight()) &&
+            !depth.depth_test_enable && !depth.stencil_test_enable && blend.color_write_mask==15 &&
+            MM3D::FileSelectInterpolation::Candidate(pica.vs_setup.GetProgramCodeHash(),
+                pica.vs_setup.GetSwizzleDataHash(),
+                texture_mask,depth.depth_write_enable,blend.blend_enable,
+                unsigned(blend.src_color_blend_factor.Value()),
+                unsigned(blend.dst_color_blend_factor.Value()),
+                unsigned(blend.color_blend_eq.Value()),regs.pipeline.num_vertices)) {
+            MM3D::FileSelectInterpolation::Values values{};
+            for(unsigned r=0;r<values.size();++r)for(unsigned c=0;c<4;++c)
+                values[r][c]=pica.vs_setup.uniforms.f[r][c].ToFloat32();
+            const auto frame=MM3D::guest_frames.load();
+            const auto generation=MM3D::LinkPoseCapture::interpolation_generation.load();
+            const auto owner=MM3D::FileSelectInterpolation::Owner(frame,generation);
+            const bool credits=MM3D::FileSelectInterpolation::CreditsLayout(values,regs.pipeline.num_vertices);
+            const auto history_owner=owner?owner:(credits?regs.texturing.texture0.GetPhysicalAddress():0u);
+            MM3D::FileSelectInterpolation::Tev tev{};
+            const auto stages=regs.texturing.GetTevStages();
+            for(unsigned i=0;i<stages.size();++i)
+                tev[i]={stages[i].sources_raw,stages[i].modifiers_raw,stages[i].ops_raw,
+                    stages[i].const_color,stages[i].scales_raw};
+            const MM3D::FileSelectInterpolation::Key layout_key{
+                regs.texturing.texture0.GetPhysicalAddress(),
+                regs.framebuffer.framebuffer.GetColorBufferPhysicalAddress(),generation,history_owner};
+            file_select_half=!owner && credits ? file_select_history.ApplyCredits(frame,layout_key,
+                values,regs.pipeline.num_vertices,!MM3D::CameraMidpoint::native_preview.load()) :
+                file_select_history.Apply(frame,layout_key,values,regs.pipeline.num_vertices,
+                !MM3D::CameraMidpoint::native_preview.load(),
+                owner?MM3D::FileSelectInterpolation::Motion(frame,generation,owner):std::vector<float>{},
+                MM3D::FileSelectInterpolation::GlowAlpha(tev));
+            if(file_select_half && cpu_interpolation) {
+                auto uniforms=pica.vs_setup.uniforms;
+                for(unsigned q=0;q<file_select_half->count;++q) {
+                    uniforms.f[11+q*4][0]=Pica::f24::FromFloat32(file_select_half->x[q]);
+                    uniforms.f[12+q*4][0]=Pica::f24::FromFloat32(file_select_half->y[q]);
+                    if(file_select_half->rectangles)for(unsigned row=0;row<2;++row)for(unsigned c=0;c<4;++c)
+                        uniforms.f[11+q*4+row][c]=Pica::f24::FromFloat32((*file_select_half->rectangles)[q*2+row][c]);
+                }
+                auto& vertices=midpoint_cpu_vertices;vertices.clear();
+                if(pica.ReplayCpuVertices(uniforms,[&](const auto& a,const auto& b,const auto& c){
+                        AppendTriangle(vertices,a,b,c);
+                    })&&vertices.size()==vertex_batch.size())
+                    file_select_cpu_draw=upload_cpu_draw(vertices);
+            }
+        }
+    }
+    std::optional<MM3D::InventoryInterpolation::Pose> inventory_half;
+    CpuDraw inventory_cpu_draw{};
+    const bool trace_layout=MM3D::EffectCapture::Recording(MM3D::guest_frames.load()) &&
+        !shadow_rendering && using_color_fb &&
+        MM3D::Widescreen::IsTopViewport(wide_viewport.GetWidth(),wide_viewport.GetHeight()) &&
+        MM3D::FileSelectInterpolation::Layout(pica.vs_setup.GetProgramCodeHash(),
+            pica.vs_setup.GetSwizzleDataHash(),regs.pipeline.num_vertices);
+    MM3D::EffectCapture::LayoutReplay layout_trace{
+        .frame=MM3D::guest_frames.load(),.texture=regs.texturing.texture0.GetPhysicalAddress(),
+        .vertices=regs.pipeline.num_vertices,.owner=message_source?(*message_source)[0]:inventory_owner,
+        .flags=(pica.CanReplayCpuVertices()?4u:0u)|(cpu_interpolation?32u:0u)|
+            (use_pause?64u:0u)|(succeeded?128u:0u)|(message_source?256u:0u)|(message_half?512u:0u)};
+    const auto banner_owner=MM3D::BannerInterpolation::Owner(MM3D::guest_frames.load(),
+        MM3D::LinkPoseCapture::interpolation_generation.load());
+    const auto magic_uv=[&](unsigned row) {
+        MM3D::MagicMeterInterpolation::Row result{};
+        for(unsigned c=0;c<4;++c)result[c]=pica.vs_setup.uniforms.f[row][c].ToFloat32();
+        return result;
+    };
+    const bool magic_meter=MM3D::MagicMeterInterpolation::Candidate(
+        pica.vs_setup.GetProgramCodeHash(),pica.vs_setup.GetSwizzleDataHash(),
+        regs.pipeline.num_vertices,pica.vs_setup.uniforms.f[10].w.ToFloat32(),magic_uv(94),magic_uv(95));
+    const bool heart_pulse=MM3D::HeartInterpolation::Candidate(
+        pica.vs_setup.GetProgramCodeHash(),pica.vs_setup.GetSwizzleDataHash(),
+        regs.pipeline.num_vertices,pica.vs_setup.uniforms.f[10].w.ToFloat32(),magic_uv(94),magic_uv(95));
+    if((inventory_owner||banner_owner||magic_meter||heart_pulse) && MM3D::CameraMidpoint::present_60.load() && replay_geometry && succeeded &&
+       !shadow_rendering && using_color_fb && !use_pause &&
+       MM3D::Widescreen::IsTopViewport(wide_viewport.GetWidth(),wide_viewport.GetHeight())) {
+        const auto& blend=pipeline_info.state.blending;
+        const auto& depth=pipeline_info.state.depth_stencil;
+        const auto& textures=regs.texturing.main_config;
+        if(!depth.depth_test_enable && !depth.stencil_test_enable && blend.color_write_mask==15 &&
+           MM3D::FileSelectInterpolation::Candidate(pica.vs_setup.GetProgramCodeHash(),
+               pica.vs_setup.GetSwizzleDataHash(),unsigned(textures.texture0_enable)|
+                   (unsigned(textures.texture1_enable)<<1)|(unsigned(textures.texture2_enable)<<2),
+               depth.depth_write_enable,blend.blend_enable,unsigned(blend.src_color_blend_factor.Value()),
+               unsigned(blend.dst_color_blend_factor.Value()),unsigned(blend.color_blend_eq.Value()),
+               regs.pipeline.num_vertices)) {
+            layout_trace.flags|=1;
+            MM3D::InventoryInterpolation::Values values{};
+            for(unsigned r=0;r<values.size();++r)for(unsigned c=0;c<4;++c)
+                values[r][c]=pica.vs_setup.uniforms.f[r][c].ToFloat32();
+            MM3D::InventoryInterpolation::Tev tev{};
+            const auto stages=regs.texturing.GetTevStages();
+            for(unsigned i=0;i<stages.size();++i)
+                tev[i]={stages[i].sources_raw,stages[i].modifiers_raw,stages[i].ops_raw,
+                    stages[i].const_color,stages[i].scales_raw};
+            const MM3D::FileSelectInterpolation::Key key{
+                regs.texturing.texture0.GetPhysicalAddress(),
+                regs.framebuffer.framebuffer.GetColorBufferPhysicalAddress(),
+                MM3D::LinkPoseCapture::interpolation_generation.load(),inventory_owner?inventory_owner:banner_owner};
+            if(heart_pulse) {
+                inventory_half=heart_history.Apply(MM3D::guest_frames.load(),
+                    {key[0],key[1],key[2]},values,regs.pipeline.num_vertices,tev);
+            } else if(magic_meter) {
+                inventory_half=magic_meter_history.Apply(MM3D::guest_frames.load(),
+                    {key[0],key[1],key[2]},values,tev);
+            } else {
+                inventory_half=inventory_owner?
+                    inventory_history.Apply(MM3D::guest_frames.load(),key,values,regs.pipeline.num_vertices,tev):
+                    banner_history.Apply(MM3D::guest_frames.load(),key,values,regs.pipeline.num_vertices,tev);
+            }
+            if(inventory_half) {
+                layout_trace.flags|=2;
+                if(trace_layout)for(unsigned r=0;r<96;++r)if(inventory_half->rows[r])
+                    for(unsigned c=0;c<4;++c)layout_trace.uniform_delta=std::max(
+                        layout_trace.uniform_delta,std::abs(inventory_half->values[r][c]-values[r][c]));
+            }
+            if(MM3D::CameraMidpoint::native_preview.load())inventory_half.reset();
+            if(inventory_half && cpu_interpolation) {
+                auto uniforms=pica.vs_setup.uniforms;
+                for(unsigned r=0;r<96;++r)if(inventory_half->rows[r])for(unsigned c=0;c<4;++c)
+                    uniforms.f[r][c]=Pica::f24::FromFloat32(inventory_half->values[r][c]);
+                auto& vertices=midpoint_cpu_vertices;vertices.clear();
+                if(pica.ReplayCpuVertices(uniforms,[&](const auto& a,const auto& b,const auto& c){
+                    AppendTriangle(vertices,a,b,c);
+                }) && vertices.size()==vertex_batch.size()) {
+                    inventory_cpu_draw=upload_cpu_draw(vertices);
+                    layout_trace.flags|=8;
+                    if(trace_layout)for(unsigned i=0;i<vertices.size();++i)for(unsigned c=0;c<4;++c)
+                        layout_trace.position_delta=std::max(layout_trace.position_delta,
+                            std::abs(vertices[i].position[c]-vertex_batch[i].position[c]));
+                }
+                else inventory_half.reset();
+            }
+        }
+    }
+    if((lens_kind || letterbox_kind) && MM3D::CameraMidpoint::present_60.load() && replay_geometry && succeeded && !use_pause) {
+        if(lens_kind)inventory_half=lens_history.Apply(MM3D::guest_frames.load(),
+            {regs.texturing.texture0.GetPhysicalAddress(),regs.framebuffer.framebuffer.GetColorBufferPhysicalAddress(),
+             MM3D::LinkPoseCapture::interpolation_generation.load()},*lens_kind,lens_values);
+        else inventory_half=letterbox_history.Apply(MM3D::guest_frames.load(),
+            {regs.framebuffer.framebuffer.GetColorBufferPhysicalAddress(),
+             MM3D::LinkPoseCapture::interpolation_generation.load()},*letterbox_kind,lens_values);
+        if(MM3D::CameraMidpoint::native_preview.load())inventory_half.reset();
+        if(inventory_half && cpu_interpolation) {
+            auto uniforms=pica.vs_setup.uniforms;
+            for(unsigned r=20;r<23;++r)for(unsigned c=0;c<4;++c)
+                uniforms.f[r][c]=Pica::f24::FromFloat32(inventory_half->values[r][c]);
+            auto& vertices=midpoint_cpu_vertices;vertices.clear();
+            if(pica.ReplayCpuVertices(uniforms,[&](const auto& a,const auto& b,const auto& c){
+                AppendTriangle(vertices,a,b,c);
+            }) && vertices.size()==vertex_batch.size())inventory_cpu_draw=upload_cpu_draw(vertices);
+            else inventory_half.reset();
+        }
+    }
+    CpuDraw glare_cpu_draw{};
+    std::optional<float> glare_half_alpha;
+    if(glare_candidate && cpu_interpolation && succeeded && !use_pause) {
+        MM3D::GlareInterpolation::ScreenSample sample;
+        sample.alpha=fs_data.const_color[1].w;
+        sample.vertices.resize(vertex_batch.size());
+        for(unsigned i=0;i<vertex_batch.size();++i) {
+            for(unsigned c=0;c<4;++c) {
+                sample.vertices[i].position[c]=vertex_batch[i].position[c];
+                sample.vertices[i].color[c]=vertex_batch[i].color[c];
+            }
+            for(unsigned c=0;c<2;++c)sample.vertices[i].uv[c]=vertex_batch[i].tex_coord0[c];
+        }
+        const auto half=glare_cpu_history.Apply(MM3D::guest_frames.load(),
+            {regs.texturing.texture0.GetPhysicalAddress(),regs.framebuffer.framebuffer.GetColorBufferPhysicalAddress(),
+             MM3D::CameraMidpoint::generation.load()},sample);
+        if(half && !MM3D::CameraMidpoint::native_preview.load()) {
+            auto& vertices=midpoint_cpu_vertices;vertices=vertex_batch;
+            for(unsigned i=0;i<vertices.size();++i) {
+                for(unsigned c=0;c<2;++c)vertices[i].position[c]=half->vertices[i].position[c];
+                for(unsigned c=0;c<4;++c)vertices[i].color[c]=half->vertices[i].color[c];
+            }
+            glare_cpu_draw=upload_cpu_draw(vertices);glare_half_alpha=half->alpha;
         }
     }
     const float native_clip_x=vs_data.clip_scale_x,native_clip_y=vs_data.clip_scale_y;
@@ -1781,7 +2719,7 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
             auto& prompt_layer = prompt_layers[match.id];
             if (!prompt_layer) prompt_layer = std::make_unique<MM3D::PromptLayer>(instance, scheduler, renderpass_cache,midpoint_ui);
             if(scene_background && midpoint_target_frame!=MM3D::guest_frames.load()) {
-                prompt_layer->NextFrame();midpoint_target_frame=MM3D::guest_frames.load();
+                prompt_layer->NextFrame(midpoint_background());midpoint_target_frame=MM3D::guest_frames.load();
                 midpoint_frame_interpolated=false;
             }
             if(scene_background) {
@@ -1801,8 +2739,33 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
             }
             atlas_uniforms={};
             if(match.atlas_selection) MM3D::Atlas::Build(match,atlas_uniforms);
+            inventory_override = midpoint_ui ? inventory_half : std::nullopt;
+            if(midpoint_ui && use_pause)atlas_uniforms.pause=pause_draw;
+            item_slide_override = midpoint_ui ? item_slide_half : std::nullopt;
+            file_select_override = midpoint_ui ? file_select_half : std::nullopt;
+            message_override = midpoint_ui ? message_half : std::nullopt;
+            if (midpoint_ui && message_cpu_draw.count) {
+                midpoint_cpu_draw = message_cpu_draw;
+                use_midpoint_cpu_draw = true;
+            }
+            if(midpoint_ui && item_slide_cpu_draw.count) {
+                midpoint_cpu_draw=item_slide_cpu_draw;
+                use_midpoint_cpu_draw=true;
+            }
+            if(midpoint_ui && file_select_cpu_draw.count) {
+                midpoint_cpu_draw=file_select_cpu_draw;
+                use_midpoint_cpu_draw=true;
+            }
+            if(midpoint_ui && inventory_cpu_draw.count) {
+                midpoint_cpu_draw=inventory_cpu_draw;
+                use_midpoint_cpu_draw=true;
+            }
+            if(midpoint_ui && additive && glare_cpu_draw.count && midpoint_frame_interpolated) {
+                midpoint_cpu_draw=glare_cpu_draw;use_midpoint_cpu_draw=true;
+                glare_alpha_override=glare_half_alpha;
+            }
             fs_data_dirty=true; UploadUniforms(accelerate);
-            pipeline_cache.UseFragmentShader(regs,user_config,match.atlas_selection);
+            pipeline_cache.UseFragmentShader(regs,user_config,match.atlas_selection || (midpoint_ui && use_pause));
             const unsigned w = std::max<unsigned>(draw_rect.right, viewport.x + viewport.width);
             const unsigned h = std::max<unsigned>(draw_rect.top, viewport.y + viewport.height);
             const bool title_depth=midpoint_ui && midpoint_title_logo;
@@ -1834,7 +2797,33 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
                 const auto native_position=binding_offsets[0];
                 if(additive && glare_vertex_offset && midpoint_frame_interpolated &&
                    !MM3D::CameraMidpoint::native_preview.load())binding_offsets[0]=*glare_vertex_offset;
-                draw_batch();
+                const bool replay_submitted=draw_batch();
+                if(midpoint_ui && replay_submitted && message_half &&
+                   (!cpu_interpolation || (use_midpoint_cpu_draw && message_cpu_draw.count)))
+                    layout_trace.flags|=1024;
+                if(midpoint_ui && replay_submitted && inventory_half &&
+                   (!cpu_interpolation || (use_midpoint_cpu_draw && inventory_cpu_draw.count))) {
+                    layout_trace.flags|=16;
+                    if(MM3D::CameraMidpoint::capture_menu_pair_at_us.load()) {
+                        for(unsigned r=11;r<10+4*(regs.pipeline.num_vertices/6);r+=4) {
+                            if(inventory_half->rows[r] && std::abs(inventory_half->values[r][0]-
+                                pica.vs_setup.uniforms.f[r][0].ToFloat32())>1.f) {
+                                MM3D::CameraMidpoint::capture_menu_motion_frame=MM3D::guest_frames.load();
+                                break;
+                            }
+                        }
+                    }
+                }
+                // Menus can establish the alternate frame without a moving
+                // world camera. Keep the frozen scene alive on UI-only pages.
+                if(midpoint_ui && inventory_owner) {
+                    midpoint_generation=MM3D::CameraMidpoint::generation.load();
+                    midpoint_last_draw_ms=std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now().time_since_epoch()).count();
+                }
+                if(midpoint_ui && ((file_select_half && (!cpu_interpolation || file_select_cpu_draw.count)) ||
+                    inventory_half || (inventory_owner && message_half && (!cpu_interpolation || message_cpu_draw.count))))
+                    midpoint_frame_interpolated=true;
                 binding_offsets[0]=native_position;
                 prompt_layer->x = viewport.x; prompt_layer->y = viewport.y;
                 prompt_layer->viewport_width = viewport.width;
@@ -1851,7 +2840,20 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
             MM3D::prompt_unsupported.fetch_add(1);
             if(midpoint_ui)reject_midpoint_hud(5);
         }
+        use_midpoint_cpu_draw = false;
+        if(glare_alpha_override) {glare_alpha_override.reset();fs_data_dirty=true;UploadUniforms(accelerate);}
+        if (message_override || item_slide_override || file_select_override || inventory_override) {
+            if(inventory_override)fs_data_dirty=true;
+            inventory_override.reset();
+            if(file_select_override&&file_select_override->alpha)fs_data_dirty=true;
+            file_select_override.reset();
+            item_slide_override.reset();
+            message_override.reset();
+            pica.vs_setup.uniforms_dirty = true;
+            UploadUniforms(accelerate);
+        }
     }
+    if(trace_layout)MM3D::EffectCapture::ObserveLayoutReplay(layout_trace);
 #endif
     vertex_batch.clear();
     return succeeded;
@@ -2182,6 +3184,8 @@ void RasterizerVulkan::FlushRegion(PAddr addr, u32 size) {
 
 void RasterizerVulkan::InvalidateRegion(PAddr addr, u32 size) {
 #ifdef ENABLE_MM3D_PRESENTATION
+    midpoint_scene_copies.InvalidatePadded(addr,u64(addr)+size);
+    midpoint_color_clears.Invalidate(addr,u64(addr)+size);
     MM3D::InterpolationPerformance::ReadbackScope readback{"memory invalidation",addr,size};
 #endif
     res_cache.InvalidateRegion(addr, size);
@@ -2189,6 +3193,8 @@ void RasterizerVulkan::InvalidateRegion(PAddr addr, u32 size) {
 
 void RasterizerVulkan::FlushAndInvalidateRegion(PAddr addr, u32 size) {
 #ifdef ENABLE_MM3D_PRESENTATION
+    midpoint_scene_copies.InvalidatePadded(addr,u64(addr)+size);
+    midpoint_color_clears.Invalidate(addr,u64(addr)+size);
     MM3D::InterpolationPerformance::ReadbackScope readback{"external memory read/write",addr,size};
 #endif
     res_cache.FlushRegion(addr, size);
@@ -2197,8 +3203,10 @@ void RasterizerVulkan::FlushAndInvalidateRegion(PAddr addr, u32 size) {
 
 void RasterizerVulkan::ClearAll(bool flush) {
 #ifdef ENABLE_MM3D_PRESENTATION
+    midpoint_scene_copies={};
+    midpoint_color_clears.Reset();
     ResetPause();
-    midpoint_history.Reset();forest_particle_history.Reset();link_history.Reset();song_history.Reset();song_overrides.reset();link_frame.reset();link_overrides={};
+    midpoint_history.Reset();world_map_history.Reset();glare_cpu_history.Reset();forest_particle_history.Reset();snow_history.Reset();fire_impact_history.Reset();leaf_particle_history.Reset();moth_history.Reset();message_history.Reset();message_override.reset();item_slide_history.Reset();item_slide_override.reset();file_select_history.Reset();file_select_override.reset();inventory_history.Reset();banner_history.Reset();magic_meter_history.Reset();heart_history.Reset();lens_history.Reset();letterbox_history.Reset();inventory_override.reset();torch_history.Reset();water_particle_history.Reset();water_model_history.Reset();moving_effect_history.Reset();splash_cpu_history.Reset();burst_particle_history.Reset();spark_history.Reset();firework_history.Reset();chest_particle_history.Reset();sword_trail_history.Reset();shockwave_history.Reset();bubble_history.Reset();link_history.Reset();song_history.Reset();song_overrides.reset();link_frame.reset();link_overrides={};
     midpoint_scene_clear.Reset();
     midpoint_target_frame.reset();midpoint_world_frame.reset();midpoint_opaque_world_frame.reset();midpoint_stencil_frame.reset();midpoint_fade_frame.reset();midpoint_title_depth_frame.reset();
     for(const auto id : {"@camera_midpoint","@camera_midpoint_fade","@camera_midpoint_hud"})
@@ -2236,18 +3244,33 @@ bool RasterizerVulkan::AccelerateTextureCopy(const Pica::DisplayTransferConfig& 
         auto& stamp=midpoint_transfer_logged[1];
         if(now-stamp>=1000000) {
             stamp=now;
-            LOG_INFO(Render_Vulkan,"Interpolation shrink TextureCopy: success={} input={:08x} output={:08x} frame={} source_frame={} source={:08x}",
+            LOG_INFO(Render_Vulkan,"Interpolation shrink TextureCopy: success={} input={:08x} output={:08x} frame={} source_frame={} source={:08x} size={} input_width={} input_gap={} output_width={} output_gap={}",
                 result,config.GetPhysicalInputAddress(),config.GetPhysicalOutputAddress(),
-                MM3D::guest_frames.load(),midpoint_scene_copies.frame,midpoint_scene_copies.addresses[0]);
+                MM3D::guest_frames.load(),midpoint_scene_copies.frame,midpoint_scene_copies.addresses[0],
+                config.texture_copy.size&~15U,u32(config.texture_copy.input_width)*16,
+                u32(config.texture_copy.input_gap)*16,u32(config.texture_copy.output_width)*16,
+                u32(config.texture_copy.output_gap)*16);
         }
     }
-    midpoint_scene_copies.Transfer(MM3D::guest_frames.load(),
-        result?config.GetPhysicalInputAddress():0,config.GetPhysicalOutputAddress());
+    midpoint_scene_copies.TextureTransfer(MM3D::guest_frames.load(),
+        config.GetPhysicalInputAddress(),config.GetPhysicalOutputAddress(),
+        config.texture_copy.size&~15U,config.texture_copy.input_width*16,
+        config.texture_copy.input_gap*16,config.texture_copy.output_width*16,
+        config.texture_copy.output_gap*16,result);
 #endif
     return result;
 }
 
 bool RasterizerVulkan::AccelerateFill(const Pica::MemoryFillConfig& config) {
+#ifdef ENABLE_MM3D_PRESENTATION
+    midpoint_scene_copies.InvalidatePadded(config.GetStartAddress(),config.GetEndAddress());
+    if(MM3D::CameraMidpoint::enabled.load())
+        midpoint_color_clears.Observe(MM3D::guest_frames.load(),config.GetStartAddress(),
+            config.GetEndAddress(),config.value_32bit,config.fill_32bit?4u:config.fill_24bit?3u:2u);
+    MM3D::EffectCapture::ObserveFill({.frame=MM3D::guest_frames.load(),
+        .start=config.GetStartAddress(),.end=config.GetEndAddress(),.value=config.value_32bit,
+        .bytes=config.fill_32bit?4u:config.fill_24bit?3u:2u});
+#endif
     return res_cache.AccelerateFill(config);
 }
 
@@ -2439,7 +3462,8 @@ void RasterizerVulkan::SyncAndUploadLUTs() {
 void RasterizerVulkan::UploadUniforms(bool accelerate_draw) {
     const bool sync_vs_pica = accelerate_draw && (pica.vs_setup.uniforms_dirty
 #ifdef ENABLE_MM3D_PRESENTATION
-        || midpoint_projection.has_value()
+        || midpoint_projection.has_value() || message_override.has_value() || item_slide_override.has_value()
+        || file_select_override.has_value() || inventory_override.has_value()
 #endif
     );
     if (!sync_vs_pica && !vs_data_dirty && !fs_data_dirty) {
@@ -2461,6 +3485,32 @@ void RasterizerVulkan::UploadUniforms(bool accelerate_draw) {
     }
 
     if (fs_data_dirty || invalidate) {
+#ifdef ENABLE_MM3D_PRESENTATION
+        // Patch only the uploaded midpoint copy. Native combiner state remains
+        // intact for the original draw and all later HUD/scene submissions.
+        if(moving_effect_colors) {
+            auto midpoint_fs=fs_data;
+            for(unsigned stage=0;stage<6;++stage)for(unsigned c=0;c<4;++c)
+                midpoint_fs.const_color[stage][c]=(*moving_effect_colors)[stage][c];
+            std::memcpy(uniforms + used_bytes,&midpoint_fs,sizeof(midpoint_fs));
+        } else if(water_model_alpha_override) {
+            auto midpoint_fs=fs_data;
+            midpoint_fs.const_color[water_model_alpha_override->first].w=water_model_alpha_override->second;
+            std::memcpy(uniforms + used_bytes,&midpoint_fs,sizeof(midpoint_fs));
+        } else if(glare_alpha_override) {
+            auto midpoint_fs=fs_data;
+            midpoint_fs.const_color[1].w=*glare_alpha_override;
+            std::memcpy(uniforms + used_bytes,&midpoint_fs,sizeof(midpoint_fs));
+        } else if(inventory_override) {
+            auto midpoint_fs=fs_data;
+            midpoint_fs.const_color[0].w=inventory_override->alpha;
+            std::memcpy(uniforms + used_bytes,&midpoint_fs,sizeof(midpoint_fs));
+        } else if(file_select_override&&file_select_override->alpha) {
+            auto midpoint_fs=fs_data;
+            midpoint_fs.const_color[0].w=*file_select_override->alpha;
+            std::memcpy(uniforms + used_bytes,&midpoint_fs,sizeof(midpoint_fs));
+        } else
+#endif
         std::memcpy(uniforms + used_bytes, &fs_data, sizeof(fs_data));
 #ifdef ENABLE_MM3D_PRESENTATION
         std::memcpy(uniforms + used_bytes + sizeof(fs_data), &atlas_uniforms, sizeof(atlas_uniforms));
@@ -2476,8 +3526,21 @@ void RasterizerVulkan::UploadUniforms(bool accelerate_draw) {
 #ifdef ENABLE_MM3D_PRESENTATION
         if(midpoint_projection)for(unsigned i=0;i<4;++i)for(unsigned j=0;j<4;++j)
             vs_uniforms.f[i][j]=float((*midpoint_projection)[i][j]);
-        if(midpoint_projection && song_overrides)for(unsigned row=0;row<4;++row)
+        if(midpoint_projection && song_overrides)for(unsigned row=0;row<MM3D::SongEffectInterpolation::Rows.size();++row)
             vs_uniforms.f[MM3D::SongEffectInterpolation::Rows[row]][3]=(*song_overrides)[row][3];
+        if(item_slide_override)for(unsigned q=0;q<item_slide_override->count;++q)
+            vs_uniforms.f[11+q*4][0]=item_slide_override->x[q];
+        if(file_select_override)for(unsigned q=0;q<file_select_override->count;++q) {
+            vs_uniforms.f[11+q*4][0]=file_select_override->x[q];
+            vs_uniforms.f[12+q*4][0]=file_select_override->y[q];
+            if(file_select_override->rectangles)for(unsigned row=0;row<2;++row)for(unsigned c=0;c<4;++c)
+                vs_uniforms.f[11+q*4+row][c]=(*file_select_override->rectangles)[q*2+row][c];
+        }
+        if(inventory_override)for(unsigned r=0;r<96;++r)if(inventory_override->rows[r])
+            for(unsigned c=0;c<4;++c)vs_uniforms.f[r][c]=inventory_override->values[r][c];
+        if(message_override)for(unsigned r=0;r<MM3D::MessageInterpolation::Rows.size();++r)
+            for(unsigned c=0;c<4;++c)
+                vs_uniforms.f[MM3D::MessageInterpolation::Rows[r]][c]=(*message_override)[r][c];
         if(midpoint_projection)for(unsigned bone=0;bone<10;++bone)if(link_overrides[bone])
             for(unsigned i=0;i<12;++i)
                 vs_uniforms.f[20+bone*3+i/4][i%4]=float((*link_overrides[bone])[i/4][i%4]);
@@ -2493,8 +3556,9 @@ void RasterizerVulkan::UploadUniforms(bool accelerate_draw) {
 
 void RasterizerVulkan::SwitchDiskResources(u64 title_id) {
 #ifdef ENABLE_MM3D_PRESENTATION
+    midpoint_color_clears.Reset();
     ResetPause();
-    midpoint_history.Reset();forest_particle_history.Reset();link_history.Reset();song_history.Reset();song_overrides.reset();link_frame.reset();link_overrides={};
+    midpoint_history.Reset();world_map_history.Reset();glare_cpu_history.Reset();forest_particle_history.Reset();snow_history.Reset();fire_impact_history.Reset();leaf_particle_history.Reset();moth_history.Reset();message_history.Reset();message_override.reset();item_slide_history.Reset();item_slide_override.reset();file_select_history.Reset();file_select_override.reset();inventory_history.Reset();banner_history.Reset();magic_meter_history.Reset();heart_history.Reset();lens_history.Reset();letterbox_history.Reset();inventory_override.reset();torch_history.Reset();water_particle_history.Reset();water_model_history.Reset();moving_effect_history.Reset();splash_cpu_history.Reset();burst_particle_history.Reset();spark_history.Reset();firework_history.Reset();chest_particle_history.Reset();sword_trail_history.Reset();shockwave_history.Reset();bubble_history.Reset();link_history.Reset();song_history.Reset();song_overrides.reset();link_frame.reset();link_overrides={};
     midpoint_target_frame.reset();midpoint_world_frame.reset();midpoint_opaque_world_frame.reset();midpoint_stencil_frame.reset();midpoint_fade_frame.reset();midpoint_title_depth_frame.reset();
     for(const auto id : {"@camera_midpoint","@camera_midpoint_fade","@camera_midpoint_hud"})
         if(const auto it=prompt_layers.find(id);it!=prompt_layers.end())it->second->NextFrame();

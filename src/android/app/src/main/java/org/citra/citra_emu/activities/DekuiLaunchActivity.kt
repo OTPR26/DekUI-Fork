@@ -65,7 +65,7 @@ class DekuiLaunchActivity : AppCompatActivity() {
     }
     private fun finishStorageSetup() {
         if (!prefs.getBoolean("odin-controls-v1", false)) {
-            org.citra.citra_emu.features.settings.model.view.InputBindingSetting.applyDekuiOdinBindings()
+            org.citra.citra_emu.features.settings.model.view.InputBindingSetting.applyDekuiDefaultBindings()
             org.citra.citra_emu.utils.EmulationMenuSettings.showOverlay = false
             prefs.edit().putBoolean("odin-controls-v1", true).apply()
         }

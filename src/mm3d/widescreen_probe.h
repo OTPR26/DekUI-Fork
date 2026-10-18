@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <mutex>
 #include <optional>
@@ -20,6 +21,19 @@ struct Candidate {
     unsigned observations{};
     std::array<int,4> scissor{};
 };
+// A saved fullscreen rule identifies draw state, not the size of its geometry.
+// The layout shader also uses that state for small solid UI panes (including
+// both Schedule portrait flashes). Keep those in the same space as their icons.
+inline bool LocalLayoutPane(std::uint64_t shader,std::uint64_t swizzle,unsigned vertices,
+    unsigned textures,const std::array<float,4>& control,const std::array<float,4>& x,
+    const std::array<float,4>& y) {
+    if(shader!=0x9b343fea686d98e0ULL || swizzle!=0xac22b79e29209c01ULL ||
+       vertices!=6 || textures!=0 || (control[0]!=0 && control[0]!=1) ||
+       control[1]!=3 || control[2]!=0 || control[3]!=1)return false;
+    for(const auto& row:{x,y})for(float v:row)if(!std::isfinite(v))return false;
+    return x[1]==0 && x[2]==0 && y[1]==0 && y[3]==0 &&
+        x[3]>0 && x[3]<400 && y[2]>0 && y[2]<240;
+}
 // MM3D transition/title overlay, recovered from the user's tested capture.
 // Observe is called only for widescreen top-screen draws without depth writes.
 inline constexpr Draw TransitionOverlay{0x89b1ab98da3d9241ULL,0x6f0b398b1fc186a9ULL,

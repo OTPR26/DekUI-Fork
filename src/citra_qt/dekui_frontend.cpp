@@ -438,6 +438,7 @@ class SettingsDialog final : public QDialog {
                                  "are preserved. Generation is available before gameplay."));
     }
     void Graphics() {
+        Bool(QStringLiteral("Disable fog"), QStringLiteral("disable_fog"));
         const auto data = Presentation();
         const int mode = !data.value(QStringLiteral("interpolation_60fps")).toBool(true) ? 0
                          : data.value(QStringLiteral("interpolation_cpu_vertices")).toBool(true)
@@ -460,6 +461,8 @@ class SettingsDialog final : public QDialog {
                    Render();
                });
         Number(QStringLiteral("Field of View"), QStringLiteral("game_camera_fov"), 65, 45, 70, .5);
+        Number(QStringLiteral("Cutscene Field of View"), QStringLiteral("cutscene_camera_fov"),
+               49, 45, 70, .5);
         Number(QStringLiteral("Camera Distance (x)"), QStringLiteral("camera_distance"), 1, .5, 3,
                .05);
         Button(box, QStringLiteral("Reset current camera"), [] {
@@ -648,6 +651,9 @@ class SettingsDialog final : public QDialog {
                      {QStringLiteral("Lose rupees on death"),
                       QStringLiteral("lose_rupees_on_death")},
                      {QStringLiteral("World ends on death"), QStringLiteral("world_ends_on_death")},
+                     {QStringLiteral("Dying moves time forward 6 hours"),
+                      QStringLiteral("advance_six_hours_on_death")},
+                     {QStringLiteral("Fast time"), QStringLiteral("fast_time")},
                      {QStringLiteral("Increase purchase prices and fees"),
                       QStringLiteral("double_prices")}})
                 Bool(item.first, item.second);

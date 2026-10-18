@@ -92,7 +92,7 @@ def package(bundle, output, python_archive):
         subprocess.run(['codesign', '--force', '--deep', '--sign', '-', str(app)], check=True)
         subprocess.run(['codesign', '--verify', '--deep', '--strict', str(app)], check=True)
         output.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(['ditto', '-c', '-k', '--sequesterRsrc', '--keepParent',
+        subprocess.run(['ditto', '-c', '-k', '--norsrc', '--noextattr', '--keepParent',
                         str(root), str(output.resolve())], check=True)
 
 

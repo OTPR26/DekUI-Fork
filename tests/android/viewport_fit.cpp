@@ -22,7 +22,7 @@ int main() {
     }
     const auto fitted = FitTop({60,0,1860,1080},{},1920,false);
     Check(fitted.left==0 && fitted.top==0 && fitted.right==1920 && fitted.bottom==1080,
-          "Odin's full 16:9 canvas fits within all four edges");
+          "The full 16:9 canvas fits within all four edges");
     for (auto size : {Common::Rectangle<unsigned>{0,0,1920,1080},
                       Common::Rectangle<unsigned>{0,0,1600,1200},
                       Common::Rectangle<unsigned>{0,0,2560,1080}}) {

@@ -1,3 +1,27 @@
+# DekUI Fork changes
+
+## Unreleased — desktop and Android update
+
+- Shared startup and settings experience across Android, Windows, Linux, and macOS.
+- Adult Link and Dark Link import from a user-supplied OoT3D ROM, including adult
+  voices and matching textures when supplied. Adult Link supports original tunic
+  colors and an optional Master Sword with matching HUD icons.
+- Shared high-resolution HUD defaults and persistent controller mappings.
+- Separate field of view, camera distance, camera recovery, and movement speeds.
+- Controller-neutral English item prompts, touch options, and full-screen menus.
+- Public Android data folder and macOS Application Support storage, with verified
+  migration and preservation of saves and settings.
+- Correct Linux launcher icon and readable desktop dropdown menus.
+- Upstream DekUI 1.0 interpolation, notebook, mask-selection, widescreen, and
+  presentation fixes; optional fog, cutscene FOV, and time settings.
+- Separate Fast Time and movement-speed hooks to preserve both features.
+- Strip local build paths and reject private paths and macOS metadata in packages.
+
+Desktop and Android release candidates require a fresh validation pass after
+upstream integration. The earlier platform playtests do not validate this update.
+
+## Upstream history
+
 > Preserved upstream notes. For this fork’s Android release and current limitations, start with [README.md](README.md).
 
 ## 1.0.0-beta.2

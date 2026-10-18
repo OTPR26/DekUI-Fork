@@ -19,11 +19,15 @@ When adding generated assets:
 - Check the actual packaged setup with package_setup_check.py.
 
 Before publishing:
-- Build Windows, Linux and macOS for the same commit; inspect workflow results.
+- Build Android, Windows, Linux and macOS for the same commit; inspect results.
+- Scan every final archive with check_release_privacy.py and explicit private
+  build-machine prefixes. Reject local paths, credentials and macOS metadata.
+- Inspect commit identities, release text, screenshots and source archives.
+- Include no ROMs, generated models/voices, saves, logs or personal texture packs.
 - Run fresh setup and upgrades using the supported owned ROM in disposable folders.
 - Compare hashes of save/control/preference files before and after upgrade.
 - Visually check Songs (border, stones, right-side prompts), file select (purple
-  background), item selection, and a customized layout on Mac/Deck.
+  background), item selection, and a customized layout on each supported platform.
 - Verify General > Reset menu layouts and that restarting does not migrate again.
 - Automated tests do not replace these visual checks. Record any platform not tested.
 

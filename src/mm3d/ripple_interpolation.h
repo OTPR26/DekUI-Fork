@@ -6,6 +6,7 @@
 #include <optional>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 namespace MM3D::RippleInterpolation {
 using Point=std::array<float,3>;
 using Color=std::array<float,4>;
@@ -34,31 +35,46 @@ class History {
     std::uint32_t texture{},generation{};
 public:
     std::optional<Mesh> Apply(std::uint64_t next,std::uint32_t tex,std::uint32_t gen,const Mesh& mesh) {
-        if(mesh.points.size()!=mesh.colors.size()||mesh.points.size()<9||mesh.points.size()>257||(mesh.points.size()-1)%8)return {};
+        if(mesh.points.size()!=mesh.colors.size()||mesh.points.size()<9||mesh.points.size()>513||(mesh.points.size()-1)%8)return {};
         std::vector<Ring> rings;
         for(unsigned i=0;i+1<mesh.points.size();i+=8){auto r=Describe(mesh,i);if(!r)return {};rings.push_back(*r);}
         auto out=mesh;bool changed=false;
         if(next==frame+1 && tex==texture && gen==generation) {
+            std::vector<Ring> old_rings;
+            for(unsigned j=0;j+1<previous.points.size();j+=8) {
+                const auto r=Describe(previous,j);
+                if(!r)return {};
+                old_rings.push_back(*r);
+            }
+            // Repeated impacts can have several concentric rings. Center alone
+            // cannot identify them: use their expanding radius and fading alpha,
+            // then require a reciprocal, unambiguous match in both directions.
+            const auto score=[&](unsigned current,unsigned old)->std::optional<float> {
+                for(unsigned c=0;c<3;++c)
+                    if(!Near(rings[current].center[c],old_rings[old].center[c]))return {};
+                const float growth=rings[current].radius-old_rings[old].radius;
+                const float fade=previous.colors[old*8][3]-mesh.colors[current*8][3];
+                if(growth<0 || growth>=10 || fade<-.001f)return {};
+                return growth*growth+fade*fade*1024;
+            };
+            const auto best=[&](unsigned index,bool reverse)->std::optional<unsigned> {
+                std::optional<unsigned> match;
+                float first=std::numeric_limits<float>::infinity(),second=first;
+                const unsigned count=reverse?static_cast<unsigned>(rings.size()):static_cast<unsigned>(old_rings.size());
+                for(unsigned j=0;j<count;++j) {
+                    const auto distance=reverse?score(j,index):score(index,j);
+                    if(!distance)continue;
+                    if(*distance<first){second=first;first=*distance;match=j;}
+                    else if(*distance<second)second=*distance;
+                }
+                return second>first*1.5f+.01f?match:std::nullopt;
+            };
             for(unsigned i=0;i<rings.size();++i) {
-                int match=-1;bool ambiguous=false;
-                for(unsigned j=0;j+1<previous.points.size();j+=8) {
-                    const auto r=Describe(previous,j);if(!r)continue;
-                    bool same=true;for(unsigned k=0;k<3;++k)same &= Near(r->center[k],rings[i].center[k]);
-                    if(same && rings[i].radius>=r->radius && rings[i].radius-r->radius<10 &&
-                       mesh.colors[i*8][3]<=previous.colors[j][3]+.001f) {
-                        if (match >= 0)
-                            ambiguous = true;
-                        match = static_cast<int>(j);
-                    }
-                }
-                for(unsigned j=0;j<rings.size();++j)if(j!=i) {
-                    bool same=true;for(unsigned k=0;k<3;++k)same &= Near(rings[j].center[k],rings[i].center[k]);
-                    if(same)ambiguous=true;
-                }
-                if(match<0||ambiguous)continue;
+                const auto match=best(i,false);
+                if(!match || best(*match,true)!=i)continue;
                 for(unsigned k=0;k<8;++k) {
-                    for(unsigned a=0;a<3;++a)out.points[i*8+k][a]=(mesh.points[i*8+k][a]+previous.points[match+k][a])*.5f;
-                    out.colors[i*8+k][3]=(mesh.colors[i*8+k][3]+previous.colors[match+k][3])*.5f;
+                    for(unsigned a=0;a<3;++a)out.points[i*8+k][a]=(mesh.points[i*8+k][a]+previous.points[*match*8+k][a])*.5f;
+                    out.colors[i*8+k][3]=(mesh.colors[i*8+k][3]+previous.colors[*match*8+k][3])*.5f;
                 }
                 changed=true;
             }

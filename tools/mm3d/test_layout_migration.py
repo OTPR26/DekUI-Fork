@@ -27,7 +27,8 @@ class LayoutMigrationTests(unittest.TestCase):
         new,held=self.apply(old);self.assertEqual(held,[])
         prefixes=tuple(p for group in migration.GROUPS.values() for p in group)
         for k,v in old.items():
-            self.assertEqual(new[k],self.policy['current'][k] if k.startswith(prefixes) and k in self.policy['current'] else v,k)
+            shipped_fades = k == 'fullscreen_draws' and v == self.policy.get('previous_fullscreen_draws')
+            self.assertEqual(new[k],self.policy['current'][k] if shipped_fades or (k.startswith(prefixes) and k in self.policy['current']) else v,k)
         again,held=self.apply(new);self.assertEqual(again,new)
 
     def test_custom_group_is_not_partially_repositioned(self):
@@ -38,8 +39,19 @@ class LayoutMigrationTests(unittest.TestCase):
         self.assertNotIn('song_banner_x',new)
         self.assertEqual(new['file_select_0_y'],self.policy['current']['file_select_0_y'])
 
+    def test_previous_fork_release_retains_hud_and_preferences(self):
+        old = json.loads((Path(__file__).parent/'fixtures/fork-layout-v1.json').read_text())
+        old.update(camera_distance=1.66, adult_link_model=True, dark_link_model=False)
+        new, _ = self.apply(old)
+        for key, value in old.items():
+            if key != 'fullscreen_draws':
+                self.assertEqual(new[key], value, key)
+        self.assertEqual(new['fullscreen_draws'], self.policy['current']['fullscreen_draws'])
+        self.assertEqual(new['cutscene_camera_fov'], 49)
+        self.assertEqual(self.apply(new)[0], new)
+
     def test_current_customizations_not_reset(self):
-        old=dict(self.policy['current'],song_panel_left_x=-50,file_select_1_x=123,item_present_1_x=77)
+        old=dict(self.policy['current'],song_panel_left_x=-50,file_select_1_x=123,item_present_1_x=77,gear_6_x=42)
         new,held=self.apply(old);self.assertEqual(new,old)
         self.assertEqual(set(held),set(migration.GROUPS))
 
@@ -66,7 +78,39 @@ class LayoutMigrationTests(unittest.TestCase):
         prefixes=tuple(p for group in migration.GROUPS.values() for p in group)
         for k,v in self.policy['previous'].items():
             if self.policy['current'].get(k)!=v:
-                self.assertTrue(k.startswith(prefixes) or k in self.policy['preserve_existing'],k)
+                self.assertTrue(k.startswith(prefixes) or k in self.policy['preserve_existing'] or (k == 'fullscreen_draws' and v == self.policy.get('previous_fullscreen_draws')),k)
+
+    def test_shipped_fades_upgrade_but_custom_fades_remain(self):
+        previous = self.policy['previous_fullscreen_draws']
+        old = dict(self.policy['current'], fullscreen_draws=previous)
+        new, _ = self.apply(old)
+        self.assertEqual(new['fullscreen_draws'], self.policy['current']['fullscreen_draws'])
+        self.assertGreater(len(new['fullscreen_draws']), len(previous))
+        for custom in ([], previous[:-1], previous + [dict(previous[0], vertices=123)]):
+            old['fullscreen_draws'] = custom
+            new, _ = self.apply(old)
+            self.assertEqual(new['fullscreen_draws'], custom)
+
+    def test_mask_defaults_preserve_user_placement_and_gameplay(self):
+        old = dict(self.policy['previous'], damage_multiplier=4, actor_draw_distance=2,
+                   mask_present_1_x=123, mask_present_help_scale=.9)
+        new, _ = self.apply(old)
+        for key in ('damage_multiplier', 'actor_draw_distance', 'mask_present_1_x', 'mask_present_help_scale'):
+            self.assertEqual(new[key], old[key])
+        self.assertEqual(new['mask_present_3_x'], self.policy['current']['mask_present_3_x'])
+        self.assertEqual(self.policy['current']['damage_multiplier'], 1)
+        self.assertEqual(self.policy['current']['actor_draw_distance'], 1)
+
+    def test_photo_default_upgrade_preserves_custom_placement(self):
+        old = dict(self.policy['current'], gear_6_x=0, gear_6_y=0, gear_6_scale=1)
+        new, held = self.apply(old)
+        for key in ('gear_6_x', 'gear_6_y', 'gear_6_scale'):
+            self.assertEqual(new[key], self.policy['current'][key])
+        self.assertNotIn('gear_photo', held)
+        old['gear_6_x'] = 42
+        new, held = self.apply(old)
+        self.assertEqual(new, old)
+        self.assertIn('gear_photo', held)
 
     def test_retired_profiles_are_explicitly_allowlisted(self):
         from upgrade_game_resources import RETIRED

@@ -1,7 +1,15 @@
-# macOS playtest notes
+# macOS settings and storage
 
-## Settings access
+Open Settings from startup, the application menu, Command-comma, or Start+Select
+on a controller. F1 remains available. Reset warns about unsaved progress and
+returns to startup without quitting.
 
-- User feedback (2026-10-18): Fn–F1 is awkward on Mac keyboards. Change how settings opens on macOS so the primary method does not require Fn or a function key.
-- Consider a visible Settings entry and a conventional macOS keyboard shortcut, with controller access retained.
-- Pending implementation; current playtest build still uses F1/Fn–F1.
+Generated game data, saves, settings, caches, and imported mods are stored in
+`~/Library/Application Support/DekUI Fork`. Upgrading a portable installation
+copies and verifies its data before using the new root; originals are retained.
+Selected ROMs and external texture folders remain in their existing locations.
+macOS may request access to those user-selected external files.
+
+Use the complete deployed package for validation. Check startup, ROM import,
+mod generation, controller mappings before and during gameplay, full-screen menu
+layout, save loading, reset, and restart after changing a player model.
