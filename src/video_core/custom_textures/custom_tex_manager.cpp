@@ -340,7 +340,13 @@ bool CustomTexManager::ReadConfig(u64 title_id, bool options_only) {
         FileUtil::CreateFullPath(load_path);
     }
 
-    const std::string config_path = load_path + "pack.json";
+    std::string config_path = load_path + "pack.json";
+#if defined(ENABLE_MM3D_GAME_FOLDER)
+    if (!FileUtil::Exists(config_path)) {
+        config_path = fmt::format("{}mm3d-model-textures/{:016X}/pack.json",
+                                  GetUserPath(FileUtil::UserPath::LoadDir), title_id);
+    }
+#endif
     FileUtil::IOFile config_file{config_path, "r"};
     if (!config_file.IsOpen()) {
         LOG_INFO(Render, "Unable to find pack config file, using legacy defaults");
@@ -413,6 +419,19 @@ std::vector<FileUtil::FSTEntry> CustomTexManager::GetTextures(u64 title_id) {
             std::erase_if(textures, [&](const auto& entry) { return entry.virtualName == file.virtualName; });
             textures.push_back(file);
         }
+    }
+#endif
+#if defined(ENABLE_MM3D_GAME_FOLDER)
+    // Generated mod textures stay on the app's volume, independent of the user's pack.
+    const auto generated_path = fmt::format("{}mm3d-model-textures/{:016X}/",
+                                            GetUserPath(FileUtil::UserPath::LoadDir), title_id);
+    FileUtil::FSTEntry generated_dir;
+    std::vector<FileUtil::FSTEntry> generated;
+    FileUtil::ScanDirectoryTree(generated_path, generated_dir, 64);
+    FileUtil::GetAllFilesFromNestedEntries(generated_dir, generated);
+    for (const auto& file : generated) {
+        std::erase_if(textures, [&](const auto& entry) { return entry.virtualName == file.virtualName; });
+        textures.push_back(file);
     }
 #endif
     return textures;

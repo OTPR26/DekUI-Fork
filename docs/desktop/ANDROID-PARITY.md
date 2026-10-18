@@ -56,3 +56,12 @@ Implementation checkpoint (2026-10-18):
 Desktop Reset returns to startup after an explicit unsaved-progress warning.
 The Mods import route uses the same confirmation and opens the Mods setup page.
 Startup Quit remains the app exit action.
+
+Desktop texture installation correction (macOS playtest): generated textures now
+live under user/load/mm3d-model-textures rather than inside the ordinary texture
+pack directory, which can point to another volume. The renderer merges these
+app-owned overrides after the existing pack. Texture backups remain outside the
+scanned directory. The regression fixture covers a symlinked ordinary pack and
+checks it remains untouched. A real user-selected OoT3D ROM/texture import on Mac
+completed with six Adult Link variants, 38 adult voice clips (42 keys), and 11
+matching texture replacements. Gameplay appearance remains a user playtest.
