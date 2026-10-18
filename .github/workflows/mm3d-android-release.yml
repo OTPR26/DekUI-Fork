@@ -16,8 +16,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
-      ANDROID_USER_HOME: ${{ runner.temp }}/android-user
-      GRADLE_USER_HOME: ${{ runner.temp }}/gradle-user
       CMAKE_BUILD_PARALLEL_LEVEL: 2
     steps:
       - uses: actions/checkout@v6
@@ -25,6 +23,10 @@ jobs:
           ref: ${{ inputs.source_ref || github.sha }}
           submodules: recursive
           fetch-depth: 1
+      - name: Set build directories
+        run: |
+          echo "ANDROID_USER_HOME=$RUNNER_TEMP/android-user" >> "$GITHUB_ENV"
+          echo "GRADLE_USER_HOME=$RUNNER_TEMP/gradle-user" >> "$GITHUB_ENV"
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
