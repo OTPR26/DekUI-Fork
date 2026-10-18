@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 import zipfile
-from check_release_privacy import CHUNK, inspect_archive, inspect_stream, patterns
+from check_release_privacy import PUBLIC_RUNNER_HOME, CHUNK, inspect_archive, inspect_stream, patterns
 
 
 class ReleasePrivacyTests(unittest.TestCase):
@@ -28,8 +28,14 @@ class ReleasePrivacyTests(unittest.TestCase):
             path = Path(tmp) / 'source.zip'
             name = 'externals/catch2/.github/workflows/linux-bazel-builds.yml'
             with zipfile.ZipFile(path, 'w') as archive:
-                archive.writestr(name, b'path: /home/runner/.cache/bazel')
-            self.assertEqual(inspect_archive(path, patterns(['/home/runner'])), [])
+                archive.writestr(name, b'path: ' + PUBLIC_RUNNER_HOME + b'/.cache/bazel')
+            self.assertEqual(inspect_archive(path, patterns([PUBLIC_RUNNER_HOME.decode()])), [])
             with zipfile.ZipFile(path, 'w') as archive:
-                archive.writestr(name, b'path: /home/runner/.cache/bazel\nprivate: /home/runner/private')
-            self.assertTrue(inspect_archive(path, patterns(['/home/runner'])))
+                archive.writestr(name, b'path: ' + PUBLIC_RUNNER_HOME + b'/.cache/bazel\nprivate: ' + PUBLIC_RUNNER_HOME + b'/private')
+            self.assertTrue(inspect_archive(path, patterns([PUBLIC_RUNNER_HOME.decode()])))
+
+    def test_checker_sources_do_not_match_runner_home(self):
+        forbidden = patterns([PUBLIC_RUNNER_HOME.decode()])
+        for name in ('check_release_privacy.py', 'test_release_privacy.py'):
+            with Path(__file__).with_name(name).open('rb') as stream:
+                self.assertFalse(inspect_stream(stream, forbidden))

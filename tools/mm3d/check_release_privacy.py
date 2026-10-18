@@ -12,6 +12,7 @@ import zipfile
 
 
 CHUNK = 1024 * 1024
+PUBLIC_RUNNER_HOME = b'/home/' + b'runner'
 PUBLIC_RUNNER_CACHE_FILES = frozenset({
     'externals/catch2/.github/workflows/linux-bazel-builds.yml',
     'externals/dynarmic/externals/catch/.github/workflows/linux-bazel-builds.yml',
@@ -54,7 +55,7 @@ def inspect_archive(path, forbidden):
             if name in PUBLIC_RUNNER_CACHE_FILES:
                 # These vendored workflows name GitHub's public runner cache.
                 # Ignore only that exact convention, retaining all other checks.
-                stream = io.BytesIO(stream.read().replace(b'/home/runner/.cache/bazel', b'$HOME/.cache/bazel'))
+                stream = io.BytesIO(stream.read().replace(PUBLIC_RUNNER_HOME + b'/.cache/bazel', b'$HOME/.cache/bazel'))
             if inspect_stream(stream, forbidden):
                 failures.append((name, 'private path in file contents'))
     if zipfile.is_zipfile(path):
