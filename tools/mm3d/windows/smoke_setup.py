@@ -28,6 +28,8 @@ def check(package):
         helper = root / 'tools/mm3d/graphical_setup.py'
         subprocess.run([str(python), '-B', str(helper), '--help'],
                        cwd=tmp, env=env, check=True, timeout=30)
+        subprocess.run([str(python), '-B', str(root / 'tools/mm3d/mod_import/generate.py'), '--help'],
+                       cwd=tmp, env=env, check=True, timeout=30)
         result = subprocess.run([str(python), '-B', str(helper), '--root', str(root),
                                  '--rom', str(root / 'missing.cci'), '--in-place'],
                                 cwd=tmp, env=env, capture_output=True, text=True, timeout=30)
