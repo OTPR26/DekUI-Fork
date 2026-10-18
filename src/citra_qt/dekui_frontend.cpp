@@ -674,7 +674,8 @@ class SettingsDialog final : public QDialog {
     }
 
 public:
-    SettingsDialog(QWidget* parent, bool active) : QDialog(parent), running(active) {
+    SettingsDialog(QWidget* parent, bool active, bool open_mods = false)
+        : QDialog(parent), running(active) {
         setProperty("dekuiMenu", true);
         setWindowTitle(QStringLiteral("DekUI / Settings"));
         const int text_size =
@@ -711,7 +712,7 @@ public:
             page = name;
             Render();
         });
-        rail->setCurrentRow(0);
+        rail->setCurrentRow(open_mods ? 9 : 0);
     }
 };
 class Backdrop final : public QDialog {
@@ -733,7 +734,8 @@ protected:
     }
 
 public:
-    Backdrop(QWidget* parent) : QDialog(parent), image(QStringLiteral(":/dekui/startup.png")) {
+    Backdrop(QWidget* parent, bool open_mods)
+        : QDialog(parent), image(QStringLiteral(":/dekui/startup.png")) {
         setProperty("dekuiMenu", true);
         setObjectName(QStringLiteral("Startup"));
         setWindowTitle(QStringLiteral("DekUI Fork"));
@@ -794,14 +796,16 @@ public:
         connect(settings, &QShortcut::activated, this,
                 [this] { SettingsDialog(this, false).exec(); });
         start->setFocus();
+        if (open_mods)
+            QTimer::singleShot(0, this, [this] { SettingsDialog(this, false, true).exec(); });
     }
 };
 } // namespace
-bool Startup(QWidget* parent) {
+bool Startup(QWidget* parent, bool open_mods) {
     QFontDatabase::addApplicationFont(QStringLiteral(":/dekui/font.ttf"));
     DesktopImport::EnsureController();
     MenuInput input(qApp);
-    return Backdrop(parent).exec() == QDialog::Accepted;
+    return Backdrop(parent, open_mods).exec() == QDialog::Accepted;
 }
 void RuntimeInput() {
     if (!presentation_available.load() || QApplication::activeModalWidget())

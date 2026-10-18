@@ -1200,6 +1200,11 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
         };
         if(PlayerOverlay()) {
         using namespace PlayerSettings;
+#ifdef ENABLE_MM3D_GAME_FOLDER
+        constexpr const char* exit_popup="Return to startup?";
+#else
+        constexpr const char* exit_popup="Quit Dekui?";
+#endif
 #if defined(__ANDROID__) || defined(ENABLE_MM3D_GAME_FOLDER)
         bool android_resume=false,android_quit=false;
         state.android_help.clear();
@@ -1268,6 +1273,10 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 }
                 if(changed)state.status=state.settings.Save(state.directory+"presentation.json")?
                     "Mods saved; restart the game to apply":"Mods save FAILED";
+#ifdef ENABLE_MM3D_GAME_FOLDER
+                ImGui::TextWrapped("ROM and texture imports are configured before gameplay. Save your game, then return to startup to generate a mod.");
+                if(ImGui::Button("ROM and texture setup...")){mod_setup_requested.store(true);android_quit=true;}
+#endif
 #if defined(ANDROID) || defined(ENABLE_MM3D_GAME_FOLDER)
                 help_text("Generate Adult Link or Dark Link from your own OoT3D ROM and texture pack in startup Settings > Mods. Regenerate after updating to import voices. Restart the game after changing mods. Adult Link keeps MM3D movement and transformation forms. Facial expressions and mask fitting are unfinished.");
 #else
@@ -1440,17 +1449,22 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
 #if defined(__ANDROID__) || defined(ENABLE_MM3D_GAME_FOLDER)
         AndroidMenuStyle::End(state.android_help.c_str(),width,height);
         if(android_resume)ToggleOverlay();
-        if(android_quit)ImGui::OpenPopup("Quit Dekui?");
+        if(android_quit)ImGui::OpenPopup(exit_popup);
 #else
         ImGui::Separator();
         if(ImGui::Button("Resume"))ToggleOverlay();
         ImGui::SameLine();
-        if(ImGui::Button("Quit game"))ImGui::OpenPopup("Quit Dekui?");
+        if(ImGui::Button("Quit game"))ImGui::OpenPopup(exit_popup);
 #endif
-        if(ImGui::BeginPopupModal("Quit Dekui?",nullptr,ImGuiWindowFlags_AlwaysAutoResize)) {
+        if(ImGui::BeginPopupModal(exit_popup,nullptr,ImGuiWindowFlags_AlwaysAutoResize)) {
+#ifdef ENABLE_MM3D_GAME_FOLDER
+            ImGui::TextWrapped("Save your game before resetting. Any progress since your last save will be lost. This returns to the startup screen and keeps the app open.");
+            if(ImGui::Button("Reset")){quit.store(true);ImGui::CloseCurrentPopup();}
+#else
             ImGui::TextUnformatted("Save your progress in the game before quitting.");
             if(ImGui::Button("Quit")){quit.store(true);ImGui::CloseCurrentPopup();}
-            ImGui::SameLine();if(ImGui::Button("Cancel"))ImGui::CloseCurrentPopup();
+#endif
+            ImGui::SameLine();if(ImGui::Button("Cancel")){mod_setup_requested.store(false);ImGui::CloseCurrentPopup();}
             ImGui::EndPopup();
         }
         }

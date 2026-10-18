@@ -16,3 +16,7 @@ changing models. Touch > Swap screens shows the game touchscreen for mouse input
 
 Update into a separate folder and retain user/ and desktop-settings.json.
 The package includes no game ROMs, imported models, voices, textures or saves.
+
+In-game Reset warns about unsaved progress, then returns to the startup screen
+while keeping the app open. Mods > ROM and texture setup uses that confirmation
+and opens startup Settings > Mods directly. Quit on the startup screen exits.

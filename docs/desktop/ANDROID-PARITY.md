@@ -52,3 +52,7 @@ Implementation checkpoint (2026-10-18):
   gameplay testing remain pending; the user's active preview is left alone.
 - The first raw UI preview lacked adjacent setup resources. Only a complete
   deployed package is suitable for gameplay testing.
+
+Desktop Reset returns to startup after an explicit unsaved-progress warning.
+The Mods import route uses the same confirmation and opens the Mods setup page.
+Startup Quit remains the app exit action.

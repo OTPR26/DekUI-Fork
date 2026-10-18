@@ -1438,9 +1438,24 @@ void GMainWindow::ConnectWidgetEvents() {
 #endif
         }
         if(quit.exchange(false)) {
-            // The ImGui Quit button already confirmed this specific close.
-            const QScopedValueRollback<bool> confirmed{close_already_confirmed,true};
-            close();
+#ifdef ENABLE_MM3D_GAME_FOLDER
+            // The overlay confirmation explicitly warns about unsaved progress.
+            qApp->setQuitOnLastWindowClosed(false);
+            config->Save();ShutdownGame();game_list->hide();game_list_placeholder->hide();
+            bool open_mods=mod_setup_requested.exchange(false),started=false;
+            while(MM3D::DesktopFrontend::Startup(this,open_mods)) {
+                open_mods=false;
+                auto error=MM3D::GameFolder::Prepare();if(error.isEmpty())error=MM3D::GameFolder::Validate();
+                if(!error.isEmpty()){QMessageBox::warning(this,tr("Game setup"),error);continue;}
+                try{MM3D::DesktopImport::ApplyPendingSettings();}
+                catch(const std::exception& failure){QMessageBox::warning(this,tr("Settings"),QString::fromUtf8(failure.what()));continue;}
+                config->Reload();system.ApplySettings();BootGame(MM3D::GameFolder::Rom());started=true;break;
+            }
+            qApp->setQuitOnLastWindowClosed(true);
+            if(!started){const QScopedValueRollback<bool> confirmed{close_already_confirmed,true};close();}
+#else
+            const QScopedValueRollback<bool> confirmed{close_already_confirmed,true};close();
+#endif
         }
         if (MM3D::step_requested.exchange(false) && system.IsPoweredOn() &&
             system.frame_limiter.IsFrameAdvancing()) {
