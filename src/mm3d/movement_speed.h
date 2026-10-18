@@ -34,7 +34,7 @@ template<class M> bool CodeMatches(M& m) {
     return true;
 }
 inline U32 Instruction(U32 pc,U32 word) {
-    for(unsigned i=0;i<PCs.size();++i)if(pc==PCs[i]&&word==Words[i])return 0xef000000|FirstSVC+i;
+    for(unsigned i=0;i<PCs.size();++i)if(pc==PCs[i]&&word==Words[i])return 0xef000000 | (FirstSVC + i);
     return word;
 }
 inline float Multiplier(float value) {return std::isfinite(value)?std::clamp(value,.5f,3.f):1.f;}

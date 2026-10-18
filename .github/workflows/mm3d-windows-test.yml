@@ -52,15 +52,23 @@ jobs:
             mingw-w64-ucrt-x86_64-qt6-tools
             mingw-w64-ucrt-x86_64-SDL2
             mingw-w64-ucrt-x86_64-ccache
-      - uses: actions/cache@v5
+      - uses: actions/cache/restore@v5
         with:
           path: .ccache-windows
-          key: windows-ucrt-ccache-v1-${{ github.sha }}
-          restore-keys: windows-ucrt-ccache-v1-
+          key: windows-ucrt-ccache-v2-${{ github.sha }}-${{ github.run_id }}
+          restore-keys: |
+            windows-ucrt-ccache-v2-
+            windows-ucrt-ccache-v1-
       - name: Configure, build, test and package
         run: |
           set -o pipefail
           bash tools/mm3d/windows/build-ci.sh 2>&1 | tee windows-build.log
+      - name: Save compiler cache
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: .ccache-windows
+          key: windows-ucrt-ccache-v2-${{ github.sha }}-${{ github.run_id }}
       - name: Upload build diagnostics
         if: always()
         uses: actions/upload-artifact@v7
