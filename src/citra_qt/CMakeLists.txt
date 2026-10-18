@@ -27,6 +27,11 @@ add_library(citra_qt STATIC EXCLUDE_FROM_ALL
     camera/qt_camera_base.h
     camera/qt_multimedia_camera.cpp
     camera/qt_multimedia_camera.h
+    dekui_frontend.cpp
+    dekui_frontend.h
+    dekui_import.cpp
+    dekui_import.h
+    dekui_frontend.qrc
     citra_qt.cpp
     citra_qt.h
     configuration/config.cpp
@@ -362,4 +367,13 @@ endif()
 
 if (CITRA_USE_PRECOMPILED_HEADERS)
     target_precompile_headers(citra_qt PRIVATE precompiled_headers.h)
+endif()
+
+if(ENABLE_MM3D_GAME_FOLDER AND ENABLE_MM3D_PRESENTATION)
+    add_executable(mm3d_desktop_import_tests dekui_import_tests.cpp)
+    target_link_libraries(mm3d_desktop_import_tests PRIVATE citra_qt Qt6::Widgets)
+    if(APPLE)
+        target_link_libraries(mm3d_desktop_import_tests PRIVATE Qt6::GuiPrivate)
+    endif()
+    add_test(NAME mm3d_desktop_import COMMAND mm3d_desktop_import_tests)
 endif()

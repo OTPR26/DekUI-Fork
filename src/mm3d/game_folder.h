@@ -27,6 +27,11 @@ inline QString Root() {
                               : QFileInfo(appimage).absolutePath();
 }
 inline QString FindRom(const QString& root) {
+    QFile selection(root+QStringLiteral("/desktop-settings.json"));
+    if(selection.open(QIODevice::ReadOnly)) {
+        const auto chosen=QJsonDocument::fromJson(selection.readAll()).object().value(QStringLiteral("mm_rom")).toString();
+        if(!chosen.isEmpty())return QFileInfo(chosen).isFile()?chosen:QString{};
+    }
     QStringList candidates;
     for (const auto& file : QDir(root).entryInfoList(QDir::Files, QDir::Name)) {
         const auto suffix=file.suffix().toLower();
@@ -41,7 +46,7 @@ inline QString FindRom(const QString& root) {
 }
 inline QString Rom() { return FindRom(Root()); }
 inline QString MissingGameMessage() {
-    return QStringLiteral("Place exactly one decrypted USA v1.1 game-card dump (.cci or .3ds) beside the application, then launch Dekui again. Use a game card with v1.1 preinstalled.");
+    return QStringLiteral("Select your decrypted MM3D USA Rev 1 game-card dump (.cci or .3ds) from the startup screen.");
 }
 inline QString User() { return Root() + QStringLiteral("/user/"); }
 inline QString Validate() {

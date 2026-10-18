@@ -60,8 +60,8 @@
 #include "mm3d/dialogue_scale.h"
 #include "mm3d/inventory_menu.h"
 #include "mm3d/widescreen.h"
-#ifdef ANDROID
 #include "mm3d/android_menu.h"
+#ifdef ANDROID
 #include "mm3d/android_menu_style.h"
 #endif
 #ifndef ANDROID
@@ -504,13 +504,26 @@ Overlay::Overlay(const Vulkan::Instance& instance, vk::Format format, unsigned i
     ImGui::GetIO().IniFilename = nullptr;
     ImGui::GetIO().LogFilename = nullptr;
     ImGui::StyleColorsDark();
-    #ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(ENABLE_MM3D_GAME_FOLDER)
     AndroidMenuStyle::Theme(ImGui::GetStyle());
+#endif
+#if defined(__ANDROID__) || defined(ENABLE_MM3D_GAME_FOLDER)
     ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+#endif
+    #ifdef __ANDROID__
     const auto menu_font=AndroidUtils::TranslateFilePath(
         FileUtil::GetUserPath(FileUtil::UserPath::ConfigDir)+"mm3d-local/menu-font.ttf");
     if(QFileInfo::exists(QString::fromStdString(menu_font))) {
         state.android_menu_font=ImGui::GetIO().Fonts->AddFontFromFileTTF(menu_font.c_str(),52.f)!=nullptr;
+    }
+#elif defined(ENABLE_MM3D_GAME_FOLDER)
+    QFile font_file(":/dekui/font.ttf");
+    if(font_file.open(QIODevice::ReadOnly)){
+        const auto bytes=font_file.readAll();
+        if(!bytes.isEmpty()){
+            auto* memory=ImGui::MemAlloc(bytes.size());std::memcpy(memory,bytes.constData(),bytes.size());
+            state.android_menu_font=ImGui::GetIO().Fonts->AddFontFromMemoryTTF(memory,bytes.size(),52.f)!=nullptr;
+        }
     }
 #endif
     state.base_style=ImGui::GetStyle();
@@ -629,10 +642,13 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
     // a readable screen-relative baseline and a separate enlargement preference.
     const float content_scale=std::clamp(float(height)/1080.f,.5f,4.f)*
         (1.8f+.06f*std::clamp(state.settings.android_menu_text_size,0,40));
+#elif defined(ENABLE_MM3D_GAME_FOLDER)
+    const float content_scale=std::clamp(float(height)/720.f,.65f,4.f)*
+        (1.2f+.03f*std::clamp(state.settings.desktop_menu_text_size,0,40));
 #else
     const float content_scale=state.settings.scale;
 #endif
-    #ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(ENABLE_MM3D_GAME_FOLDER)
     io.FontGlobalScale=content_scale*(state.android_menu_font?.25f:1.f);
 #else
     io.FontGlobalScale=content_scale;
@@ -675,7 +691,13 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
         const float fade=std::clamp(float((now-state.startup_hint_start-2.0)/2.0),0.f,1.f);
         const float alpha=1.f-fade*fade*(3.f-2.f*fade);
         if(alpha>0) {
+#if defined(ENABLE_MM3D_GAME_FOLDER) && defined(__APPLE__)
+            constexpr const char* label="Open Settings from the menu or press Command-comma";
+#elif defined(ENABLE_MM3D_GAME_FOLDER)
+            constexpr const char* label="Open Settings from the menu or press Ctrl-comma";
+#else
             constexpr const char* label="Press F1 to access settings";
+#endif
             const float scale=std::clamp(float(height)/720.f,.8f,3.f);
             const float font_size=18.f*scale,margin=16.f*scale,padding=8.f*scale;
             const auto size=ImGui::GetFont()->CalcTextSizeA(font_size,FLT_MAX,0,label);
@@ -709,8 +731,8 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
     }
     #endif
     if (overlay_visible.load()) {
-#if defined(__ANDROID__)
-        // Android settings always cover the current surface. Text scaling must
+#if defined(__ANDROID__) || defined(ENABLE_MM3D_GAME_FOLDER)
+        // Player settings always cover the current surface. Text scaling must
         // not change the panel's bounds, and restored sizes never override them.
         const ImVec2 screen{float(width),float(height)};
         ImGui::SetNextWindowPos({0,0},ImGuiCond_Always);
@@ -754,6 +776,13 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 state.status=state.settings.Save(state.directory+"presentation.json")?
                     "Menu text size saved":"Menu text size save FAILED";
             }
+#elif defined(ENABLE_MM3D_GAME_FOLDER)
+            if(!state.editing_settings_size)state.settings_size_step=state.settings.desktop_menu_text_size;
+            AndroidMenuStyle::SliderInt("Menu size",&state.settings_size_step,0,40,"%+d",ImGuiSliderFlags_AlwaysClamp);
+            state.editing_settings_size=ImGui::IsItemActive();
+            bool apply=ImGui::IsItemDeactivatedAfterEdit();
+            if(ImGui::Button("Reset size")){state.settings_size_step=20;apply=true;}
+            if(apply){state.settings.desktop_menu_text_size=state.settings_size_step;state.settings.Save(state.directory+"presentation.json");}
 #else
             if(!state.editing_settings_size)
                 state.settings_size_step=std::clamp(int(std::lround((state.settings.scale-1.f)*10.f)),-5,10);
@@ -792,7 +821,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
         };
         const auto startup_hint_control=[&]() {
 #ifndef __ANDROID__
-            if(AndroidMenuStyle::Checkbox("Show F1 settings hint",&state.settings.show_startup_settings_hint))
+            if(AndroidMenuStyle::Checkbox("Show settings hint at startup",&state.settings.show_startup_settings_hint))
                 state.status=state.settings.Save(state.directory+"presentation.json")?"Settings hint saved":"Settings hint save FAILED";
 #endif
         };
@@ -1171,7 +1200,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
         };
         if(PlayerOverlay()) {
         using namespace PlayerSettings;
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(ENABLE_MM3D_GAME_FOLDER)
         bool android_resume=false,android_quit=false;
         state.android_help.clear();
         AndroidMenuStyle::Begin(state.android_page,width,height,android_resume,android_quit);
@@ -1195,7 +1224,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 if(model==2) {
                     const auto path=FileUtil::GetUserPath(FileUtil::UserPath::LoadDir)+"mm3d-models/dark-link/romfs/actors/zelda2_link_child_new.gar.lzs";
                     if(!FileUtil::Exists(path)) {
-#ifdef ANDROID
+#if defined(ANDROID) || defined(ENABLE_MM3D_GAME_FOLDER)
                         help_text("Dark Link is not installed. Generate Dark Link from your OoT3D ROM in startup Settings > Mods before starting the game.");
 #else
                         help_text("Dark Link is not installed. Import your generated Dark Link folder into load/mm3d-models/dark-link/ in this game folder's user directory.");
@@ -1221,7 +1250,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                             state.settings.adult_link_master_sword=master;
                             changed=true;
                         } else {
-#ifdef ANDROID
+#if defined(ANDROID) || defined(ENABLE_MM3D_GAME_FOLDER)
                             state.status="Model not generated: return to startup Settings > Mods and generate from your OoT3D ROM";
 #else
                             state.status="Model not installed: import your generated Adult Link variants into load/mm3d-models/adult-link/";
@@ -1229,7 +1258,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                         }
                     }
                     if(!available(state.settings.adult_link_tunic_color,state.settings.adult_link_master_sword)) {
-#ifdef ANDROID
+#if defined(ANDROID) || defined(ENABLE_MM3D_GAME_FOLDER)
                         help_text("The selected model is not installed. Return to startup Settings > Mods and generate the mod from your OoT3D ROM.");
 #else
                         help_text("The selected model variant is not installed. Import the matching generated variant into load/mm3d-models/adult-link/variants/.");
@@ -1239,7 +1268,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 }
                 if(changed)state.status=state.settings.Save(state.directory+"presentation.json")?
                     "Mods saved; restart the game to apply":"Mods save FAILED";
-#ifdef ANDROID
+#if defined(ANDROID) || defined(ENABLE_MM3D_GAME_FOLDER)
                 help_text("Generate Adult Link or Dark Link from your own OoT3D ROM and texture pack in startup Settings > Mods. Regenerate after updating to import voices. Restart the game after changing mods. Adult Link keeps MM3D movement and transformation forms. Facial expressions and mask fitting are unfinished.");
 #else
                 help_text("Import generated Adult Link or Dark Link files from your own OoT3D ROM into this game folder's user/load/mm3d-models directory, including voices and icon files. Desktop ROM generation is not integrated yet. Restart after changing models. Normal MM3D abilities and transformation forms remain available; facial expressions and mask fitting are unfinished.");
@@ -1276,7 +1305,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 bool custom=textures.load()!=0;
                 if(AndroidMenuStyle::Checkbox("Use custom textures",&custom))set_textures.store(custom);
                 hover_help("Load a compatible texture pack from your texture folder. Restart Dekui after adding or replacing texture files.");
-#ifdef ANDROID
+#if defined(ANDROID) || defined(ENABLE_MM3D_GAME_FOLDER)
                 const auto texture_state=AndroidMenu::Snapshot();
                 ImGui::TextWrapped("Textures: %s",texture_state.textures.c_str());
                 if(ImGui::Button("Choose texture folder"))AndroidMenu::Request(AndroidMenu::Textures);
@@ -1309,8 +1338,15 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 ImGui::TextWrapped("Swap to the lower screen when you need the game's touchscreen. Swipe from the left edge to return to this menu.");
                 end_page();
             }
-            if(begin_page("Cheats")){cheats_controls();end_page();}
+#elif defined(ENABLE_MM3D_GAME_FOLDER)
+            if(begin_page("Touch")){
+                bool swapped=AndroidMenu::Snapshot().touch;
+                if(AndroidMenuStyle::Checkbox("Swap screens",&swapped))AndroidMenu::Request(AndroidMenu::SwapScreens,swapped);
+                ImGui::TextWrapped("Show the game's touchscreen and click it with your mouse. Turn Swap screens off to return to gameplay. Android touch-button overlays are not needed on desktop.");
+                end_page();
+            }
 #endif
+            if(begin_page("Cheats")){cheats_controls();end_page();}
             if(begin_page("HUD")){hud_controls();end_page();}
             if(begin_page("Difficulty")){difficulty_controls();end_page();}
             if(begin_page("Restoration")){restoration_controls();end_page();}
@@ -1355,12 +1391,17 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
             }
             if(begin_page("Controls")) {
                 text_controls();
-#ifdef ANDROID
+#if defined(ANDROID) || defined(ENABLE_MM3D_GAME_FOLDER)
                 const auto android = AndroidMenu::Snapshot();
                 ImGui::TextWrapped("L1 / R1: items I / II. L2 / R2: targeting / shield. Hold game X with a bumper for its alternate action. Select a binding to change it.");
-                for(unsigned i=0;i<std::size(AndroidMenu::BindingLabels);++i) {
+#ifdef ENABLE_MM3D_GAME_FOLDER
+                constexpr const char* binding_labels[]{"A","B","X","Y","Select","Start","Home","L — targeting","R — shield","ZL — item I","ZR — item II","D-pad up","D-pad down","D-pad left","D-pad right","Left stick","Right stick"};
+#else
+                const auto& binding_labels=AndroidMenu::BindingLabels;
+#endif
+                for(unsigned i=0;i<std::size(binding_labels);++i) {
                     ImGui::PushID(int(i));
-                    ImGui::TextUnformatted(AndroidMenu::BindingLabels[i]);
+                    ImGui::TextUnformatted(binding_labels[i]);
                     const auto label=android.capture==int(i)?std::string("Waiting for input..."):
                         i<android.bindings.size()&&!android.bindings[i].empty()?android.bindings[i]:std::string("Unbound");
                     if(ImGui::Button(label.c_str(),{std::max(80.f,ImGui::GetContentRegionAvail().x-ImGui::GetFontSize()*4.5f-ImGui::GetStyle().ItemSpacing.x),0}))
@@ -1381,7 +1422,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
 #ifdef ANDROID
                 help_text("Swipe in from the left edge for settings. Hold ZR and press SELECT during gameplay to toggle the minimap. Use Touch > Swap screens for the game's touchscreen.");
 #else
-                help_text("Hold ZR and press SELECT during gameplay to hide or show the minimap. Game touchscreen input is disabled.");
+                help_text("Hold ZR and press SELECT to toggle the minimap. Touch > Swap screens shows the game touchscreen for mouse input. Start + Select opens settings.");
 #endif
                 end_page();
             }
@@ -1392,11 +1433,11 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
 #endif
                 end_page();
             }
-#ifndef __ANDROID__
+#if !defined(__ANDROID__) && !defined(ENABLE_MM3D_GAME_FOLDER)
             ImGui::EndTabBar();
 #endif
         }
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(ENABLE_MM3D_GAME_FOLDER)
         AndroidMenuStyle::End(state.android_help.c_str(),width,height);
         if(android_resume)ToggleOverlay();
         if(android_quit)ImGui::OpenPopup("Quit Dekui?");

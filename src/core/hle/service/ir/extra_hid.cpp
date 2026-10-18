@@ -5,6 +5,9 @@
 #include <fmt/ranges.h>
 #include "common/alignment.h"
 #include "common/settings.h"
+#ifdef ENABLE_MM3D_GAME_FOLDER
+#include "mm3d/diagnostics.h"
+#endif
 #include "core/core_timing.h"
 #include "core/hle/service/hid/hid.h"
 #include "core/hle/service/ir/extra_hid.h"
@@ -273,6 +276,12 @@ void ExtraHID::SendHIDStatus() {
         response.unknown = 0;
     }
 
+#ifdef ENABLE_MM3D_GAME_FOLDER
+    if(MM3D::overlay_visible.load()){
+        response.c_stick.c_stick_x.Assign(C_STICK_CENTER);response.c_stick.c_stick_y.Assign(C_STICK_CENTER);
+        response.buttons.zl_not_held.Assign(1);response.buttons.zr_not_held.Assign(1);
+    }
+#endif
     movie.HandleExtraHidResponse(response);
 
     std::vector<u8> response_buffer(sizeof(response));

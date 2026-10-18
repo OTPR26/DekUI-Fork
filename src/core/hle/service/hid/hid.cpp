@@ -3,6 +3,9 @@
 // Refer to the license.txt file included.
 
 #include <algorithm>
+#ifdef ENABLE_MM3D_GAME_FOLDER
+#include "mm3d/diagnostics.h"
+#endif
 #include <cmath>
 #include <numeric>
 #include <boost/serialization/array.hpp>
@@ -219,7 +222,9 @@ void Module::UpdatePadCallback(std::uintptr_t user_data, s64 cycles_late) {
         }
 #endif
 #ifdef ENABLE_MM3D_GAME_FOLDER
-        touch_entry.x=0;touch_entry.y=0;touch_entry.valid.Assign(0);
+        if(MM3D::overlay_visible.load()||!Settings::values.swap_screen.GetValue()) {
+            touch_entry.x=0;touch_entry.y=0;touch_entry.valid.Assign(0);
+        }
 #endif
     } else {
         state.a.Assign(buttons[A - BUTTON_HID_BEGIN]->GetStatus());
@@ -266,6 +271,9 @@ void Module::UpdatePadCallback(std::uintptr_t user_data, s64 cycles_late) {
         MM3D::ClassicSaving::FilterArrivalPad(state.hex,circle_pad_x,circle_pad_y);
 #endif
 
+#ifdef ENABLE_MM3D_GAME_FOLDER
+        if(MM3D::overlay_visible.load()){state.hex=0;circle_pad_x=0;circle_pad_y=0;}
+#endif
         const DirectionState direction = GetStickDirectionState(circle_pad_x, circle_pad_y);
         state.circle_up.Assign(direction.up);
         state.circle_down.Assign(direction.down);
@@ -327,7 +335,9 @@ void Module::UpdatePadCallback(std::uintptr_t user_data, s64 cycles_late) {
         }
 #endif
 #ifdef ENABLE_MM3D_GAME_FOLDER
-        touch_entry.x=0;touch_entry.y=0;touch_entry.valid.Assign(0);
+        if(MM3D::overlay_visible.load()||!Settings::values.swap_screen.GetValue()) {
+            touch_entry.x=0;touch_entry.y=0;touch_entry.valid.Assign(0);
+        }
 #endif
     }
 

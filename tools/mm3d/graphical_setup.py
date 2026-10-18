@@ -10,7 +10,7 @@ from build_release_assets import RESOURCES
 from setup_game_folder import setup, validate
 
 
-def prepare(root, rom, patch=None, exheader=None, hud=None, in_place=False, upgrade_existing=False):
+def prepare(root, rom, patch=None, exheader=None, hud=None, in_place=False, upgrade_existing=False, reference_game=False):
     if (root/'user').exists() and not upgrade_existing:
         raise ValueError('This folder already has user data. Choose a fresh application folder; existing saves will not be replaced.')
     if not rom.is_file(): raise ValueError('Select your decrypted game file (.cci or .3ds).')
@@ -39,18 +39,19 @@ def prepare(root, rom, patch=None, exheader=None, hud=None, in_place=False, upgr
         if (root/'user').exists():
             from upgrade_game_resources import upgrade
             return upgrade(root,rom,restoration)
-        return setup(root,restoration,rom,copy_game=not in_place)
+        return setup(root,restoration,rom,copy_game=not in_place,reference_game=reference_game)
 
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('root','rom'):parser.add_argument('--'+name,type=Path,required=True)
     for name in ('patch','exheader','hud'):parser.add_argument('--'+name,type=Path)
+    parser.add_argument("--reference-game",action="store_true",help="Use an explicitly selected external game without copying it")
     parser.add_argument("--in-place",action="store_true",help="Use the game beside the app without copying it")
     parser.add_argument("--upgrade-existing",action="store_true",help="Upgrade owned resources while preserving user data")
     args=parser.parse_args()
     try:
-        prepare(args.root,args.rom,args.patch,args.exheader,args.hud,in_place=args.in_place,upgrade_existing=args.upgrade_existing)
+        prepare(args.root,args.rom,args.patch,args.exheader,args.hud,in_place=args.in_place,upgrade_existing=args.upgrade_existing,reference_game=args.reference_game)
         print('Setup complete. Starting the game.')
     except (ValueError,OSError) as error:
         parser.exit(1,str(error)+'\n')

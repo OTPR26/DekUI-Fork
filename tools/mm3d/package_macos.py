@@ -53,7 +53,7 @@ def package(bundle, output, python_archive):
         shutil.copytree(bundle, app, symlinks=True)
         info = app / 'Contents/Info.plist'
         metadata = plistlib.loads(info.read_bytes())
-        metadata.update(CFBundleName='DekUI Fork', CFBundleDisplayName='DekUI Fork')
+        metadata.update(CFBundleName='DekUI Fork', CFBundleDisplayName='DekUI Fork', CFBundleIdentifier='io.github.otpr26.dekui')
         info.write_bytes(plistlib.dumps(metadata))
         runtime = app / 'Contents/Resources/runtime'
         install(python_archive, runtime)
@@ -64,6 +64,9 @@ def package(bundle, output, python_archive):
         for name in ('supported-rom.json', 'setup-fingerprints.json', 'layout-migration.json'):
             shutil.copy2(ROOT / 'resources/mm3d' / name, resources / name)
         shutil.copytree(ROOT / 'resources/mm3d/defaults', resources / 'defaults')
+        shutil.copytree(ROOT / "tools/mm3d/mod_import", scripts / "mod_import", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        font_license=root / "licenses/fonts/LICENSE.txt";font_license.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy2(ROOT / "src/android/app/src/main/assets/dekui-fonts/LICENSE.txt",font_license)
         copy_restoration(ROOT, resources / 'project-restoration')
         for name in ('README.md', 'CHANGELOG.md', 'CREDITS.md', 'KNOWN_ISSUES.md', 'INSTALL.md'):
             shutil.copy2(ROOT / 'resources/mm3d/release-docs' / name, root / name)

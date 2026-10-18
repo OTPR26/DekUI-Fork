@@ -38,7 +38,7 @@ inline void Theme(ImGuiStyle& s) {
 }
 
 inline bool Checkbox(const char* label,bool* value,bool radio=false) {
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(ENABLE_MM3D_GAME_FOLDER)
     const float f=ImGui::GetFontSize(), w=ImGui::GetContentRegionAvail().x;
     const float pad=f*.45f, toggle=f*1.65f;
     const float text_w=std::max(f*2,w-toggle-pad*3);
@@ -75,12 +75,12 @@ inline void Label(const char* label) {
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
 }
 inline void AfterControl() {
-#ifndef __ANDROID__
+#if !defined(__ANDROID__) && !defined(ENABLE_MM3D_GAME_FOLDER)
     ImGui::SameLine();
 #endif
 }
 inline bool RadioButton(const char* label,int* v,int choice) {
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(ENABLE_MM3D_GAME_FOLDER)
     bool selected=*v==choice;
     if(Checkbox(label,&selected,true)){*v=choice;return true;}
     return false;
@@ -89,7 +89,7 @@ inline bool RadioButton(const char* label,int* v,int choice) {
 #endif
 }
 inline bool SliderInt(const char* label,int* v,int min,int max,const char* format="%d",ImGuiSliderFlags flags=0) {
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(ENABLE_MM3D_GAME_FOLDER)
     ImGui::PushID(label); Label(label);
     const bool changed=ImGui::SliderInt("##value",v,min,max,format,flags);
     ImGui::PopID();return changed;
@@ -98,7 +98,7 @@ inline bool SliderInt(const char* label,int* v,int min,int max,const char* forma
 #endif
 }
 inline bool SliderFloat(const char* label,float* v,float min,float max,const char* format="%.3f",ImGuiSliderFlags flags=0) {
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(ENABLE_MM3D_GAME_FOLDER)
     ImGui::PushID(label); Label(label);
     const bool changed=ImGui::SliderFloat("##value",v,min,max,format,flags);
     ImGui::PopID();return changed;
@@ -107,7 +107,7 @@ inline bool SliderFloat(const char* label,float* v,float min,float max,const cha
 #endif
 }
 inline bool Combo(const char* label,int* v,const char* items,int height=-1) {
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(ENABLE_MM3D_GAME_FOLDER)
     ImGui::PushID(label);Label(label);
     const bool changed=ImGui::Combo("##value",v,items,height);
     ImGui::PopID();return changed;
@@ -178,7 +178,11 @@ inline void End(const char* help,int width,int height) {
     ImGui::BeginChild("Context help",{float(width)-rail-gap*3,footer},ImGuiChildFlags_None);
     ImGui::SetWindowFontScale(.72f);
     ImGui::PushStyleColor(ImGuiCol_Text,ImVec4{.69f,.65f,.74f,1});
+#ifdef __ANDROID__
     ImGui::TextWrapped("%s",*help?help:"Swipe from the left for settings. D-pad to navigate, A to select, B to resume.");
+#else
+    ImGui::TextWrapped("%s",*help?help:"Use the Settings button or settings shortcut. D-pad/arrow keys to navigate; confirm to select, back to resume.");
+#endif
     ImGui::PopStyleColor();ImGui::EndChild();
 }
 }

@@ -2,6 +2,7 @@
 #pragma once
 #include <QEventLoop>
 #include <QProcess>
+#include <QProgressDialog>
 #include <QStandardPaths>
 #include <QTimer>
 #include "mm3d/game_folder.h"
@@ -24,6 +25,8 @@ inline QString Prepare() {
     const auto python=QStandardPaths::findExecutable(QStringLiteral("python3"));
     if(python.isEmpty())return QStringLiteral("Python 3.9 or newer is required for setup and resource checks.");
 #endif
+    QProgressDialog progress(QStringLiteral("Preparing your game and checking installed resources…"),QString{},0,0);
+    progress.setWindowTitle(QStringLiteral("DekUI Fork"));progress.setCancelButton(nullptr);progress.setMinimumDuration(0);progress.setWindowModality(Qt::ApplicationModal);progress.show();
     QProcess process;
     QEventLoop loop;
     QString error;
@@ -42,7 +45,7 @@ inline QString Prepare() {
     });
     process.setWorkingDirectory(Root());
     QTimer::singleShot(0,&loop,[&]{
-        process.start(python,{QStringLiteral("-E"),QStringLiteral("-s"),QStringLiteral("-B"),helper,QStringLiteral("--root"),Root(),QStringLiteral("--rom"),rom,QStringLiteral("--in-place"),QStringLiteral("--upgrade-existing")});
+        process.start(python,{QStringLiteral("-E"),QStringLiteral("-s"),QStringLiteral("-B"),helper,QStringLiteral("--root"),Root(),QStringLiteral("--rom"),rom,QStringLiteral("--in-place"),QStringLiteral("--reference-game"),QStringLiteral("--upgrade-existing")});
     });
     loop.exec();
     return error;

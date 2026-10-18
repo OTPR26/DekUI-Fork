@@ -624,9 +624,9 @@ void GRenderWindow::mousePressEvent(QMouseEvent* event) {
     }
 #endif
 #ifdef ENABLE_MM3D_GAME_FOLDER
-    emit MouseActivity();
-    event->accept();
-    return;
+    if(!Settings::values.swap_screen.GetValue()) {
+        emit MouseActivity();event->accept();return;
+    }
 #endif
     if (event->source() == Qt::MouseEventSynthesizedBySystem) {
         return; // touch input is handled in TouchBeginEvent
@@ -653,9 +653,9 @@ void GRenderWindow::mouseMoveEvent(QMouseEvent* event) {
     }
 #endif
 #ifdef ENABLE_MM3D_GAME_FOLDER
-    emit MouseActivity();
-    event->accept();
-    return;
+    if(!Settings::values.swap_screen.GetValue()) {
+        emit MouseActivity();event->accept();return;
+    }
 #endif
     if (event->source() == Qt::MouseEventSynthesizedBySystem) {
         return; // touch input is handled in TouchUpdateEvent
@@ -679,9 +679,9 @@ void GRenderWindow::mouseReleaseEvent(QMouseEvent* event) {
     }
 #endif
 #ifdef ENABLE_MM3D_GAME_FOLDER
-    emit MouseActivity();
-    event->accept();
-    return;
+    if(!Settings::values.swap_screen.GetValue()) {
+        emit MouseActivity();event->accept();return;
+    }
 #endif
     if (event->source() == Qt::MouseEventSynthesizedBySystem) {
         return; // touch input is handled in TouchEndEvent
@@ -699,7 +699,7 @@ void GRenderWindow::TouchBeginEvent(const QTouchEvent* event) {
     if(!is_secondary && !event->points().isEmpty()) {
         const auto [x,y]=ScaleTouch(event->points().first().position());
         settings_touch_x=x;settings_touch_y=y;
-        MM3D::Pointer(x,y,0,true);
+        if(!MM3D::Pointer(x,y,0,true)&&Settings::values.swap_screen.GetValue())TouchPressed(x,y);
     }
     return;
 #endif
@@ -713,7 +713,7 @@ void GRenderWindow::TouchUpdateEvent(const QTouchEvent* event) {
     if(!is_secondary && !event->points().isEmpty()) {
         const auto [x,y]=ScaleTouch(event->points().first().position());
         settings_touch_x=x;settings_touch_y=y;
-        MM3D::Pointer(x,y);
+        if(!MM3D::Pointer(x,y)&&Settings::values.swap_screen.GetValue())TouchMoved(x,y);
     }
     return;
 #endif
@@ -737,7 +737,7 @@ void GRenderWindow::TouchUpdateEvent(const QTouchEvent* event) {
 void GRenderWindow::TouchEndEvent() {
 #ifdef ENABLE_MM3D_GAME_FOLDER
     if(!is_secondary)MM3D::Pointer(settings_touch_x,settings_touch_y,0,false);
-    return;
+    TouchReleased();return;
 #endif
     this->TouchReleased();
 }
