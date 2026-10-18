@@ -12,10 +12,10 @@ inline std::array<GearMenu::AtomicPose,Count> buttons;
 inline std::atomic<float> scale{1},flip_peak{1.2f},center_x{350},center_y{55},spacing{24},rotation{0};
 inline std::atomic<bool> diamond_enabled{false};
 inline std::array<float,2> DiamondPoint(unsigned i,const Diamond& d){
-    float x=i==2?-d.spacing:i==4?d.spacing:0;
-    float y=i==1?-d.spacing:i==5?d.spacing:0;
+    float offset_x=i==2?-d.spacing:i==4?d.spacing:0;
+    float offset_y=i==1?-d.spacing:i==5?d.spacing:0;
     const float angle=d.rotation*3.14159265358979323846f/180;
-    return {d.x+x*std::cos(angle)-y*std::sin(angle),d.y+x*std::sin(angle)+y*std::cos(angle)};
+    return {d.x+offset_x*std::cos(angle)-offset_y*std::sin(angle),d.y+offset_x*std::sin(angle)+offset_y*std::cos(angle)};
 }
 inline void Apply(const Options& o){flip_peak=o.flip_peak;diamond_enabled=o.diamond.enabled;center_x=o.diamond.x;center_y=o.diamond.y;spacing=o.diamond.spacing;rotation=o.diamond.rotation;scale=o.scale;for(unsigned i=0;i<Count;++i){buttons[i].x=o.buttons[i].x;buttons[i].y=o.buttons[i].y;buttons[i].scale=o.buttons[i].scale;}}
 inline void SaveSlot(Options& o,unsigned slot){if(slot<3){o.preset_flip_peaks[slot]=o.flip_peak;o.preset_diamonds[slot]=o.diamond;o.presets[slot]=o.buttons;o.preset_scales[slot]=o.scale;o.saved[slot]=true;}}

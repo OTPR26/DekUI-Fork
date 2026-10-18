@@ -93,7 +93,7 @@
 namespace MM3D {
 namespace {
 // Only presentation.json settings are snapshotted; installed ROM overrides are separate.
-QString SettingsBackupPath(const QString& directory,const QString& kind) {
+[[maybe_unused]] QString SettingsBackupPath(const QString& directory,const QString& kind) {
     const QString folder=directory+"settings-backups/";
     if(!QDir().mkpath(folder))return {};
     return folder+QDateTime::currentDateTimeUtc().toString("yyyy-MM-dd_HH-mm-ss-zzz")+
@@ -261,7 +261,7 @@ bool Pointer(float x, float y, int button, bool down) {
         input.push_back({x, y, button, down});
     return consumed;
 }
-static bool EditTransform(Profiles::Profile& p) {
+[[maybe_unused]] static bool EditTransform(Profiles::Profile& p) {
     bool changed = ImGui::SliderFloat("Scale", &p.scale, .1f, 2.f, "%.2fx");
     changed |= ImGui::SliderFloat("Position X", &p.x, -.5f, .5f, "%.3f");
     changed |= ImGui::SliderFloat("Position Y", &p.y, -.5f, .5f, "%.3f");
@@ -287,7 +287,7 @@ static void AtlasImage(ImTextureID texture, ImVec2 size, ImVec2 uv0, ImVec2 uv1)
             ((int(x/12)+int(y/12))%2) ? IM_COL32(95,95,95,255) : IM_COL32(55,55,55,255));
     ImGui::Image(texture,size,uv0,uv1);
 }
-static void EditAtlasGrid(Profiles::Profile::AtlasGrid& grid, ImTextureID texture, float& zoom,
+[[maybe_unused]] static void EditAtlasGrid(Profiles::Profile::AtlasGrid& grid, ImTextureID texture, float& zoom,
                           const Textures::Thumbnail& detail) {
     static int selection_mode=1;
     static ImVec2 rectangle_start;
@@ -349,9 +349,9 @@ static void EditAtlasGrid(Profiles::Profile::AtlasGrid& grid, ImTextureID textur
             grid.rectangles.push_back(r);
     }
     if(selection_mode==0 && ImGui::IsItemActivated()) {
-        const auto mouse=ImGui::GetIO().MousePos;
-        const int col=std::clamp(int((mouse.x-pos.x)/size.x*grid.columns),0,grid.columns-1);
-        const int row=std::clamp(int((mouse.y-pos.y)/size.y*grid.rows),0,grid.rows-1);
+        const auto selection_mouse=ImGui::GetIO().MousePos;
+        const int col=std::clamp(int((selection_mouse.x-pos.x)/size.x*grid.columns),0,grid.columns-1);
+        const int row=std::clamp(int((selection_mouse.y-pos.y)/size.y*grid.rows),0,grid.rows-1);
         const int cell=row*grid.columns+col;
         const auto it=std::find(grid.cells.begin(),grid.cells.end(),cell);
         if(it==grid.cells.end()) grid.cells.push_back(cell); else grid.cells.erase(it);
@@ -386,14 +386,14 @@ static void EditAtlasGrid(Profiles::Profile::AtlasGrid& grid, ImTextureID textur
             const float w=(r[2]-r[0])*grid.width,h=(r[3]-r[1])*grid.height;
             const float s=80.f/std::max(w,h);
             AtlasImage(texture,{w*s,h*s},{r[0],1-r[1]},{r[2],1-r[3]});
-            const int width=int(grid.width),height=int(grid.height);
-            int left=std::clamp(int(r[0]*width+.5f),0,width-1),top=std::clamp(int(r[1]*height+.5f),0,height-1);
-            int right=std::clamp(int(r[2]*width+.5f),left+1,width),bottom=std::clamp(int(r[3]*height+.5f),top+1,height);
+            const int region_width=int(grid.width),region_height=int(grid.height);
+            int left=std::clamp(int(r[0]*region_width+.5f),0,region_width-1),top=std::clamp(int(r[1]*region_height+.5f),0,region_height-1);
+            int right=std::clamp(int(r[2]*region_width+.5f),left+1,region_width),bottom=std::clamp(int(r[3]*region_height+.5f),top+1,region_height);
             bool edited=ImGui::SliderInt("Left (px)",&left,0,right-1,"%d",ImGuiSliderFlags_AlwaysClamp);
             edited|=ImGui::SliderInt("Top (px)",&top,0,bottom-1,"%d",ImGuiSliderFlags_AlwaysClamp);
-            edited|=ImGui::SliderInt("Right (px)",&right,left+1,width,"%d",ImGuiSliderFlags_AlwaysClamp);
-            edited|=ImGui::SliderInt("Bottom (px)",&bottom,top+1,height,"%d",ImGuiSliderFlags_AlwaysClamp);
-            if(edited) r={float(left)/width,float(top)/height,float(right)/width,float(bottom)/height};
+            edited|=ImGui::SliderInt("Right (px)",&right,left+1,region_width,"%d",ImGuiSliderFlags_AlwaysClamp);
+            edited|=ImGui::SliderInt("Bottom (px)",&bottom,top+1,region_height,"%d",ImGuiSliderFlags_AlwaysClamp);
+            if(edited) r={float(left)/region_width,float(top)/region_height,float(right)/region_width,float(bottom)/region_height};
             ImGui::Text("%d x %d pixels | Ctrl-click a slider to type an exact edge",right-left,bottom-top);
             if(ImGui::Button("Remove region")) grid.rectangles.erase(grid.rectangles.begin()+i); else ++i;
             ImGui::PopID();
@@ -884,6 +884,12 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
             hover_help("Moves the follow camera nearer to or farther from Link. 1x is normal distance; higher values move farther away. Wall collision can bring it closer.");
             AndroidMenuStyle::AfterControl();
             if(ImGui::Button("Reset camera distance")){state.settings.camera_distance=1.f;distance_changed=true;}
+            ImGui::SameLine();
+            if(ImGui::Button("Reset current camera")) {
+                CameraDistance::RequestReset();
+                state.status="Camera reset requested; resume gameplay to recover the follow camera";
+            }
+            hover_help("Rebuilds the follow-camera orbit in this area while keeping your chosen distance and field of view. Takes effect when ordinary follow-camera gameplay resumes.");
             if(distance_changed) {
                 CameraDistance::multiplier.store(state.settings.camera_distance);
                 state.status=state.settings.Save(state.directory+"presentation.json")?"Camera distance saved":"Camera distance save FAILED";

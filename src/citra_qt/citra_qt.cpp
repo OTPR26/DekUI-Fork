@@ -1302,7 +1302,7 @@ void GMainWindow::ConnectWidgetEvents() {
             using namespace MM3D::ControllerAutoConfig;
             const auto button_binds=[](const Common::ParamPackage& device,int i){
                 using namespace Settings::NativeButton;
-                const int mapped=i==L?ZL:i==R?ZR:i==ZL?L:i==ZR?R:i;
+                const int mapped=i==L?ZL:i==R?ZR:i==ZL?L:i==ZR?R:i==Start?Settings::NativeButton::Select:i==Settings::NativeButton::Select?Start:i;
                 return InputCommon::GetControllerButtonBinds(device,mapped);
             };
             const auto& current=Settings::values.current_input_profile;
@@ -1432,7 +1432,7 @@ void GMainWindow::ConnectWidgetEvents() {
         if(fullscreen.exchange(false)) {ui->action_Fullscreen->setChecked(!ui->action_Fullscreen->isChecked());ToggleFullscreen();}
         if(about.exchange(false)) {
 #ifdef ENABLE_MM3D_GAME_FOLDER
-            QDesktopServices::openUrl(QUrl::fromLocalFile(MM3D::GameFolder::Root()+QStringLiteral("/licenses")));
+            QDesktopServices::openUrl(QUrl::fromLocalFile(MM3D::GameFolder::PackageRoot()+QStringLiteral("/licenses")));
 #else
             OnMenuAboutCitra();
 #endif
@@ -4957,6 +4957,10 @@ int LaunchQtFrontend(int argc, char* argv[]) {
     }
 #ifdef ENABLE_MM3D_GAME_FOLDER
     app.setQuitOnLastWindowClosed(false);
+    if(const auto error=MM3D::GameFolder::InitializeStorage();!error.isEmpty()) {
+        QMessageBox::critical(nullptr,QStringLiteral("DekUI Fork storage"),error);
+        return 1;
+    }
     Q_INIT_RESOURCE(dekui_frontend);
     InputCommon::Init();
     const bool start_game=MM3D::DesktopFrontend::Startup();

@@ -31,13 +31,13 @@ template<class M> bool CodeMatches(M& m){
     return m.Read(NavPC)==std::optional<U32>(NavWord)&&m.Read(NavPC+4)==std::optional<U32>(0x0a000002)&&
         m.Read(NavPC+8)==std::optional<U32>(0xe1a01007)&&m.Read(NavPC+12)==std::optional<U32>(0xe1a00004);
 }
-inline U32 Selection(U32 current,U32 buttons,bool full){
+inline U32 Selection(U32 current,U32 pressed_buttons,bool full){
     if(current>13)return current;
     int slot=int(Slot(current));
-    if(buttons&0x40000040)slot=slot==12?10:slot<3?slot:slot-3;
-    else if(buttons&0x80000080)slot=slot>=9?12:slot+3;
-    else if(buttons&0x20000020){if(slot!=12&&slot%3) --slot;}
-    else if(buttons&0x10000010){if(slot!=12&&slot%3<2) ++slot;}
+    if(pressed_buttons&0x40000040)slot=slot==12?10:slot<3?slot:slot-3;
+    else if(pressed_buttons&0x80000080)slot=slot>=9?12:slot+3;
+    else if(pressed_buttons&0x20000020){if(slot!=12&&slot%3) --slot;}
+    else if(pressed_buttons&0x10000010){if(slot!=12&&slot%3<2) ++slot;}
     return slot<6?slot:slot==6?(full?6:7):slot+1;
 }
 struct Hook {

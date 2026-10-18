@@ -41,7 +41,8 @@ def prepare(root, rom, patch=None, exheader=None, hud=None, in_place=False, upgr
             result = upgrade(root,rom,restoration)
         else:
             result = setup(root,restoration,rom,copy_game=not in_place,reference_game=reference_game)
-        from desktop_hud import apply
+        from desktop_hud import apply, apply_controls
+        apply_controls(root/'user', RESOURCES)
         apply(root/'user', RESOURCES)
         return result
 

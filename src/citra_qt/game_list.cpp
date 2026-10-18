@@ -1075,6 +1075,11 @@ QStandardItemModel* GameList::GetModel() const {
 }
 
 void GameList::PopulateAsync(QVector<UISettings::GameDir>& game_dirs) {
+#ifdef ENABLE_MM3D_GAME_FOLDER
+    // The single-game launcher owns ROM selection. Its hidden emulator library
+    // must not scan directories or enqueue model updates during gameplay.
+    return;
+#endif
     tree_view->setEnabled(false);
 
     // Update the columns in case UISettings has changed

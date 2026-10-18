@@ -10,16 +10,15 @@ import java.io.IOException
 object DekuiAndroidSetup {
     fun initializeStorage(context: Context) {
         if (!org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) return
-        if (PermissionsHandler.citraDirectory.toString().isEmpty()) {
-            val root = java.io.File(context.filesDir, "dekui")
+        if (PermissionsHandler.citraDirectory.toString().isEmpty() || context.getSharedPreferences("dekui-storage",Context.MODE_PRIVATE).getBoolean("shared-v1",false)) {
+            val root = org.citra.citra_emu.utils.DekuiStorage.root(context)
             check(root.isDirectory || root.mkdirs())
             PermissionsHandler.setCitraDirectory(Uri.fromFile(root).toString())
         }
     }
 
-    fun isPrivateStorage(context: Context): Boolean =
-        org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION &&
-            PermissionsHandler.citraDirectory == Uri.fromFile(java.io.File(context.filesDir, "dekui"))
+    fun isLocalStorage(context: Context): Boolean =
+        org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION && PermissionsHandler.citraDirectory.scheme == "file"
 
     /** Install the whole authored baseline where the native overlay loads it.
      * Existing settings/profiles are retained. Partial writes are deleted so
@@ -28,17 +27,17 @@ object DekuiAndroidSetup {
     fun installDefaults(context: Context, userTree: Uri): Boolean {
         if (!org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) return true
         return try {
-            val root = if (isPrivateStorage(context)) {
-                DocumentFile.fromFile(java.io.File(context.filesDir, "dekui"))
+            val root = if (isLocalStorage(context)) {
+                DocumentFile.fromFile(org.citra.citra_emu.utils.DekuiStorage.root(context))
             } else DocumentFile.fromTreeUri(context, userTree) ?: return false
             fun directory(parent: DocumentFile, name: String): DocumentFile =
                 (parent.findFile(name) ?: parent.createDirectory(name))
                     ?.takeIf { it.isDirectory } ?: throw IOException("Cannot create $name")
             val config = directory(root, "config")
             val targetRoot = directory(config, "mm3d-local")
-            if (isPrivateStorage(context)) {
-                java.io.File(context.filesDir,"dekui/config/mm3d-local/menu-font.otf").delete()
-                val font=java.io.File(context.filesDir,"dekui/config/mm3d-local/menu-font.ttf")
+            if (isLocalStorage(context)) {
+                java.io.File(org.citra.citra_emu.utils.DekuiStorage.root(context),"config/mm3d-local/menu-font.otf").delete()
+                val font=java.io.File(org.citra.citra_emu.utils.DekuiStorage.root(context),"config/mm3d-local/menu-font.ttf")
                 if (!font.isFile || font.length()==0L) {
                     val atomic=android.util.AtomicFile(font)
                     val output=atomic.startWrite()

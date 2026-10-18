@@ -39,6 +39,7 @@
 #include <QtConcurrent/QtConcurrentRun>
 #include "citra_qt/dekui_frontend.h"
 #include "citra_qt/dekui_import.h"
+#include "mm3d/camera_distance.h"
 #include "common/param_package.h"
 #include "common/settings.h"
 #include "core/frontend/input.h"
@@ -86,7 +87,7 @@ QString PresentationPath() {
     return Root() + QStringLiteral("/user/config/mm3d-local/presentation.json");
 }
 QJsonObject Presentation() {
-    auto defaults = Read(Root() + QStringLiteral("/resources/mm3d/defaults/presentation.json"));
+    auto defaults = Read(GameFolder::PackageRoot() + QStringLiteral("/resources/mm3d/defaults/presentation.json"));
     const auto saved = Read(PresentationPath());
     for (auto i = saved.begin(); i != saved.end(); ++i)
         defaults.insert(i.key(), i.value());
@@ -317,7 +318,7 @@ class SettingsDialog final : public QDialog {
         QStringList args{QStringLiteral("-E"),
                          QStringLiteral("-s"),
                          QStringLiteral("-B"),
-                         Root() + QStringLiteral("/tools/mm3d/mod_import/generate.py"),
+                         GameFolder::PackageRoot() + QStringLiteral("/tools/mm3d/mod_import/generate.py"),
                          QStringLiteral("--root"),
                          Root(),
                          QStringLiteral("--mm-rom"),
@@ -456,6 +457,9 @@ class SettingsDialog final : public QDialog {
         Number(QStringLiteral("Field of View"), QStringLiteral("game_camera_fov"), 65, 45, 70, .5);
         Number(QStringLiteral("Camera Distance (x)"), QStringLiteral("camera_distance"), 1, .5, 3,
                .05);
+        Button(box, QStringLiteral("Reset current camera"), [] {
+            CameraDistance::RequestReset();
+        })->setEnabled(running);
         Number(QStringLiteral("Enemy / NPC draw distance"), QStringLiteral("actor_draw_distance"),
                1, 1, 3, .05);
         Number(QStringLiteral("Vegetation / prop draw distance"),
@@ -670,6 +674,14 @@ class SettingsDialog final : public QDialog {
                     "DekUI Fork uses DekUI, Azahar, and Project Restoration. This is an "
                     "emulator-based fork, not a recompilation. See bundled credits and licenses."));
         box->addStretch();
+        // A setting can rebuild its own page from a widget signal. setWidget()
+        // deletes the previous page immediately, invalidating the emitting
+        // combo box while Qt is still closing its popup. Retire it only once
+        // the current event has finished.
+        if (auto* previous = scroll->takeWidget()) {
+            previous->hide();
+            previous->deleteLater();
+        }
         scroll->setWidget(content);
     }
 
@@ -723,14 +735,11 @@ protected:
         QPainter p(this);
         p.fillRect(rect(), QColor(QStringLiteral("#08070d")));
         if (!image.isNull()) {
-            const auto scaled =
-                image.scaled(size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
-            p.drawPixmap((width() - scaled.width()) / 2, (height() - scaled.height()) / 2, scaled);
+            const auto scaled = image.scaled(QSize(qRound(width() * .56), qRound(height() * .78)),
+                                             Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            p.drawPixmap(qRound(width() * .30 - scaled.width() / 2.0),
+                         qRound(height() * .55 - scaled.height() / 2.0), scaled);
         }
-        QLinearGradient gradient(width() * .3, 0, width(), 0);
-        gradient.setColorAt(0, QColor(8, 7, 13, 0));
-        gradient.setColorAt(1, QColor(8, 7, 13, 245));
-        p.fillRect(rect(), gradient);
     }
 
 public:

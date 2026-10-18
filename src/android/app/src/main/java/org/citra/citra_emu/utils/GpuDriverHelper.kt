@@ -29,8 +29,8 @@ object GpuDriverHelper {
     val driverStoragePath: DocumentFile
         get() {
             // Bypass directory initialization checks
-            val root = if (DekuiAndroidSetup.isPrivateStorage(CitraApplication.appContext)) {
-                DocumentFile.fromFile(File(CitraApplication.appContext.filesDir, "dekui"))
+            val root = if (DekuiAndroidSetup.isLocalStorage(CitraApplication.appContext)) {
+                DocumentFile.fromFile(org.citra.citra_emu.utils.DekuiStorage.root(CitraApplication.appContext))
             } else DocumentFile.fromTreeUri(
                 CitraApplication.appContext,
                 Uri.parse(DirectoryInitialization.userPath)

@@ -22,7 +22,7 @@ object DekuiPcControls {
     fun apply(context: Context) {
         val prefs=PreferenceManager.getDefaultSharedPreferences(context)
         if(prefs.getBoolean("dekui-pc-input-v1",false))return
-        val root=File(context.filesDir,"dekui")
+        val root=org.citra.citra_emu.utils.DekuiStorage.root(context)
         val patch=File(root,"load/mods/0004000000125500/code.bps")
         check(patch.isFile) { "Installed gameplay patch is missing" }
         val spec=context.assets.open("dekui-pc-controls/provenance.json").bufferedReader().use { JSONObject(it.readText()) }

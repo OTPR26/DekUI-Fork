@@ -46,6 +46,10 @@ def apply(user, resources):
             print(str(error))
             return  # Never replace another user's authored archive.
         raise
+    play_spec = json.loads((resources/'desktop-hud/play.json').read_bytes())
+    play = checked(user, 'load/mods/0004000000125500/romfs/layout/Joker.Main.Play.gar')
+    play_original = play.read_bytes()
+    play_updated = reconstruct(play_original, play_spec)
     config = checked(user, CONFIG)
     raw = config.read_bytes()
     data = json.loads(raw)
@@ -67,5 +71,25 @@ def apply(user, resources):
     pack = checked(user, 'load/mm3d-model-textures/0004000000125500/pack.json')
     if not pack.exists():
         atomic_write(pack, b'{"options":{"skip_mipmap":true,"flip_png_files":true,"use_new_hash":true}}')
+    if play_original != play_updated:
+        saved = checked(user, 'config/dekui-backups/desktop-play-'+digest(play_original)[:12]+'.gar')
+        if not saved.exists(): atomic_write(saved, play_original)
+        atomic_write(play, play_updated)
     if source != updated: atomic_write(archive, updated)
     if data != json.loads(raw): atomic_write(config, new_config)
+
+
+def apply_controls(user, resources):
+    spec = json.loads((resources/'desktop-controls/provenance.json').read_bytes())
+    replacement = (resources/'desktop-controls/code.bps').read_bytes()
+    if digest(replacement) != spec['patch_sha256']:
+        raise ValueError('Desktop gameplay input patch checksum mismatch')
+    target = checked(user, 'load/mods/0004000000125500/code.bps')
+    original = target.read_bytes()
+    if digest(original) == spec['patch_sha256']:
+        return
+    if digest(original) != spec['baseline_patch_sha256']:
+        raise ValueError('Custom gameplay patch retained; cannot apply the default input patch')
+    backup = checked(user, 'config/dekui-backups/code-before-desktop-pc-input.bps')
+    if not backup.exists(): atomic_write(backup, original)
+    atomic_write(target, replacement)

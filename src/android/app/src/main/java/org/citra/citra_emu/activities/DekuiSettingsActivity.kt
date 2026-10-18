@@ -165,6 +165,7 @@ class DekuiSettingsActivity : AppCompatActivity() {
         root.addView(body,LinearLayout.LayoutParams(-1,0,1f))
         when(page) {
             "General" -> {
+                note("Game data: Internal storage/mm3dport\nHUD settings, controller bindings, saves and mods are stored here.")
                 bool("Show frame rate","show_performance")
                 slider("Menu size",size.toFloat(),0f,40f) { update("android_menu_text_size" to it.toInt());size=it.toInt();render() }
                 addButton("Reset menu size") { update("android_menu_text_size" to 20);size=20;render() }
@@ -179,7 +180,7 @@ class DekuiSettingsActivity : AppCompatActivity() {
                     update("adult_link_model" to (index==1),"dark_link_model" to (index==2));render()
                 }
                 if(model==2) {
-                    if(!java.io.File(filesDir,"dekui/load/mm3d-models/dark-link/romfs/actors/zelda2_link_child_new.gar.lzs").isFile)
+                    if(!java.io.File(org.citra.citra_emu.utils.DekuiStorage.root(this),"load/mm3d-models/dark-link/romfs/actors/zelda2_link_child_new.gar.lzs").isFile)
                         note("Dark Link is not installed. Generate the mod below from your OoT3D ROM before starting the game.")
                     note("Original OoT3D Dark Link model, red eyes and sword, with imported adult voice clips. Keeps normal MM3D abilities and your equipped shield. Sword damage stays unchanged.")
                 }
@@ -189,7 +190,7 @@ class DekuiSettingsActivity : AppCompatActivity() {
                     fun available(color:Int,master:Boolean):Boolean {
                         val variant=if(master)"master"else"kokiri"
                         val suffix=if(color==1)"-blue"else if(color==2)"-red"else""
-                        return java.io.File(filesDir,"dekui/load/mm3d-models/adult-link/variants/$variant$suffix/romfs/actors/zelda2_link_child_new.gar.lzs").isFile
+                        return java.io.File(org.citra.citra_emu.utils.DekuiStorage.root(this),"load/mm3d-models/adult-link/variants/$variant$suffix/romfs/actors/zelda2_link_child_new.gar.lzs").isFile
                     }
                     val master=data.optBoolean("adult_link_master_sword",false)
                     if(!available(current,master))note("The selected model is not installed. Generate the mod below from your OoT3D ROM before starting the game.")
@@ -214,7 +215,7 @@ class DekuiSettingsActivity : AppCompatActivity() {
                 content.addView(button("Generate Adult Link mod") { generateMod() }.apply { isEnabled=DekuiAdultLinkSetup.canGenerate(this@DekuiSettingsActivity)&&!generatingMod },LinearLayout.LayoutParams(-1,-2))
                 content.addView(button("Generate Dark Link mod") { generateMod(true) }.apply { isEnabled=DekuiAdultLinkSetup.canGenerate(this@DekuiSettingsActivity)&&!generatingMod },LinearLayout.LayoutParams(-1,-2))
                 note("Uses your decrypted OoT3D .3ds/.cci ROM and copies only matching textures from your pack. Original files are read-only. No full ROM copy is stored.")
-                if(model==1&&!java.io.File(filesDir,"dekui/load/mm3d-models/adult-link/romfs/actors/zelda2_link_child_new.gar.lzs").isFile)
+                if(model==1&&!java.io.File(org.citra.citra_emu.utils.DekuiStorage.root(this),"load/mm3d-models/adult-link/romfs/actors/zelda2_link_child_new.gar.lzs").isFile)
                     note("Converted Adult Link model is not installed.")
             }
             "Controls" -> controls()

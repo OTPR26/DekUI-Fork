@@ -75,5 +75,46 @@ authored HUD using a hash-guarded copy recipe, backed-up archive and presentatio
 settings, and the same filter-safe 8x atlas as Android. Only recognized desktop
 HUD defaults migrate; custom archives and custom HUD positions are retained.
 The current Mac fixture reconstructs byte-identically to Android and preserves
-non-HUD preferences. Python tests: 86 passed. Native tests: 78 passed, five
-existing audio tests skipped. Live controller/HUD playtesting is pending.
+non-HUD preferences. Python helper tests: 89 passed. Native tests: 78 passed, five
+existing audio tests skipped. Desktop HUD files and 168 HUD values now match
+the active Odin settings; face bindings remain user-configurable.
+
+Follow-up parity work: the desktop gameplay input patch was still the original
+Restoration patch. Startup now installs the same hash-verified PC input patch
+used by Android, retaining a backup and rejecting custom conflicting patches.
+New desktop controller mappings also retain the PC Start/Select swap. The shared HUD preset and both layout archives were reconstructed and checked
+against the active Odin files, including the custom bumper and button glyphs.
+
+Android shared storage: the default user-visible data location is Internal
+storage/mm3dport. A staged, SHA-256-verified migration copies existing user data
+and the cached game, retains originals, and publishes only the verified folder.
+The app requests Android file access before proceeding. HUD/settings/models/saves
+use the shared root; controller bindings are mirrored in config/android-controls.json
+and loaded from that file on startup. Runtime executable libraries remain private.
+Local migration tests cover preservation, idempotency, conflicting destinations
+and symlink rejection. The optimized Android build was installed and the user confirmed the shared
+storage migration completed on the Odin. Public HUD/settings files were read
+back and verified.
+
+macOS storage: generated user data and desktop preferences live under
+`~/Library/Application Support/DekUI Fork/`. The first upgrade copies and hashes
+the previous portable user folder and preferences, publishes atomically, and
+retains the source as a backup. Existing destinations are never merged or
+overwritten. External texture links remain references, while app-owned paths
+in active settings are rebased. Setup tools, resources, Python and licenses are
+embedded in the signed app. Tests cover save preservation, external links,
+conflicts, failed publication and repeat launches after newer save progress.
+
+Recent desktop fixes: settings reloads replace rather than append collections;
+the single-game build skips the hidden emulator library scan. Manual bindings
+update both loaded and stored profiles and remain custom even if their values
+match a generated layout. Rebuilding a settings page defers deletion of the
+previous page until the dropdown event completes. Graphics includes Reset
+current camera, which rebuilds the orbit from guarded native form parameters
+without changing the distance multiplier/FOV or bypassing wall collision.
+
+Live Mac migration verification: all 125 original files were retained. All 52
+save and generated-mod files matched SHA-256 after migration; controller
+settings matched exactly. The game launched using the Application Support log
+folder and the existing external texture link. Python helpers: 89 passed;
+native suite: 78 passed, five existing audio cases skipped.

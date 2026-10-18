@@ -5,6 +5,8 @@
 namespace MM3D::CameraDistance {
 using CameraLive::U32;
 inline std::atomic<float> multiplier{1.f};
+inline std::atomic<bool> reset_requested{false};
+inline void RequestReset() { reset_requested.store(true); }
 constexpr U32 FirstSVC=0xfffb50;
 struct Load {U32 pc,word;unsigned offset,destination,count,pointer_register;};
 // NORMAL1/3 radius reads only, after native parameter construction. Keep the
@@ -79,6 +81,25 @@ struct Orbit : NormalSample {
     void Observe(U32 cam,U32 requested) {
         if(requested!=31&&camera==cam){camera=player=setting=form=0;baseline=0;applied=false;}
         if(requested!=31&&normal_camera==cam){normal_camera=normal_player=0;normal_factor=1.f;}
+    }
+    // Reset only at the guarded, main follow-camera radius hook. Derive the
+    // baseline from native camera parameters, never the current clipped eye.
+    // Eye reconstruction and wall collision still run after this temporary write.
+    template<class M,class R> bool Recover(M& m,R& r,FormCamera::Hook& native) {
+        if(!reset_requested.load())return false;
+        const U32 cam=r[4];const auto identity=Eligible(m,cam);const auto mode=m.Read(cam+0x158);
+        if(!identity||!mode||(*mode&65535)!=31)return false;
+        FormCamera::ArrivalLens params;
+        const auto radius=params.NormalRadius(m,identity->setting,identity->player,identity->form);
+        const auto old=m.Read(r[13]);
+        if(!radius||!std::isfinite(*radius)||*radius<10||*radius>2000||!old)return false;
+        if(!reset_requested.exchange(false))return false;
+        *this={};camera=cam;player=identity->player;setting=identity->setting;form=identity->form;
+        baseline=*radius;
+        native={};native.camera=cam;native.player=player;native.form=form;
+        native.radius=baseline;native.saved=true;
+        m.Write(r[13],std::bit_cast<U32>(baseline));
+        return true;
     }
     template<class M,class R> void Apply(M& m,R& r,FormCamera::Hook& native,float configured) {
         const U32 cam=r[4];const auto identity=Eligible(m,cam);const auto mode=m.Read(cam+0x158);

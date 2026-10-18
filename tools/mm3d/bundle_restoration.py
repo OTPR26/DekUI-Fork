@@ -37,6 +37,13 @@ def copy_desktop_hud(repo, destination):
     if hashlib.sha256(texture.read_bytes()).hexdigest() != spec['texture_sha256']:
         raise ValueError('Android HUD texture checksum mismatch')
     destination.mkdir(parents=True)
-    shutil.copy2(repo/'resources/mm3d/desktop-hud/layout.json', destination/'layout.json')
+    for name in ('layout.json','play.json'):
+        shutil.copy2(repo/'resources/mm3d/desktop-hud'/name, destination/name)
     shutil.copy2(source/'upgrade.json', destination/'upgrade.json')
     shutil.copy2(texture, destination/texture.name)
+
+    controls = repo/'src/android/app/src/main/assets/dekui-pc-controls'
+    control_spec = json.loads((controls/'provenance.json').read_bytes())
+    if hashlib.sha256((controls/'code.bps').read_bytes()).hexdigest() != control_spec['patch_sha256']:
+        raise ValueError('Desktop gameplay input patch checksum mismatch')
+    shutil.copytree(controls, destination.parent/'desktop-controls')
