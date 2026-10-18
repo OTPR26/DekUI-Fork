@@ -15,7 +15,7 @@ inline QString Root() {
     // AppImage mounts its executable read-only; use the folder holding the image.
     const auto appimage = qEnvironmentVariable("APPIMAGE");
 #ifdef Q_OS_MACOS
-    // The executable is inside Dekui.app/Contents/MacOS; portable data and
+    // The executable is inside DekUI Fork.app/Contents/MacOS; portable data and
     // the user's game belong beside the app, outside its signed contents.
     QDir bundle(QCoreApplication::applicationDirPath());
     if (bundle.dirName() == QStringLiteral("MacOS") && bundle.cdUp() &&

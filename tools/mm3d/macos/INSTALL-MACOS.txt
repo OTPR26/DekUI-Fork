@@ -3,15 +3,15 @@ Dekui for Apple Silicon Macs (M1 or newer), macOS 13.4 or newer
 1. Extract the ZIP. Move the entire dekui folder to a writable location such
    as Documents using Finder; keep the app, tools and resources together.
 2. Place your decrypted Majora's Mask 3D USA Rev 1 (.cci or .3ds) game-card
-   dump beside Dekui.app. Supply your own game; none is included.
-3. Open Dekui.app. If macOS blocks it because the developer cannot be verified,
+   dump beside DekUI Fork.app. Supply your own game; none is included.
+3. Open DekUI Fork.app. If macOS blocks it because the developer cannot be verified,
    open System Settings > Privacy & Security and choose Open Anyway, then Open.
    This beta is ad-hoc signed, not Apple-notarized.
 4. First launch prepares the game automatically. Python and all app dependencies
    are bundled; no Homebrew or developer tools are required.
 
 Press F1 (or Fn-F1 if your keyboard uses media keys) to open settings.
-Saves and settings live in the user folder beside Dekui.app. Keep that folder
+Saves and settings live in the user folder beside DekUI Fork.app. Keep that folder
 when updating. Do not move only the app to Applications or into another folder.
 
 If macOS isolates the downloaded app and it cannot find the adjacent files,

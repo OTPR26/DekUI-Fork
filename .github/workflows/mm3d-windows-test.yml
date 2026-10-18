@@ -1,4 +1,4 @@
-name: Dekui Windows
+name: DekUI Fork Windows
 on:
   workflow_dispatch:
 concurrency:
@@ -58,7 +58,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: Dekui-Windows-Diagnostics-${{ github.sha }}
+          name: DekUI-Fork-Windows-Diagnostics-${{ github.sha }}
           path: |
             windows-build.log
             build-windows/CMakeFiles/CMakeConfigureLog.yaml
@@ -67,14 +67,14 @@ jobs:
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v7
         with:
-          name: Dekui-${{ steps.release.outputs.version }}-Windows-x64-${{ github.sha }}
-          path: artifacts/Dekui-${{ steps.release.outputs.version }}-Windows-x64.zip
+          name: DekUI-Fork-${{ steps.release.outputs.version }}-Windows-x64-${{ github.sha }}
+          path: artifacts/DekUI-Fork-${{ steps.release.outputs.version }}-Windows-x64.zip
           if-no-files-found: error
       - name: Archive matching source
         timeout-minutes: 15
-        run: python tools/mm3d/package_source.py artifacts/Dekui-${{ steps.release.outputs.version }}-Source.tar.gz
+        run: python tools/mm3d/package_source.py artifacts/DekUI-Fork-${{ steps.release.outputs.version }}-Source.tar.gz
       - uses: actions/upload-artifact@v7
         with:
-          name: Dekui-${{ steps.release.outputs.version }}-Source-${{ github.sha }}
-          path: artifacts/Dekui-${{ steps.release.outputs.version }}-Source.tar.gz
+          name: DekUI-Fork-${{ steps.release.outputs.version }}-Source-${{ github.sha }}
+          path: artifacts/DekUI-Fork-${{ steps.release.outputs.version }}-Source.tar.gz
           if-no-files-found: error
