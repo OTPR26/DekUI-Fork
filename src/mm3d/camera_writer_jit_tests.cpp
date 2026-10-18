@@ -1,6 +1,8 @@
 // Copyright 2026 MM3D presentation contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <cstring>
+#include <cmath>
+#include <limits>
 #include <iostream>
 #include <stdexcept>
 #include <vector>
@@ -73,7 +75,15 @@ void RunLiveCamera() {
         jit.Run();
         Check(cb.stopped,"projection hook completes with normal JIT and fast memory");
         const auto expected=MM3D::CameraLive::ProjectionValue(std::bit_cast<std::uint32_t>(native),configured);
-        Check(cb.Read<std::uint32_t>(0x3000)==expected && cb.Read<std::uint32_t>(0x3004)==expected,
+        const auto first=cb.Read<std::uint32_t>(0x3000),second=cb.Read<std::uint32_t>(0x3004);
+        const float actual=std::bit_cast<float>(first),wanted=std::bit_cast<float>(expected);
+        // The callback is evaluated dynamically, while optimizing compilers can
+        // fold the reference calculation using a different libm implementation.
+        // Allow a few float ULPs, retaining exact agreement between both loads.
+        const float tolerance=4*std::numeric_limits<float>::epsilon()*std::max(1.f,std::abs(wanted));
+        if(first!=second||!std::isfinite(actual)||std::abs(actual-wanted)>tolerance)
+            std::cerr<<"projection configured="<<configured<<" native="<<native<<" actual="<<actual<<" expected="<<wanted<<" raw="<<first<<","<<second<<","<<expected<<'\n';
+        Check(first==second&&std::isfinite(actual)&&std::abs(actual-wanted)<=tolerance,
             "both projections use chosen zoom on first update, with no published camera pointer");
         Check(cb.Read<float>(jit.Regs()[4]+0x18)==native,"native camera field remains untouched");
         Check(jit.ExtRegs()[1]==0x3f123456 && jit.Regs()[14]==0x12345678 &&
