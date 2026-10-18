@@ -54,12 +54,16 @@ class DekuiSettingsActivity : AppCompatActivity() {
         if(uri!=null)runCatching { DekuiAdultLinkSetup.selectPack(this,uri);render() }.onFailure { error(it) }
     }
     @Suppress("DEPRECATION")
-    private fun generateMod() {
+    private fun generateMod(dark:Boolean=false) {
         if(generatingMod)return
         generatingMod=true
-        val dialog=android.app.ProgressDialog(this).apply { setTitle("Creating Adult Link");setMessage("Preparing…");setCancelable(false);show() }
+        val dialog=android.app.ProgressDialog(this).apply { setTitle(if(dark)"Creating Dark Link"else"Creating Adult Link");setMessage("Preparing…");setCancelable(false);show() }
         lifecycleScope.launch {
-            val result=withContext(Dispatchers.IO){runCatching { DekuiAdultLinkSetup.generate(this@DekuiSettingsActivity) { message->runOnUiThread { dialog.setMessage(message) } } }}
+            val result=withContext(Dispatchers.IO){runCatching {
+                val progress:(String)->Unit={message->runOnUiThread { dialog.setMessage(message) }}
+                if(dark)DekuiAdultLinkSetup.generateDarkLink(this@DekuiSettingsActivity,progress)
+                else DekuiAdultLinkSetup.generate(this@DekuiSettingsActivity,progress)
+            }}
             generatingMod=false;dialog.dismiss()
             result.onSuccess { Toast.makeText(this@DekuiSettingsActivity,it,Toast.LENGTH_LONG).show() }.onFailure { error(it) }
             render()
@@ -170,8 +174,16 @@ class DekuiSettingsActivity : AppCompatActivity() {
             "Mods" -> {
                 val data=store.read()
                 section("Appearance")
-                toggle("Adult Link",data.optBoolean("adult_link_model",false)) { update("adult_link_model" to it);render() }
-                if(data.optBoolean("adult_link_model",false)) {
+                val model=if(data.optBoolean("dark_link_model",false))2 else if(data.optBoolean("adult_link_model",false))1 else 0
+                choice("Player model",listOf("Original Link","Adult Link","Dark Link"),model) { index->
+                    update("adult_link_model" to (index==1),"dark_link_model" to (index==2));render()
+                }
+                if(model==2) {
+                    if(!java.io.File(filesDir,"dekui/load/mm3d-models/dark-link/romfs/actors/zelda2_link_child_new.gar.lzs").isFile)
+                        note("Dark Link is not installed. Generate the mod below from your OoT3D ROM before starting the game.")
+                    note("Original OoT3D Dark Link model, red eyes and sword, with imported adult voice clips. Keeps normal MM3D abilities and your equipped shield. Sword damage stays unchanged.")
+                }
+                if(model==1) {
                     val colors=listOf("Green (Kokiri)","Blue (Zora)","Red (Goron)","Purple","Black","White","Gold")
                     val current=data.optInt("adult_link_tunic_color",0).coerceIn(0,6)
                     fun available(color:Int,master:Boolean):Boolean {
@@ -194,14 +206,15 @@ class DekuiSettingsActivity : AppCompatActivity() {
                     }
                     note("On: OoT3D Master Sword and sheath. Off: Kokiri sword and sheath. Appearance only; sword damage stays unchanged.")
                 }
-                note("Adult Link includes his imported adult voice clips. Generate the mod again after updating to add them. Restart the game after changing mods. Facial expressions and mask fitting are unfinished.")
+                note("Imported models include adult voice clips. Restart the game after changing models. Facial expressions and mask fitting are unfinished.")
                 section("Mod setup")
                 note(DekuiAdultLinkSetup.description(this))
                 addButton("Select your OoT3D ROM") { modRomPicker.launch(arrayOf("*/*")) }
                 addButton("Choose your OoT3D texture pack") { modTexturePicker.launch(android.net.Uri.parse("content://com.android.externalstorage.documents/document/primary%3AROMs%2Fn3DS")) }
                 content.addView(button("Generate Adult Link mod") { generateMod() }.apply { isEnabled=DekuiAdultLinkSetup.canGenerate(this@DekuiSettingsActivity)&&!generatingMod },LinearLayout.LayoutParams(-1,-2))
+                content.addView(button("Generate Dark Link mod") { generateMod(true) }.apply { isEnabled=DekuiAdultLinkSetup.canGenerate(this@DekuiSettingsActivity)&&!generatingMod },LinearLayout.LayoutParams(-1,-2))
                 note("Uses your decrypted OoT3D .3ds/.cci ROM and copies only matching textures from your pack. Original files are read-only. No full ROM copy is stored.")
-                if(!java.io.File(filesDir,"dekui/load/mm3d-models/adult-link/romfs/actors/zelda2_link_child_new.gar.lzs").isFile)
+                if(model==1&&!java.io.File(filesDir,"dekui/load/mm3d-models/adult-link/romfs/actors/zelda2_link_child_new.gar.lzs").isFile)
                     note("Converted Adult Link model is not installed.")
             }
             "Controls" -> controls()

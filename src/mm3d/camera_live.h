@@ -19,6 +19,16 @@ struct Snapshot {
     std::int64_t sampled_at_ms{};
     U32 base{};
     float fov{}, auxiliary_fov{}, near_plane{}, far_plane{}, matrix_fov{};
+    U32 gameplay_camera{}, camera_mode{}, camera_setting{};
+    bool camera_context_valid{};
+    std::uint64_t CameraContext() const {
+        return camera_context_valid?(std::uint64_t(gameplay_camera)<<32)|
+            (std::uint64_t(camera_setting)<<16)|camera_mode:0;
+    }
+    bool NativeAiming() const {
+        // Restoration CameraMode: NUTSSHOT, BOWARROWZ, SUBJECT, PACHINCO, BOWARROW.
+        return camera_context_valid&&(camera_mode==3||camera_mode==4||camera_mode==6||camera_mode==12||camera_mode==13);
+    }
     std::array<float,3> eye{}, target{};
     const char* status = "Enable live camera inspection during gameplay.";
 };
@@ -140,6 +150,22 @@ class Engine {
         float projection{};
         if(!f(0xd0,projection) || projection<=0) return false; // matrix at +BC, element [5]
         s.matrix_fov=2.f*std::atan(1.f/projection)*180.f/3.14159265358979323846f;
+        // Capture camera ownership/mode alongside this eye/target sample. Never
+        // blend first-person/item views with an unrelated third-person history.
+        const auto pointer=[](U32 at,U32 size){return at>=0x100000&&!(at&3)&&at<0x40000000&&size<=0x40000000-at;};
+        const auto root=m.Read(0x72f5c0);
+        const auto game=root&&pointer(*root,0x170)?m.Read(*root+0x16c):std::optional<U32>{};
+        if(game&&pointer(*game,0xa7c)) {
+            const auto type=m.Read(*game+0x13c),indices=m.Read(*game+0xa78);
+            if(type&&((*type>>8)&255)==4&&indices&&(*indices>>16)<4) {
+                const U32 cam=*game+0x408+(*indices>>16)*0x198;
+                const auto state=m.Read(cam+0x154),mode=m.Read(cam+0x158);
+                if(m.Read(cam+0xa0)==game&&state&&mode&&(*mode&65535)<=31) {
+                    s.gameplay_camera=cam;s.camera_mode=*mode&65535;s.camera_setting=*state>>16;
+                    s.camera_context_valid=true;
+                }
+            }
+        }
         s.valid=true; return true;
     }
 public:

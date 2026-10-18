@@ -82,3 +82,31 @@ by the adult height ratio while retaining the native horizontal radius, lower
 boundary, ignition requirements and timer behavior. This applies only to the
 active adult human model holding a Deku stick. It changes no model/equipment
 size, general collision, save data, or other forms. No mod regeneration needed.
+
+Dark Link (Android prototype)
+-----------------------------
+Settings > Mods > Player model selects Original Link, Adult Link or Dark Link.
+The saved Adult Link checkbox remains supported; the new dark_link_model flag
+selects Dark Link exclusively in the UI and takes precedence when loading.
+Generate Dark Link mod reads actor/zelda_torch2.zar / Model/darklink.cmb from
+the player's selected OoT3D ROM. It installs separately under
+load/mm3d-models/dark-link/ and preserves existing Adult Link variants/textures.
+No extracted model, texture, sound or ROM data is distributed with the app.
+
+The source shares Adult Link's 25-bone skeleton, but uses a dedicated mesh,
+material and hand profile. Body/head groups 4/6 are retargeted onto MM3D's human
+skeleton. Source shadow and alternate meshes are excluded. The original drawn
+sword replaces the three regular sword appearances; the equipped MM3D shield,
+other items, Great Fairy's Sword and gameplay behavior remain native. Imported
+adult voice clips accompany the model. Tunic recoloring is disabled for Dark
+Link; Adult Link's saved color/sword preferences are retained.
+
+Selection applies on the next game launch. Structural conversion and Adult
+Link regression checks pass; in-game validation of this prototype is pending.
+
+Dark Link eye overlay: the original material depends on actor-driven vertex
+colors and constant-color slot 1. Its MM3D replacement directly samples the
+original red RGBA texture, with alpha testing, independent of those tints.
+Body and equipment material shading remain unchanged.
+Dark Link source group 0 is the held sword (bone 16 -> native bone 17);
+group 1 is the shield and must not populate regular sword slots.

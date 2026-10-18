@@ -1167,6 +1167,12 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
         const auto now=std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
         const auto cpu=MM3D::CameraLive::GetSnapshot();
+        static std::uint64_t logged_camera_context=0;
+        if(cpu.camera_context_valid&&logged_camera_context!=cpu.CameraContext()) {
+            logged_camera_context=cpu.CameraContext();
+            LOG_INFO(Render_Vulkan,"Interpolation camera handover: mode={} native_aiming={}",
+                cpu.camera_mode,cpu.NativeAiming());
+        }
         Matrix camera=Identity(),projection{};
         for(unsigned i=0;i<4;++i)for(unsigned j=0;j<4;++j)
             projection[i][j]=pica.vs_setup.uniforms.f[i][j].ToFloat32();
@@ -1215,7 +1221,7 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
             }
             bool fallback=false;
             const auto selected=midpoint_history.Preview(MM3D::guest_frames.load(),now,
-                camera,projection,matches,native_preview.load(),fallback);
+                camera,projection,matches,native_preview.load(),fallback,cpu.CameraContext(),cpu.NativeAiming());
             {
                 auto& layer=prompt_layers["@camera_midpoint"];
                 if(!layer) {

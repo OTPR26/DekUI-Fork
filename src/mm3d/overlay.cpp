@@ -1185,9 +1185,19 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
 #endif
             if(begin_page("General")){general_controls();end_page();}
             if(begin_page("Mods")) {
-                ImGui::SeparatorText("Adult Link");
-                bool changed=AndroidMenuStyle::Checkbox("Adult Link",&state.settings.adult_link_model);
-                if(state.settings.adult_link_model) {
+                ImGui::SeparatorText("Player appearance");
+                int model=state.settings.dark_link_model?2:state.settings.adult_link_model?1:0;
+                bool changed=AndroidMenuStyle::Combo("Player model",&model,"Original Link\0Adult Link\0Dark Link\0");
+                if(changed) {
+                    state.settings.adult_link_model=model==1;
+                    state.settings.dark_link_model=model==2;
+                }
+                if(model==2) {
+                    const auto path=FileUtil::GetUserPath(FileUtil::UserPath::LoadDir)+"mm3d-models/dark-link/romfs/actors/zelda2_link_child_new.gar.lzs";
+                    if(!FileUtil::Exists(path))help_text("Dark Link is not installed. Generate Dark Link from your OoT3D ROM in startup Settings > Mods before starting the game.");
+                    help_text("Original OoT3D Dark Link model, red eyes and sword, with imported adult voice clips. Uses normal MM3D abilities and equipped shields. Restart the game after changing models.");
+                }
+                if(model==1) {
                     const auto available=[&](int color,bool master) {
                         const std::string variant=master?"master":"kokiri";
                         const std::string suffix=color==1?"-blue":color==2?"-red":"";
@@ -1212,7 +1222,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 }
                 if(changed)state.status=state.settings.Save(state.directory+"presentation.json")?
                     "Mods saved; restart the game to apply":"Mods save FAILED";
-                help_text("Generate Adult Link and his adult voice clips from your own OoT3D ROM and texture pack in startup Settings > Mods. Regenerate after updating to import voices. Restart the game after changing mods. Adult Link keeps MM3D movement and transformation forms. Facial expressions and mask fitting are unfinished.");
+                help_text("Generate Adult Link or Dark Link from your own OoT3D ROM and texture pack in startup Settings > Mods. Regenerate after updating to import voices. Restart the game after changing mods. Adult Link keeps MM3D movement and transformation forms. Facial expressions and mask fitting are unfinished.");
                 end_page();
             }
             if(begin_page("Graphics")) {
