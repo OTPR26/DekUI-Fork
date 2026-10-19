@@ -30,6 +30,7 @@
 #include "mm3d/bottle_healing.h"
 #include "mm3d/movement_speed.h"
 #include "mm3d/player_model_scale.h"
+#include "mm3d/mounted_player.h"
 #include "mm3d/adult_stick_contact.h"
 #include "mm3d/model_mod.h"
 
@@ -172,6 +173,7 @@ public:
     MM3D::NativeItemPresent::Hook item_present_hook;
     MM3D::NativeStartup::Hook startup_hook;
     MM3D::LinkPoseCapture::Hook link_pose_hook;
+    MM3D::MountedPlayer::Hook mounted_player_hook;
     MM3D::NativeStartup::PressHook press_hook;
     MM3D::NativeStartup::LoadingIconHook loading_icon_hook;
     MM3D::ItemPreview::Hook item_preview_hook;
@@ -711,6 +713,9 @@ public:
         if(swi>=MM3D::PlayerModelScale::FirstSVC&&swi<MM3D::PlayerModelScale::FirstSVC+4) {
             struct GuestMemory {Memory::MemorySystem& memory;
                 std::optional<u32> Read(u32 at){return memory.Read32OrNullopt(at);}} guest{memory};
+            if (swi == MM3D::PlayerModelScale::FirstSVC)
+                mounted_player_hook.BeginActor(guest, parent.jit->Regs()[4], parent.jit->Regs()[6],
+                                              MM3D::ModelMod::adult_active.load());
             MM3D::PlayerModelScale::Apply(guest,parent.jit->Regs(),parent.jit->ExtRegs(),
                 swi-MM3D::PlayerModelScale::FirstSVC,MM3D::ModelMod::adult_active.load());
             return;
@@ -800,9 +805,11 @@ public:
             auto& regs=parent.jit->Regs();
             if(swi==MM3D::NativeStartup::FirstSVC) {
                 startup_hook.Enter(guest,regs[0]);
+                mounted_player_hook.Enter(guest, regs[0], regs[1]);
                 link_pose_hook.Enter(guest,regs[0]);regs[5]=regs[0];
             } else {
                 startup_hook.Matrix(guest,regs[5],regs[4]);
+                mounted_player_hook.MatrixBuilt(guest, regs[5], regs[4]);
                 link_pose_hook.MatrixBuilt(guest,regs[5],regs[4],MM3D::guest_frames.load());
                 regs[0]=memory.Read32(regs[5]+0xc);
             }
