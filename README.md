@@ -2,7 +2,7 @@
 
 *A DekUI Fork*
 
-**An emulator fork tailored for High Res 60 FPS with Player Model Mods in Majora’s Mask 3D.**
+**Tailored for High Res 60 FPS with Player Model Mods in Majora’s Mask 3D.**
 
 Supports Android, Windows, Linux, and macOS.
 
