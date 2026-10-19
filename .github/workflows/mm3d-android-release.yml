@@ -84,7 +84,31 @@ jobs:
           key: android-native-v1-${{ steps.source.outputs.sha }}
           restore-keys: android-native-v1-
       - name: Run setup and migration tests
-        run: python3 -m unittest discover -s tools/mm3d -p 'test_*.py'
+        run: |
+          python3 -m pip install numpy==2.2.6 pillow==11.0.0
+          python3 -m unittest discover -s tools/mm3d -p 'test_*.py'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - name: Build compressed-disc reader
+        run: |
+          source_dir="$RUNNER_TEMP/tp-disc-reader"
+          mkdir -p "$source_dir"
+          curl --fail --location --silent --show-error \
+            https://codeload.github.com/encounter/nod/tar.gz/ebd80cac99b48a323200d84365e07a58cc27412d \
+            | tar -xz --strip-components=1 -C "$source_dir"
+          toolchain="$ANDROID_HOME/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$toolchain/aarch64-linux-android24-clang"
+          export CC_aarch64_linux_android="$toolchain/aarch64-linux-android24-clang"
+          export CXX_aarch64_linux_android="$toolchain/aarch64-linux-android24-clang++"
+          export AR_aarch64_linux_android="$toolchain/llvm-ar"
+          cargo build --manifest-path "$source_dir/Cargo.toml" --locked --release \
+            --target aarch64-linux-android -p nod-ffi --no-default-features \
+            --features compress-bzip2-vendored,compress-lzma-vendored,compress-zlib-vendored,compress-zstd-vendored
+          destination=src/android/app/build/downloadedJniLibs/arm64-v8a
+          mkdir -p "$destination"
+          cp "$source_dir/target/aarch64-linux-android/release/libnod.so" "$destination/"
+          cp "$source_dir/LICENSE-MIT" "$source_dir/LICENSE-APACHE" src/android/app/src/main/assets/
       - name: Restore signing key
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}

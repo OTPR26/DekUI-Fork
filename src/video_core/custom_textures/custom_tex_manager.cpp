@@ -347,6 +347,10 @@ bool CustomTexManager::ReadConfig(u64 title_id, bool options_only) {
                                   GetUserPath(FileUtil::UserPath::LoadDir), title_id);
     }
 #endif
+    if (!FileUtil::Exists(config_path)) {
+        config_path = GetUserPath(FileUtil::UserPath::LoadDir) +
+                      "mm3d-models/twilight-link/texture-overrides/pack.json";
+    }
     FileUtil::IOFile config_file{config_path, "r"};
     if (!config_file.IsOpen()) {
         LOG_INFO(Render, "Unable to find pack config file, using legacy defaults");
@@ -433,6 +437,13 @@ std::vector<FileUtil::FSTEntry> CustomTexManager::GetTextures(u64 title_id) {
         std::erase_if(textures, [&](const auto& entry) { return entry.virtualName == file.virtualName; });
         textures.push_back(file);
     }
+#endif
+#if defined(ANDROID) || defined(ENABLE_MM3D_GAME_FOLDER)
+    const auto tp_path = GetUserPath(FileUtil::UserPath::LoadDir) +
+                         "mm3d-models/twilight-link/texture-overrides/";
+    FileUtil::FSTEntry tp_dir;
+    FileUtil::ScanDirectoryTree(tp_path, tp_dir, 64);
+    FileUtil::GetAllFilesFromNestedEntries(tp_dir, textures);
 #endif
     return textures;
 }

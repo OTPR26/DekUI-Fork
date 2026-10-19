@@ -53,15 +53,22 @@ class DekuiSettingsActivity : AppCompatActivity() {
     private val modTexturePicker=registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri->
         if(uri!=null)runCatching { DekuiAdultLinkSetup.selectPack(this,uri);render() }.onFailure { error(it) }
     }
+    private val tpRomPicker=registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri->
+        if(uri!=null)runCatching { DekuiTwilightLinkSetup.selectRom(this,uri);render() }.onFailure { error(it) }
+    }
+    private val tpTexturePicker=registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri->
+        if(uri!=null)runCatching { DekuiTwilightLinkSetup.selectPack(this,uri);render() }.onFailure { error(it) }
+    }
     @Suppress("DEPRECATION")
-    private fun generateMod(dark:Boolean=false) {
+    private fun generateMod(dark:Boolean=false,twilight:Boolean=false) {
         if(generatingMod)return
         generatingMod=true
-        val dialog=android.app.ProgressDialog(this).apply { setTitle(if(dark)"Creating Dark Link"else"Creating Adult Link");setMessage("Preparing…");setCancelable(false);show() }
+        val dialog=android.app.ProgressDialog(this).apply { setTitle(if(twilight)"Creating Twilight Princess Link"else if(dark)"Creating Dark Link"else"Creating Adult Link");setMessage("Preparing…");setCancelable(false);show() }
         lifecycleScope.launch {
             val result=withContext(Dispatchers.IO){runCatching {
                 val progress:(String)->Unit={message->runOnUiThread { dialog.setMessage(message) }}
-                if(dark)DekuiAdultLinkSetup.generateDarkLink(this@DekuiSettingsActivity,progress)
+                if(twilight)DekuiTwilightLinkSetup.generate(this@DekuiSettingsActivity,progress)
+                else if(dark)DekuiAdultLinkSetup.generateDarkLink(this@DekuiSettingsActivity,progress)
                 else DekuiAdultLinkSetup.generate(this@DekuiSettingsActivity,progress)
             }}
             generatingMod=false;dialog.dismiss()
@@ -175,9 +182,24 @@ class DekuiSettingsActivity : AppCompatActivity() {
             "Mods" -> {
                 val data=store.read()
                 section("Appearance")
-                val model=if(data.optBoolean("dark_link_model",false))2 else if(data.optBoolean("adult_link_model",false))1 else 0
-                choice("Player model",listOf("Original Link","Adult Link","Dark Link"),model) { index->
-                    update("adult_link_model" to (index==1),"dark_link_model" to (index==2));render()
+                val model=if(data.optBoolean("twilight_link_model",false))3 else if(data.optBoolean("dark_link_model",false))2 else if(data.optBoolean("adult_link_model",false))1 else 0
+                choice("Player model",listOf("Original Link","Adult Link","Dark Link","Twilight Princess Link"),model) { index->
+                    update("twilight_link_model" to (index==3),"adult_link_model" to (index==1),"dark_link_model" to (index==2));render()
+                }
+                if(model==3) {
+                    toggle("Master Sword",data.optBoolean("twilight_link_master_sword",true)) { enabled->
+                        update("twilight_link_master_sword" to enabled);render()
+                    }
+                    note("On: TP Master Sword and sheath. Off: your native MM3D sword. Appearance only; sword damage stays unchanged.")
+                    note("Includes TP action voices. Cap animation, facial expressions and mask fitting are unfinished.")
+                    section("Twilight Princess setup")
+                    note(DekuiTwilightLinkSetup.description(this))
+                    addButton("Select your Twilight Princess ROM") { tpRomPicker.launch(arrayOf("*/*")) }
+                    addButton("Choose your TP texture pack") { tpTexturePicker.launch(android.net.Uri.parse("content://com.android.externalstorage.documents/document/primary%3ADusklight%2Ftexture_replacements")) }
+                    content.addView(button("Generate Twilight Princess Link mod") { generateMod(twilight=true) }.apply {
+                        isEnabled=DekuiTwilightLinkSetup.canGenerate(this@DekuiSettingsActivity)&&!generatingMod
+                    },LinearLayout.LayoutParams(-1,-2))
+                    note("Reads your own GameCube ISO or RVZ and searches every subfolder of the selected texture pack. Source files and other mods are preserved.")
                 }
                 if(model==2) {
                     if(!java.io.File(org.citra.citra_emu.utils.DekuiStorage.root(this),"load/mm3d-models/dark-link/romfs/actors/zelda2_link_child_new.gar.lzs").isFile)
@@ -208,6 +230,7 @@ class DekuiSettingsActivity : AppCompatActivity() {
                     note("On: OoT3D Master Sword and sheath. Off: Kokiri sword and sheath. Appearance only; sword damage stays unchanged.")
                 }
                 note("Imported models include adult voice clips. Restart the game after changing models. Facial expressions and mask fitting are unfinished.")
+                if(model!=3) {
                 section("Mod setup")
                 note(DekuiAdultLinkSetup.description(this))
                 addButton("Select your OoT3D ROM") { modRomPicker.launch(arrayOf("*/*")) }
@@ -217,6 +240,7 @@ class DekuiSettingsActivity : AppCompatActivity() {
                 note("Uses your decrypted OoT3D .3ds/.cci ROM and copies only matching textures from your pack. Original files are read-only. No full ROM copy is stored.")
                 if(model==1&&!java.io.File(org.citra.citra_emu.utils.DekuiStorage.root(this),"load/mm3d-models/adult-link/romfs/actors/zelda2_link_child_new.gar.lzs").isFile)
                     note("Converted Adult Link model is not installed.")
+                }
             }
             "Controls" -> controls()
             "Touch" -> {

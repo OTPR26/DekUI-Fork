@@ -223,8 +223,8 @@ class DekuiLaunchActivity : AppCompatActivity() {
         startActivity(Intent(this,DekuiSettingsActivity::class.java).putExtra("page",page))
     }
     private fun openGame() {
-        if(org.citra.citra_emu.utils.DekuiAdultLinkSetup.generating) {
-            android.widget.Toast.makeText(this,"Wait for Adult Link generation to finish",android.widget.Toast.LENGTH_LONG).show();return
+        if(org.citra.citra_emu.utils.DekuiAdultLinkSetup.generating || org.citra.citra_emu.utils.DekuiTwilightLinkSetup.generating) {
+            android.widget.Toast.makeText(this,"Wait for mod generation to finish",android.widget.Toast.LENGTH_LONG).show();return
         }
 
         runCatching { org.citra.citra_emu.utils.DekuiHudUpgrade.apply(this) }.onFailure {

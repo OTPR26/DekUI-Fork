@@ -6,6 +6,7 @@ import android.databinding.tool.ext.capitalizeUS
 import de.undercouch.gradle.tasks.download.Download
 
 plugins {
+    id("com.chaquo.python")
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("de.undercouch.download") version "5.5.0"
@@ -399,4 +400,19 @@ android.applicationVariants.configureEach {
 
 if (dekuiPresentation) {
     tasks.named("preBuild").configure { dependsOn(stageDekuiDefaults, stageDekuiSetup) }
+}
+
+// The TP setup converter runs on demand, outside gameplay.
+chaquopy {
+    defaultConfig {
+        version = "3.13"
+        pip {
+            install("numpy==1.26.2")
+            install("pillow==11.0.0")
+        }
+    }
+    sourceSets.getByName("main") {
+        srcDir("../../../tools/mm3d")
+        include("tp_import/**")
+    }
 }

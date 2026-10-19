@@ -53,3 +53,8 @@ if (ENABLE_VULKAN)
 endif()
 
 set(CPACK_PACKAGE_EXECUTABLES ${CPACK_PACKAGE_EXECUTABLES} citra-android)
+
+# Decode user-supplied TP texture packs during setup.
+target_sources(citra-android PRIVATE
+    ../../../../../../externals/tp_texture_decoder/astc.cpp
+    tp_import.cpp)

@@ -1259,11 +1259,16 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
             if(begin_page("General")){general_controls();end_page();}
             if(begin_page("Mods")) {
                 ImGui::SeparatorText("Player appearance");
-                int model=state.settings.dark_link_model?2:state.settings.adult_link_model?1:0;
-                bool changed=AndroidMenuStyle::Combo("Player model",&model,"Original Link\0Adult Link\0Dark Link\0");
+                int model=state.settings.twilight_link_model?3:state.settings.dark_link_model?2:state.settings.adult_link_model?1:0;
+                bool changed=AndroidMenuStyle::Combo("Player model",&model,"Original Link\0Adult Link\0Dark Link\0Twilight Princess Link\0");
                 if(changed) {
+                    state.settings.twilight_link_model=model==3;
                     state.settings.adult_link_model=model==1;
                     state.settings.dark_link_model=model==2;
+                }
+                if(model==3) {
+                    changed|=AndroidMenuStyle::Checkbox("Master Sword",&state.settings.twilight_link_master_sword);
+                    help_text("Twilight Princess Link, imported voices and optional TP Master Sword. Generate from your own GameCube ROM and texture pack in startup Settings > Mods. Restart the game to apply changes.");
                 }
                 if(model==2) {
                     const auto path=FileUtil::GetUserPath(FileUtil::UserPath::LoadDir)+"mm3d-models/dark-link/romfs/actors/zelda2_link_child_new.gar.lzs";

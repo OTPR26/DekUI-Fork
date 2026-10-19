@@ -16,6 +16,18 @@ inline bool DarkSelected(std::string_view text) {
     const auto it=object.find("dark_link_model");
     return it!=object.end() && it->is_boolean() && it->get<bool>();
 }
+inline bool TwilightSelected(std::string_view text) {
+    const auto object=nlohmann::json::parse(text,nullptr,false);
+    if(!object.is_object())return false;
+    const auto it=object.find("twilight_link_model");
+    return it!=object.end() && it->is_boolean() && it->get<bool>();
+}
+inline bool TwilightMasterSwordSelected(std::string_view text) {
+    const auto object=nlohmann::json::parse(text,nullptr,false);
+    if(!object.is_object())return false;
+    const auto it=object.find("twilight_link_master_sword");
+    return it==object.end() || (it->is_boolean() && it->get<bool>());
+}
 inline bool MasterSwordSelected(std::string_view text) {
     const auto object=nlohmann::json::parse(text,nullptr,false);
     if(!object.is_object())return false;
@@ -36,6 +48,6 @@ inline bool AdultSelected(std::string_view text) {
     return it!=object.end() && it->is_boolean() && it->get<bool>();
 }
 inline bool AppearanceSelected(std::string_view text) {
-    return DarkSelected(text) || AdultSelected(text);
+    return TwilightSelected(text) || DarkSelected(text) || AdultSelected(text);
 }
 }
