@@ -42,6 +42,7 @@
 #include "mm3d/player_settings_bridge.h"
 #include "mm3d/game_language.h"
 #include "mm3d/android_menu.h"
+#include "mm3d/pictograph.h"
 #endif
 #include "common/string_util.h"
 #include "core/core.h"
@@ -477,6 +478,13 @@ jfloat Java_org_citra_citra_1emu_NativeLibrary_dekuiScrollbarCenter(JNIEnv*,jcla
     }
 #endif
     return -1.f;
+}
+
+void Java_org_citra_citra_1emu_NativeLibrary_requestDekuiPictograph(JNIEnv*,jclass) {
+#ifdef ENABLE_MM3D_PRESENTATION
+    if (Core::System::GetInstance().IsPoweredOn() && !MM3D::overlay_visible.load())
+        MM3D::Pictograph::Request();
+#endif
 }
 
 void Java_org_citra_citra_1emu_NativeLibrary_onDekuiMenuKey(JNIEnv*,jclass,jint key,jboolean down) {

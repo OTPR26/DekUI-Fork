@@ -130,3 +130,7 @@ add_test(NAME mm3d_native_inventory COMMAND mm3d_native_inventory_tests)
 add_executable(mm3d_camera_midpoint_tests camera_midpoint_tests.cpp)
 target_include_directories(mm3d_camera_midpoint_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 add_test(NAME mm3d_camera_midpoint COMMAND mm3d_camera_midpoint_tests)
+
+add_executable(mm3d_pictograph_tests pictograph_tests.cpp)
+target_include_directories(mm3d_pictograph_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
+add_test(NAME mm3d_pictograph COMMAND mm3d_pictograph_tests)

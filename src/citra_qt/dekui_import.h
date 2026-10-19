@@ -5,6 +5,7 @@ class QVBoxLayout;
 class QWidget;
 namespace MM3D::DesktopImport {
 QString NativeSettingsPath();
+QString PictographBinding();
 void ApplyPendingSettings();
 void SyncTextureSource();
 void ChooseTextures(QWidget* parent, bool clear = false);

@@ -234,6 +234,10 @@ class EmulationActivity : AppCompatActivity() {
     }
 
     override fun onStop() {
+        dekuiLeftStickDown = false
+        dekuiRightStickDown = false
+        dekuiMenuChord = false
+        dekuiPictographDown = false
         secondaryDisplayManager.releasePresentation()
         super.onStop()
     }
@@ -418,6 +422,7 @@ class EmulationActivity : AppCompatActivity() {
     private var dekuiLeftStickDown = false
     private var dekuiRightStickDown = false
     private var dekuiMenuChord = false
+    private var dekuiPictographDown = false
 
     // Gets button presses
     @Suppress("DEPRECATION")
@@ -439,6 +444,14 @@ class EmulationActivity : AppCompatActivity() {
                 dekuiMenuChord = true
                 if (NativeLibrary.isDekuiSettingsOpen()) NativeLibrary.closeDekuiSettings() else NativeLibrary.openDekuiSettings()
             }
+            if (event.keyCode == org.citra.citra_emu.utils.DekuiAndroidMenu.pictographKey) {
+                if (down && event.repeatCount == 0) dekuiPictographDown = true
+                if (!down) {
+                    if (dekuiPictographDown && !dekuiMenuChord && !NativeLibrary.isDekuiSettingsOpen())
+                        NativeLibrary.requestDekuiPictograph()
+                    dekuiPictographDown = false
+                }
+            }
             if (!dekuiLeftStickDown && !dekuiRightStickDown) dekuiMenuChord = false
             return true
         }
@@ -457,6 +470,16 @@ class EmulationActivity : AppCompatActivity() {
             return true
         }
 
+        if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION &&
+            event.keyCode == org.citra.citra_emu.utils.DekuiAndroidMenu.pictographKey) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0)
+                dekuiPictographDown = true
+            if (event.action == KeyEvent.ACTION_UP) {
+                if (dekuiPictographDown) NativeLibrary.requestDekuiPictograph()
+                dekuiPictographDown = false
+            }
+            return true
+        }
 
         when (event.action) {
             KeyEvent.ACTION_DOWN -> {

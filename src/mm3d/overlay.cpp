@@ -1458,7 +1458,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 text_controls();
 #if defined(ANDROID) || defined(ENABLE_MM3D_GAME_FOLDER)
                 const auto android = AndroidMenu::Snapshot();
-                ImGui::TextWrapped("L1 / R1: items I / II. L2 / R2: targeting / shield. Hold game X with a bumper for its alternate action. Select a binding to change it.");
+                ImGui::TextWrapped("L1 / R1: items I / II. L2 / R2: targeting / shield. R3 opens the Pictograph Box by default. Select a binding to change it.");
 #ifdef ENABLE_MM3D_GAME_FOLDER
                 const auto& binding_labels=AndroidMenu::DesktopBindingLabels;
 #else

@@ -46,7 +46,7 @@ object DekuiStorage {
     private var listener:android.content.SharedPreferences.OnSharedPreferenceChangeListener?=null
     private fun bindingKey(key:String):Boolean {
         val keys=org.citra.citra_emu.features.settings.model.Settings.run { buttonKeys+triggerKeys+dPadButtonKeys+circlePadKeys+cStickKeys+dPadAxisKeys }
-        return key.startsWith("InputMapping") || key in keys
+        return key.startsWith("InputMapping") || key in keys || key == DekuiAndroidMenu.PICTOGRAPH_KEY
     }
     private fun controls(context:Context){
         val prefs=PreferenceManager.getDefaultSharedPreferences(context)

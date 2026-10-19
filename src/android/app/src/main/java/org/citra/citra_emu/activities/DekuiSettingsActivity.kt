@@ -322,9 +322,9 @@ class DekuiSettingsActivity : AppCompatActivity() {
     private fun controls() {
         bool("Hide item menu button prompts","player_hud_hide_menu_prompts");bool("Single-screen game instructions","single_screen_text",true)
         bool("Controller neutral item prompts","controller_neutral_item_prompts",true)
-        val labels=listOf("A","B","X","Y","Select","Start","Home","ZL / L2: targeting","ZR / R2: shield","L / L1: item I","R / R1: item II","D-pad up","D-pad down","D-pad left","D-pad right","Left stick vertical","Left stick horizontal","Right stick vertical","Right stick horizontal","D-pad vertical axis","D-pad horizontal axis")
+        val labels=listOf("A","B","X","Y","Select","Start","Home","ZL / L2: targeting","ZR / R2: shield","L / L1: item I","R / R1: item II","D-pad up","D-pad down","D-pad left","D-pad right","Left stick vertical","Left stick horizontal","Right stick vertical","Right stick horizontal","D-pad vertical axis","D-pad horizontal axis","Pictograph Box")
         DekuiAndroidMenu.keys.forEachIndexed { index,key->
-            val value=if(DekuiAndroidMenu.capture==index)"Press a button or move an axis…" else (prefs.getString(key,"") ?: "").substringAfter(": ").ifEmpty { "Unbound" }
+            val value=if(DekuiAndroidMenu.capture==index)"Press a button or move an axis…" else DekuiAndroidMenu.bindingLabel(index).ifEmpty { "Unbound" }
             addButton("${labels[index]}: $value") { DekuiAndroidMenu.launcherCapture=true;DekuiAndroidMenu.begin(index);render() }
             addButton("Clear ${labels[index]}") { DekuiAndroidMenu.clear(index);render() }
         }

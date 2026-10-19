@@ -236,6 +236,22 @@ void ChooseTextures(QWidget* parent, bool clear) {
     Write(path, QJsonDocument(prefs).toJson());
     SyncTextureSource();
 }
+QString PictographBinding() {
+    QSettings ini(NativeSettingsPath(), QSettings::IniFormat);
+    const QString key = QStringLiteral("Controls/pictograph_binding");
+    if (ini.contains(key)) return ini.value(key).toString();
+    Common::ParamPackage button(Binding(Settings::NativeButton::A).toStdString());
+    if (button.Get("engine", "") != "sdl") {
+        const auto controllers = InputCommon::GetConnectedControllers();
+        if (controllers.empty()) return QStringLiteral("engine:null");
+        button = controllers.front();
+    }
+    button.Erase("hat"); button.Erase("direction"); button.Erase("axis");
+    button.Set("name", std::string("R3"));
+    button.Set("button", 8); // SDL right-stick click, independent of face layout.
+    button.Set("api", "controller");
+    return QString::fromStdString(button.Serialize());
+}
 void RefreshBindings() {
     std::scoped_lock lock{AndroidMenu::mutex};
     AndroidMenu::state.bindings.clear();
@@ -245,8 +261,23 @@ void RefreshBindings() {
     for (int i = 0; i < 2; ++i)
         AndroidMenu::state.bindings.push_back(
             InputCommon::AnalogToText(Common::ParamPackage(AnalogBinding(i).toStdString()), "up"));
+    AndroidMenu::state.bindings.push_back(BindingLabel(PictographBinding()).toStdString());
 }
 bool CaptureBinding(QWidget* parent, unsigned index, bool clear) {
+    if (index == 17) {
+        QString binding = QStringLiteral("engine:null");
+        if (!clear) {
+            Capture capture(parent);
+            if (capture.exec() != QDialog::Accepted) return false;
+            binding = capture.binding;
+        }
+        QSettings ini(NativeSettingsPath(), QSettings::IniFormat);
+        ini.setValue(QStringLiteral("Controls/pictograph_binding"), binding);
+        ini.sync();
+        Require(ini.status() == QSettings::NoError, QStringLiteral("Could not save Pictograph binding"));
+        RefreshBindings();
+        return true;
+    }
     const auto& buttons=ControllerBindings::Buttons;
     if (index >= std::size(buttons)) {
         if (index > 16)

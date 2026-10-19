@@ -49,6 +49,7 @@
 #include "mm3d/game_folder.h"
 #include "mm3d/game_setup.h"
 #include "mm3d/player_settings.h"
+#include "mm3d/pictograph.h"
 
 namespace MM3D::DesktopFrontend {
 namespace {
@@ -992,9 +993,9 @@ bool Startup(QWidget* parent, bool open_mods) {
 void RuntimeInput() {
     if (!presentation_available.load() || QApplication::activeModalWidget())
         return;
-    static std::array<std::unique_ptr<Input::ButtonDevice>, 10> devices;
+    static std::array<std::unique_ptr<Input::ButtonDevice>, 11> devices;
     static std::string signature;
-    static std::array<bool, 10> previous{};
+    static std::array<bool, 11> previous{};
     const int logical[]{Settings::NativeButton::Up,    Settings::NativeButton::Down,
                         Settings::NativeButton::Left,  Settings::NativeButton::Right,
                         Settings::NativeButton::A,     Settings::NativeButton::ZL,
@@ -1004,14 +1005,20 @@ void RuntimeInput() {
     std::string current;
     for (int i : logical)
         current += bindings[i] + "|";
+    static std::string pictograph;
+    static unsigned binding_ticks = 0;
+    if (binding_ticks++ % 15 == 0)
+        pictograph = DesktopImport::PictographBinding().toStdString();
+    current += pictograph;
     if (signature != current) {
         signature = current;
         for (int i = 0; i < 10; ++i)
             devices[i] = Input::CreateDevice<Input::ButtonDevice>(bindings[logical[i]]);
+        devices[10] = Input::CreateDevice<Input::ButtonDevice>(pictograph);
         previous.fill(true);
     }
-    std::array<bool, 10> down{};
-    for (int i = 0; i < 10; ++i)
+    std::array<bool, 11> down{};
+    for (int i = 0; i < 11; ++i)
         down[i] = devices[i] && devices[i]->GetStatus();
     if (down[8] && down[9] && !(previous[8] && previous[9]))
         ToggleOverlayView(true);
@@ -1022,6 +1029,9 @@ void RuntimeInput() {
         if (down[7] && !previous[7])
             ToggleOverlay();
     }
+    if (!overlay_visible.load() && down[10] && !previous[10])
+        Pictograph::Request();
+    if (overlay_visible.load()) Pictograph::Cancel();
     previous = down;
 }
 void Settings(QWidget* parent, bool running) {

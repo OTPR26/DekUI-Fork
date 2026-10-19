@@ -26,12 +26,13 @@ inline State Snapshot() { std::scoped_lock lock{mutex}; return state; }
 inline constexpr const char* BindingLabels[]{"A","B","X","Y","Select","Start","Home",
     "ZL / L2: targeting","ZR / R2: shield","L / L1: item I","R / R1: item II","D-pad up","D-pad down","D-pad left","D-pad right",
     "Left stick vertical","Left stick horizontal","Right stick vertical","Right stick horizontal",
-    "D-pad vertical axis","D-pad horizontal axis"};
+    "D-pad vertical axis","D-pad horizontal axis","Pictograph Box"};
 inline constexpr auto DesktopBindingLabels=[] {
-    std::array<const char*,17> labels{};
+    std::array<const char*,18> labels{};
     for(unsigned i=0;i<15;++i)labels[i]=BindingLabels[i];
     labels[15]="Left stick";
     labels[16]="Right stick";
+    labels[17]="Pictograph Box";
     return labels;
 }();
 }

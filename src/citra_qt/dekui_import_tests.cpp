@@ -148,6 +148,10 @@ int main(int argc, char** argv) {
                           binding.toStdString(),
                       "reload ignored remapped confirm button");
             }
+            const auto pictograph_key = QStringLiteral("Controls/pictograph_binding");
+            const auto pictograph_binding = QStringLiteral("engine:sdl,api:controller,guid:test,port:0,button:8");
+            saved.setValue(pictograph_key, pictograph_binding);
+            saved.sync();
             // Four successive in-game captures, each followed by the emulator's
             // normal save/reload cycle. The fourth must not revert the first three.
             saved.setValue(QStringLiteral("Controls/profiles/1/name"),
@@ -176,6 +180,9 @@ int main(int argc, char** argv) {
                 Check(Settings::values.current_input_profile.name == "Controller (custom)",
                       "manual profile remained automatic");
             }
+            saved.sync();
+            Check(saved.value(pictograph_key).toString() == pictograph_binding,
+                  "profile save discarded dedicated Pictograph binding");
             const auto kept_buttons = Settings::values.current_input_profile.buttons;
             Check(MM3D::ControllerBindings::Save(
                       bindings_path, 1, QStringLiteral("engine:sdl,axis_x:2,axis_y:3"), true),

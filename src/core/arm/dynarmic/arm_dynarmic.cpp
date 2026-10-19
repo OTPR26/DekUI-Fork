@@ -11,6 +11,7 @@
 #include "mm3d/camera_instruction_probe.h"
 #include "mm3d/form_camera.h"
 #include "mm3d/fast_time.h"
+#include "mm3d/pictograph.h"
 #include "mm3d/camera_live.h"
 #include "mm3d/camera_distance.h"
 #include "mm3d/camera_midpoint.h"
@@ -302,6 +303,12 @@ public:
             const auto process=parent.system.Kernel().GetCurrentProcess();
             if(process&&process->codeset&&process->codeset->program_id==0x0004000000125500ULL&&MM3D::Difficulty::CodeMatches(code,vaddr))
                 return MM3D::Difficulty::Instruction(vaddr,*instruction);
+        }
+        if(instruction && MM3D::Pictograph::Instruction(vaddr,*instruction)!=*instruction) {
+            struct CodeMemory {Memory::MemorySystem& memory;std::optional<u32> Read(u32 at){return memory.Read32OrNullopt(at);}} code{memory};
+            const auto process=parent.system.Kernel().GetCurrentProcess();
+            if(process&&process->codeset&&process->codeset->program_id==0x0004000000125500ULL&&MM3D::Pictograph::CodeMatches(code))
+                return MM3D::Pictograph::Instruction(vaddr,*instruction);
         }
         if(instruction&&MM3D::FastTime::Instruction(vaddr,*instruction)!=*instruction) {
             struct CodeMemory {Memory::MemorySystem& memory;std::optional<u32> Read(u32 at){return memory.Read32OrNullopt(at);}} code{memory};
@@ -744,6 +751,12 @@ public:
                     MM3D::DeathPenalties::advance_six_hours.load(),&death_respawn_sound);
             else
                 death_respawn_sound.SceneInit(guest,parent.jit->Regs());
+            return;
+        }
+        if(swi==MM3D::Pictograph::SVC) {
+            struct Guest {Memory::MemorySystem& memory;
+                void Write(u32 at,u32 value){memory.Write32(at,value);}} guest{memory};
+            MM3D::Pictograph::Update(guest,parent.jit->Regs());
             return;
         }
         if(swi>=MM3D::FastTime::FirstSVC&&swi<MM3D::FastTime::FirstSVC+MM3D::FastTime::Hooks.size()) {

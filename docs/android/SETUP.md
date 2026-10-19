@@ -37,3 +37,5 @@ new app reuses its prepared game, saves, generated mods, HUD, and controller
 bindings. Reselect external texture folders; Android folder grants belong to
 the old app ID. Select the OoT3D source again only when regenerating a mod.
 After checking the new app, the prototype may be uninstalled.
+
+The Pictograph Box defaults to R3 (right-stick click), independent of equipped items. Change or clear its binding in Controls. Android Back opens settings; the L3+R3 settings shortcut also remains available.
