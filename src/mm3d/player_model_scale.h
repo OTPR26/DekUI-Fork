@@ -16,7 +16,7 @@ constexpr std::array<U32,4> PCs{0x182a34,0x182a94,0x182ab0,0x182ac8};
 constexpr std::array<U32,4> Words{0xed942a17,0xe5942058,0xe594205c,0xe5940060};
 inline U32 Instruction(U32 pc,U32 word) {
     for(unsigned i=0;i<PCs.size();++i)
-        if(pc==PCs[i]&&word==Words[i])return 0xef000000|FirstSVC+i;
+        if(pc==PCs[i]&&word==Words[i])return 0xef000000 | (FirstSVC + i);
     return word;
 }
 template<class M> bool CodeMatches(M& m) {
