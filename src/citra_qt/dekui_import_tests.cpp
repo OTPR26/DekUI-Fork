@@ -284,11 +284,12 @@ int main(int argc, char** argv) {
         small.fill(Qt::red);
         QImage large(32, 32, QImage::Format_RGBA8888);
         large.fill(Qt::blue);
-        Check(small.save(pack + QStringLiteral("/tex1_16x16_0123456789abcdef_14.png")),
+        large.setPixelColor(0, 31, Qt::green);
+        Check(small.save(pack + QStringLiteral("/tex1_8x8_0123456789abcdef_14.png")),
               "small TP fixture");
-        Check(large.save(pack +
-                         QStringLiteral("/Characters/Link/tex1_32x32_0123456789abcdef_14.png")),
-              "large TP fixture");
+        Check(
+            large.save(pack + QStringLiteral("/Characters/Link/tex1_8x8_0123456789abcdef_14.png")),
+            "large TP fixture");
         MM3D::DesktopImport::Finalize(tpStage, root, pack, false, true);
         const auto tpTextures =
             root + QStringLiteral(
@@ -296,7 +297,8 @@ int main(int argc, char** argv) {
         const auto files = QDir(tpTextures).entryList({QStringLiteral("*.png")}, QDir::Files);
         Check(!files.empty(), "nested TP replacement was not installed");
         const QImage imported(tpTextures + QStringLiteral("/") + files.front());
-        Check(imported.size() == QSize(32, 32) && imported.pixelColor(0, 0) == QColor(Qt::blue),
+        Check(imported.size() == QSize(32, 32) && imported.pixelColor(0, 0) == QColor(Qt::green) &&
+                  imported.pixelColor(0, 31) == QColor(Qt::blue),
               "TP duplicate selection did not choose highest resolution");
         Check(QFileInfo::exists(save), "TP generation damaged save");
         Check(QFileInfo::exists(root +

@@ -413,6 +413,16 @@ void Finalize(const QString& suppliedStage, const QString& root, const QString& 
                         .size() > 0,
                 QStringLiteral("Generated TP voices are missing"));
     }
+    const auto document = QJsonDocument::fromJson(
+        Read(stage + (twilight ? QStringLiteral("/texture-manifest.json")
+                               : QStringLiteral("/texture-sources/manifest.json")),
+             1024 * 1024));
+    Require(document.isArray(), QStringLiteral("Invalid generated texture manifest"));
+    std::set<QString> wanted;
+    if (twilight)
+        for (const auto& entry : document.array())
+            wanted.insert(
+                entry.toObject().value(QStringLiteral("source_hash")).toString().toUpper());
     QHash<QString, QString> index;
     QHash<QString, quint64> scores;
     const QRegularExpression dolphin(
@@ -436,9 +446,26 @@ void Finalize(const QString& suppliedStage, const QString& root, const QString& 
             const auto match = (twilight ? dolphin : pattern).match(QFileInfo(path).fileName());
             if (match.hasMatch()) {
                 const auto hash = match.captured(twilight ? 3 : 1).toUpper();
-                const quint64 score =
-                    twilight ? match.captured(1).toULongLong() * match.captured(2).toULongLong()
-                             : 1;
+                if (twilight && !wanted.contains(hash))
+                    continue;
+                quint64 score = 1;
+                if (twilight) {
+                    // Dolphin filenames retain the source dimensions even in HD packs.
+                    QSize size = QImageReader(path).size();
+                    if (path.endsWith(QStringLiteral(".dds"), Qt::CaseInsensitive)) {
+                        QFile file(path);
+                        if (file.open(QIODevice::ReadOnly)) {
+                            const auto header = file.read(128);
+                            if (header.size() == 128 && header.first(4) == "DDS ")
+                                size = QSize(
+                                    qFromLittleEndian<quint32>(
+                                        reinterpret_cast<const uchar*>(header.constData() + 16)),
+                                    qFromLittleEndian<quint32>(
+                                        reinterpret_cast<const uchar*>(header.constData() + 12)));
+                        }
+                    }
+                    score = size.isValid() ? quint64(size.width()) * size.height() : 0;
+                }
                 if (!index.contains(hash) || score > scores.value(hash) ||
                     (score == scores.value(hash) && path < index.value(hash))) {
                     index.insert(hash, path);
@@ -447,11 +474,6 @@ void Finalize(const QString& suppliedStage, const QString& root, const QString& 
             }
         }
     }
-    const auto document = QJsonDocument::fromJson(
-        Read(stage + (twilight ? QStringLiteral("/texture-manifest.json")
-                               : QStringLiteral("/texture-sources/manifest.json")),
-             1024 * 1024));
-    Require(document.isArray(), QStringLiteral("Invalid generated texture manifest"));
     std::set<QString> copied;
     int replacements = 0;
     for (const auto& entry : document.array()) {
