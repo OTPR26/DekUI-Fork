@@ -17,6 +17,9 @@ Majora ReMasked builds on [tgacquin’s DekUI](https://github.com/tgacquin/mm3d-
 - Single-screen gear, masks, items, maps, file select, and Bomber’s Notebook inherited from DekUI.
 - A full-screen menu for touch, mouse, and controllers.
 - Controller bindings and button-layout preferences, touch overlay controls, and screen swapping.
+- Remappable R3 Pictograph control, independent of equipped items.
+- English, French and Spanish game-language selection before starting gameplay.
+- Separate presentation and native game FPS counters.
 - Customizable Wii U Style HUD with adjustable positions, scale, spacing, and visibility; custom textures supported including Henriko's 4K Texture Pack.
 - Separate Field of View and Camera Distance controls
 - Adjustable walk, climb, and swim speeds.
