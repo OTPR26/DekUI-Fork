@@ -713,9 +713,6 @@ public:
         if(swi>=MM3D::PlayerModelScale::FirstSVC&&swi<MM3D::PlayerModelScale::FirstSVC+4) {
             struct GuestMemory {Memory::MemorySystem& memory;
                 std::optional<u32> Read(u32 at){return memory.Read32OrNullopt(at);}} guest{memory};
-            if (swi == MM3D::PlayerModelScale::FirstSVC)
-                mounted_player_hook.BeginActor(guest, parent.jit->Regs()[4], parent.jit->Regs()[6],
-                                              MM3D::ModelMod::adult_active.load());
             MM3D::PlayerModelScale::Apply(guest,parent.jit->Regs(),parent.jit->ExtRegs(),
                 swi-MM3D::PlayerModelScale::FirstSVC,MM3D::ModelMod::adult_active.load());
             return;
@@ -805,7 +802,20 @@ public:
             auto& regs=parent.jit->Regs();
             if(swi==MM3D::NativeStartup::FirstSVC) {
                 startup_hook.Enter(guest,regs[0]);
-                mounted_player_hook.Enter(guest, regs[0], regs[1]);
+                mounted_player_hook.Submit(guest, regs[0], regs[1],
+                                           MM3D::ModelMod::adult_active.load());
+                static unsigned rider_reports = 0;
+                if (mounted_player_hook.weight > 0.f && rider_reports < 24 &&
+                    (regs[0] == mounted_player_hook.player_instance || rider_reports < 8)) {
+                    ++rider_reports;
+                    LOG_INFO(Core_ARM11,
+                             "Mounted player: animation={}, instance={:08x}, expected={:08x}, "
+                             "accepted={}, offset=({},{},{})",
+                             mounted_player_hook.animation_id, regs[0],
+                             mounted_player_hook.player_instance, mounted_player_hook.instance != 0,
+                             mounted_player_hook.offset[0], mounted_player_hook.offset[1],
+                             mounted_player_hook.offset[2]);
+                }
                 link_pose_hook.Enter(guest,regs[0]);regs[5]=regs[0];
             } else {
                 startup_hook.Matrix(guest,regs[5],regs[4]);

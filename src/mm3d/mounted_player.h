@@ -53,11 +53,11 @@ inline float Weight(U32 animation, bool riding, float frame, float start, float 
 
 struct Hook {
     float weight = 0.f;
-    U32 player_instance = 0;
+    U32 player_instance = 0, animation_id = 0;
     U32 instance = 0, output = 0;
     std::array<float, 3> offset{};
     template<class M> void BeginActor(M& m, U32 actor, U32 context, bool enabled) {
-        weight = 0.f; player_instance = instance = output = 0;
+        weight = 0.f; player_instance = instance = output = animation_id = 0; offset = {};
         if (!enabled || !PlayerModelScale::HumanPlayer(m, actor, context) ||
             !PlayerModelScale::Pointer(actor, 0x11dd0)) return;
         const auto flags = m.Read(actor + 0x11db0), animation = m.Read(actor + 0x370),
@@ -67,6 +67,7 @@ struct Hook {
         if (!flags || !animation || !controller || !scale || !frame || !start || !end ||
             !PlayerModelScale::Pointer(*controller, 0xfc) ||
             PlayerModelScale::Scale(*scale, true) == *scale) return;
+        animation_id = *animation;
         weight = Weight(*animation, (*flags & 0x800000) != 0, std::bit_cast<float>(*frame),
                         std::bit_cast<float>(*start), std::bit_cast<float>(*end));
         player_instance = *controller + 0xd4;
@@ -80,6 +81,21 @@ struct Hook {
             matrix[i] = std::bit_cast<float>(*value);
         }
         return matrix;
+    }
+    // Resolve the active player at skeleton submission. Actor transforms and
+    // skeleton submission can run in separate passes, so actor-draw state must
+    // not be carried between them.
+    template<class M> void Submit(M& m, U32 candidate, U32 view, bool enabled) {
+        weight = 0.f; player_instance = instance = output = animation_id = 0; offset = {};
+        if (!enabled) return;
+        const auto root = m.Read(0x72f5c0);
+        if (!root || !PlayerModelScale::Pointer(*root, 0x170)) return;
+        const auto context = m.Read(*root + 0x16c);
+        if (!context || !PlayerModelScale::Pointer(*context, 0x20e0)) return;
+        const auto actor = m.Read(*context + 0x20dc);
+        if (!actor) return;
+        BeginActor(m, *actor, *context, true);
+        Enter(m, candidate, view);
     }
     template<class M> void Enter(M& m, U32 candidate, U32 view) {
         instance = output = 0;

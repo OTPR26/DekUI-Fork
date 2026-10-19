@@ -94,6 +94,22 @@ int main() {
     hook.Enter(m,instance,camera);hook.MatrixBuilt(m,instance,0);
     Check(m.words[output+28]==std::bit_cast<U32>((*shift)[1]),
           "freshly built frames never compound the offset");
+    constexpr U32 global=0x8800000;
+    m.words[0x72f5c0]=global;m.words[global+0x16c]=context;
+    // A different actor draw clears prior state before the submission pass.
+    hook.BeginActor(m,actor+0x20000,context,true);
+    for(unsigned bone=0;bone<26;++bone)m.PutMatrix(output+bone*48,Identity());
+    hook.Submit(m,instance,camera,true);hook.MatrixBuilt(m,instance,0);
+    Check(hook.instance==instance && m.words[output+28]==std::bit_cast<U32>((*shift)[1]),
+          "submission resolves the live player independently of actor draw order");
+    hook.Submit(m,instance,camera,false);
+    Check(hook.instance==0 && hook.weight==0,"disabled mods cannot reuse a previous rider pose");
+    m.words[actor+0x370]=336;
+    hook.Submit(m,instance,camera,true);
+    Check(hook.instance==0 && hook.weight==0,"ground animation cannot reuse a previous rider pose");
+    m.words[actor+0x370]=488;
+    hook.Submit(m,instance+4,camera,true);
+    Check(hook.instance==0,"live lookup still excludes other model instances");
     m.words[skeleton+56]^=1;
     before=m.words;hook.Enter(m,instance,camera);hook.MatrixBuilt(m,instance,0);
     Check(m.words==before,"mismatched skeletons remain untouched");
