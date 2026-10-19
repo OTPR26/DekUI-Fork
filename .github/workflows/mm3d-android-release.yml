@@ -6,6 +6,10 @@ on:
         description: Commit or tag to build (blank uses this workflow revision)
         required: false
         type: string
+      package_existing_run:
+        description: Optional successful run to repackage when application sources are unchanged
+        required: false
+        type: string
 concurrency:
   group: android-release-${{ github.ref }}-${{ inputs.source_ref }}
   cancel-in-progress: false
@@ -13,6 +17,7 @@ permissions:
   contents: read
 jobs:
   android:
+    if: inputs.package_existing_run == ''
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
@@ -92,26 +97,7 @@ jobs:
           targets: aarch64-linux-android
       - name: Build compressed-disc reader
         run: |
-          source_dir="$RUNNER_TEMP/tp-disc-reader"
-          mkdir -p "$source_dir"
-          curl --fail --location --silent --show-error \
-            https://codeload.github.com/encounter/nod/tar.gz/ebd80cac99b48a323200d84365e07a58cc27412d \
-            | tar -xz --strip-components=1 -C "$source_dir"
-          toolchain="$ANDROID_HOME/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$toolchain/aarch64-linux-android24-clang"
-          export CC_aarch64_linux_android="$toolchain/aarch64-linux-android24-clang"
-          export CXX_aarch64_linux_android="$toolchain/aarch64-linux-android24-clang++"
-          export AR_aarch64_linux_android="$toolchain/llvm-ar"
-          export RUSTFLAGS="--remap-path-prefix=$RUNNER_TEMP=/build --remap-path-prefix=$HOME=/build"
-          export CFLAGS_aarch64_linux_android="-ffile-prefix-map=$RUNNER_TEMP=/build -ffile-prefix-map=$HOME=/build"
-          export CXXFLAGS_aarch64_linux_android="$CFLAGS_aarch64_linux_android"
-          cargo build --manifest-path "$source_dir/Cargo.toml" --locked --release \
-            --target aarch64-linux-android -p nod-ffi --no-default-features \
-            --features compress-bzip2-vendored,compress-lzma-vendored,compress-zlib-vendored,compress-zstd-vendored
-          destination=src/android/app/build/downloadedJniLibs/arm64-v8a
-          mkdir -p "$destination"
-          cp "$source_dir/target/aarch64-linux-android/release/libnod.so" "$destination/"
-          cp "$source_dir/LICENSE-MIT" "$source_dir/LICENSE-APACHE" src/android/app/src/main/assets/
+          bash tools/mm3d/build_android_disc_reader.sh
       - name: Restore signing key
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -161,13 +147,17 @@ jobs:
           RELEASE_VERSION: ${{ steps.source.outputs.version }}
         run: |
           python3 - <<'PY'
-          import os, re, shutil, subprocess
+          import os, re, shutil, subprocess, zipfile
           from pathlib import Path
           sdk = Path(os.environ['ANDROID_HOME'])/'build-tools/36.1.0'
           apks = list(Path('src/android/app/build').glob('intermediates/apk/vanilla/performance/*.apk'))
           if len(apks) != 1:
               raise SystemExit('Expected one optimized APK')
           apk = apks[0]
+          with zipfile.ZipFile(apk) as archive:
+              required = {"lib/arm64-v8a/libnod.so", "assets/chaquopy/app.imy"}
+              if not required.issubset(archive.namelist()):
+                  raise SystemExit("APK is missing Twilight Princess importer dependencies")
           cert = subprocess.check_output([str(sdk/'apksigner'), 'verify', '--print-certs', str(apk)], text=True)
           expected = '73e734704569a6f17f126bf09c243c24442f3e68c2ab20256b31cb44c6631615'
           if not re.search(r'Signer #1 certificate SHA-256 digest: '+expected, cert):
@@ -202,4 +192,103 @@ jobs:
         with:
           name: DekUI-Fork-${{ steps.source.outputs.version }}-Android-Source-${{ steps.source.outputs.sha }}
           path: artifacts/*Source.tar.gz
+          if-no-files-found: error
+
+  package:
+    if: inputs.package_existing_run != ''
+    permissions:
+      contents: read
+      actions: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - name: Fetch matching compiled APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_RUN: ${{ inputs.package_existing_run }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, subprocess
+          run = os.environ['BASE_RUN']
+          if not re.fullmatch(r'[0-9]+', run):
+              raise SystemExit('Invalid build run')
+          repo = os.environ['GITHUB_REPOSITORY']
+          info = json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/actions/runs/{run}']))
+          if info['conclusion'] != 'success' or info['path'] != '.github/workflows/mm3d-android-release.yml':
+              raise SystemExit('Expected a successful Android build')
+          base = info['head_sha']
+          subprocess.run(['git','diff','--exit-code',base,'HEAD','--','src',':!src/android/app/build.gradle.kts',
+                          'externals','tools/mm3d/tp_import'],check=True)
+          artifact = f'DekUI-Fork-0.2.2-Android-arm64-{base}'
+          subprocess.run(['gh','run','download',run,'--repo',repo,'--name',artifact,'--dir','compiled'],check=True)
+          PY
+      - name: Build compressed-disc reader
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'build-tools;36.1.0' 'ndk;27.3.13750724'
+          bash tools/mm3d/build_android_disc_reader.sh
+      - name: Package and sign APK
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          python3 - <<'PY'
+          import base64, os, subprocess, zipfile
+          from pathlib import Path
+          sdk = Path(os.environ['ANDROID_HOME'])/'build-tools/36.1.0'
+          base, = Path('compiled').glob('*.apk')
+          expected = '73e734704569a6f17f126bf09c243c24442f3e68c2ab20256b31cb44c6631615'
+          def verify(path):
+              cert = subprocess.check_output([str(sdk/'apksigner'),'verify','--print-certs',str(path)],text=True)
+              if 'Signer #1 certificate SHA-256 digest: '+expected not in cert:
+                  raise SystemExit('Unexpected signing identity')
+              badge = subprocess.check_output([str(sdk/'aapt'),'dump','badging',str(path)],text=True)
+              if "name='io.github.otpr26.dekuifork'" not in badge.splitlines()[0]:
+                  raise SystemExit('Unexpected application ID')
+          verify(base)
+          library = Path('src/android/app/build/dekuiJniLibs/arm64-v8a/libnod.so')
+          reader = library.read_bytes()
+          if reader[:6] != b'\x7fELF\x02\x01' or int.from_bytes(reader[18:20],'little') != 183:
+              raise SystemExit('Expected ARM64 disc reader')
+          member = 'lib/arm64-v8a/libnod.so'
+          unsigned = Path(os.environ['RUNNER_TEMP'])/'unsigned.apk'
+          with zipfile.ZipFile(base) as old, zipfile.ZipFile(unsigned,'w') as new:
+              for entry in old.infolist():
+                  if entry.filename == member or entry.filename.startswith('META-INF/'):
+                      continue
+                  new.writestr(entry,old.read(entry))
+              new.writestr(member,reader,compress_type=zipfile.ZIP_DEFLATED)
+          aligned = unsigned.with_name('aligned.apk')
+          subprocess.run([str(sdk/'zipalign'),'-f','-p','4',str(unsigned),str(aligned)],check=True)
+          key = Path(os.environ['RUNNER_TEMP'])/'signing.keystore'
+          key.write_bytes(base64.b64decode(os.environ['KEYSTORE_BASE64'],validate=True))
+          key.chmod(0o600)
+          out = Path('artifacts/DekUI-Fork-0.2.2-Android-arm64.apk')
+          out.parent.mkdir(exist_ok=True)
+          try:
+              subprocess.run([str(sdk/'apksigner'),'sign','--ks',str(key),'--ks-key-alias',os.environ['ANDROID_KEY_ALIAS'],
+                              '--ks-pass','env:ANDROID_KEYSTORE_PASS','--key-pass','env:ANDROID_KEYSTORE_PASS',
+                              '--out',str(out),str(aligned)],check=True)
+          finally:
+              key.unlink(missing_ok=True)
+          verify(out)
+          with zipfile.ZipFile(out) as archive:
+              if archive.read(member) != reader or 'assets/chaquopy/app.imy' not in archive.namelist():
+                  raise SystemExit('Importer dependencies missing')
+          PY
+          python3 tools/mm3d/check_release_privacy.py artifacts/*.apk
+      - uses: actions/upload-artifact@v7
+        with:
+          name: DekUI-Fork-Android-TP-preview-${{ github.sha }}
+          path: artifacts/*.apk
           if-no-files-found: error

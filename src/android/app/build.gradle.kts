@@ -270,6 +270,7 @@ android {
         named("main") {
             // Set up path for downloaded native libraries
             jniLibs.srcDir(downloadedJniLibsPath)
+            if (dekuiPresentation) jniLibs.srcDir(layout.buildDirectory.dir("dekuiJniLibs"))
             if (dekuiPresentation) assets.srcDir(layout.buildDirectory.dir("generated/dekuiAssets"))
         }
     }
