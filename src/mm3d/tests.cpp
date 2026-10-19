@@ -24,6 +24,11 @@ static void Require(bool value, const char* message) {
 }
 int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
+    if (app.arguments().size() == 3 && app.arguments()[1] == QStringLiteral("--validate-setup")) {
+        const auto error = MM3D::GameFolder::ValidateSetup(app.arguments()[2]);
+        if (!error.isEmpty()) std::cerr << error.toStdString() << '\n';
+        return error.isEmpty() ? 0 : 1;
+    }
     try {
         {
             QTemporaryDir games;Require(games.isValid(),"game discovery fixture");

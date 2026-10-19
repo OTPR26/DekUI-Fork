@@ -37,6 +37,10 @@ add_test(NAME mm3d_cpu_vertex_replay COMMAND mm3d_cpu_vertex_replay_tests)
 add_executable(mm3d_tests tests.cpp settings.cpp trace.cpp shader_usage.cpp camera_writer.cpp)
 target_link_libraries(mm3d_tests PRIVATE Qt6::Core nihstro-headers Boost::boost)
 add_test(NAME mm3d_diagnostics COMMAND mm3d_tests)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_test(NAME mm3d_setup_frontend
+    COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tools/mm3d/setup_frontend_check.py"
+            "$<TARGET_FILE:mm3d_tests>")
 add_executable(mm3d_item_slide_tests item_slide_interpolation_tests.cpp)
 target_include_directories(mm3d_item_slide_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 add_test(NAME mm3d_item_slide COMMAND mm3d_item_slide_tests)

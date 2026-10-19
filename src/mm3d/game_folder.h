@@ -79,6 +79,18 @@ inline QString MissingGameMessage() {
     return QStringLiteral("Select your decrypted MM3D USA Rev 1 game-card dump (.cci or .3ds) from the startup screen.");
 }
 inline QString User() { return Root() + QStringLiteral("/user/"); }
+inline QString ValidateSetup(const QString& user) {
+    QFile ready(QDir(user).filePath(QStringLiteral("setup/ready.json")));
+    if(!ready.open(QIODevice::ReadOnly)) return QStringLiteral("Game setup is incomplete. Preserve your user folder and saves, then try a fresh application folder.");
+    const auto setup=QJsonDocument::fromJson(ready.readAll()).object();
+    if(setup[QStringLiteral("version")].toInt()!=1 || setup[QStringLiteral("rom_sha256")].toString()!=QString::fromLatin1(Hash))
+        return QStringLiteral("Game setup is incompatible. Keep your saves and prepare a new application folder.");
+    if(setup[QStringLiteral("resource_version")].toInt()!=2 ||
+       setup[QStringLiteral("layout_version")].toInt()!=2 ||
+       QFileInfo::exists(QDir(user).filePath(QStringLiteral("setup/resource-upgrade-pending"))))
+        return QStringLiteral("Game resource upgrade is incomplete. Close Dekui and launch again to retry. Preserve your user folder and its upgrade backups.");
+    return {};
+}
 inline QString Validate() {
     QFile file(Rom());
     if (!file.open(QIODevice::ReadOnly))
@@ -96,15 +108,6 @@ inline QString Validate() {
         hash.addData(bytes); remaining-=bytes.size();
     }
     if(hash.result().toHex()!=Hash) return QStringLiteral("Unsupported game revision/content. The supported decrypted USA Rev 1 dump is required.");
-    QFile ready(User()+QStringLiteral("setup/ready.json"));
-    if(!ready.open(QIODevice::ReadOnly)) return QStringLiteral("Game setup is incomplete. Preserve your user folder and saves, then try a fresh application folder.");
-    const auto setup=QJsonDocument::fromJson(ready.readAll()).object();
-    if(setup[QStringLiteral("version")].toInt()!=1 || setup[QStringLiteral("rom_sha256")].toString()!=QString::fromLatin1(Hash))
-        return QStringLiteral("Game setup is incompatible. Keep your saves and prepare a new application folder.");
-    if(setup[QStringLiteral("resource_version")].toInt()!=2 ||
-       setup[QStringLiteral("layout_version")].toInt()!=1 ||
-       QFileInfo::exists(User()+QStringLiteral("setup/resource-upgrade-pending")))
-        return QStringLiteral("Game resource upgrade is incomplete. Close Dekui and launch again to retry. Preserve your user folder and its upgrade backups.");
-    return {};
+    return ValidateSetup(User());
 }
 }
