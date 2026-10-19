@@ -243,7 +243,7 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           python3 - <<'PY'
-          import base64, os, subprocess, zipfile
+          import base64, os, re, subprocess, zipfile
           from pathlib import Path
           sdk = Path(os.environ['ANDROID_HOME'])/'build-tools/36.1.0'
           base, = Path('compiled').glob('*.apk')
@@ -262,9 +262,11 @@ jobs:
               raise SystemExit('Expected ARM64 disc reader')
           member = 'lib/arm64-v8a/libnod.so'
           unsigned = Path(os.environ['RUNNER_TEMP'])/'unsigned.apk'
+          def signature(name):
+              return bool(re.fullmatch(r'META-INF/(?:MANIFEST\.MF|[^/]+\.(?:SF|RSA|DSA|EC))',name,re.I))
           with zipfile.ZipFile(base) as old, zipfile.ZipFile(unsigned,'w') as new:
               for entry in old.infolist():
-                  if entry.filename == member or entry.filename.startswith('META-INF/'):
+                  if entry.filename == member or signature(entry.filename):
                       continue
                   new.writestr(entry,old.read(entry))
               new.writestr(member,reader,compress_type=zipfile.ZIP_DEFLATED)
@@ -282,6 +284,11 @@ jobs:
           finally:
               key.unlink(missing_ok=True)
           verify(out)
+          with zipfile.ZipFile(base) as old, zipfile.ZipFile(out) as new:
+              for entry in old.infolist():
+                  if entry.filename != member and not signature(entry.filename):
+                      if new.read(entry.filename) != old.read(entry):
+                          raise SystemExit('Repack changed an unrelated APK entry')
           with zipfile.ZipFile(out) as archive:
               if archive.read(member) != reader or 'assets/chaquopy/app.imy' not in archive.namelist():
                   raise SystemExit('Importer dependencies missing')
