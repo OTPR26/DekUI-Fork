@@ -7,6 +7,7 @@ import plistlib
 import shutil
 import subprocess
 import tempfile
+from bundle_tp_runtime import copy_tp_runtime
 from bundle_restoration import copy_restoration, copy_desktop_hud
 from macos_python import install
 from package_deck import ROOT, SCRIPTS
@@ -61,6 +62,7 @@ def package(bundle, output, python_archive):
         scripts = payload / 'tools/mm3d'; scripts.mkdir(parents=True)
         for name in SCRIPTS:
             shutil.copy2(ROOT / 'tools/mm3d' / name, scripts / name)
+        copy_tp_runtime(ROOT, payload)
         resources = payload / 'resources/mm3d'; resources.mkdir(parents=True)
         for name in ('supported-rom.json', 'setup-fingerprints.json', 'layout-migration.json'):
             shutil.copy2(ROOT / 'resources/mm3d' / name, resources / name)

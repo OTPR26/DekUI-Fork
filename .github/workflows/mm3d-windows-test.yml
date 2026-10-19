@@ -59,6 +59,7 @@ jobs:
           restore-keys: |
             windows-ucrt-ccache-v2-
             windows-ucrt-ccache-v1-
+      - uses: dtolnay/rust-toolchain@stable
       - name: Configure, build, test and package
         run: |
           set -o pipefail
@@ -138,6 +139,7 @@ jobs:
         run: |
           if ((git rev-parse HEAD) -ne $env:GITHUB_SHA) { throw 'Build revision mismatch' }
           git log -1 --format='%H %s' >> $env:GITHUB_STEP_SUMMARY
+      - uses: dtolnay/rust-toolchain@stable
       - name: Build, test, check ARM64 payloads and package
         run: |
           python tools/mm3d/windows/build-arm64.py *> windows-arm64-build.log

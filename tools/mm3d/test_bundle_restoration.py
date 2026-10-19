@@ -4,6 +4,9 @@ import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+from bundle_tp_runtime import copy_tp_runtime
+from test_bundle_tp_runtime import fixture_runtime
 from bundle_restoration import copy_restoration, FILES
 from package_deck import ROOT, package
 
@@ -47,7 +50,10 @@ class RestorationBundleTests(unittest.TestCase):
     def test_deck_package_includes_only_bundled_inputs(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);app=root/'test.AppImage';app.write_bytes(b'fixture')
-            package(app,root/'deck.tar.gz')
+            fixture_repo = root / 'tp-fixture'
+            fixture_runtime(fixture_repo)
+            with patch('package_deck.copy_tp_runtime', side_effect=lambda repo, payload: copy_tp_runtime(fixture_repo, payload)):
+                package(app,root/'deck.tar.gz')
             with tarfile.open(root/'deck.tar.gz') as archive:
                 # Locally generated archive, not an untrusted download.
                 for member in archive.getmembers():

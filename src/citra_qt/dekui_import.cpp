@@ -23,9 +23,11 @@
 #include <QSettings>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <QtEndian>
+#include "../../externals/tp_texture_decoder/astc.h"
 #include "citra_qt/configuration/config.h"
-#include "citra_qt/dekui_import.h"
 #include "citra_qt/dekui_bindings.h"
+#include "citra_qt/dekui_import.h"
 #include "common/cityhash.h"
 #include "common/param_package.h"
 #include "common/settings.h"
@@ -288,13 +290,13 @@ bool CaptureBinding(QWidget* parent, unsigned index, bool clear) {
 }
 void MapController(Common::ParamPackage controller) {
     for (int i = 0; i < Settings::NativeButton::NumButtons; ++i) {
-        const int target = i == Settings::NativeButton::L    ? Settings::NativeButton::ZL
-                           : i == Settings::NativeButton::R  ? Settings::NativeButton::ZR
-                           : i == Settings::NativeButton::ZL ? Settings::NativeButton::L
-                           : i == Settings::NativeButton::ZR ? Settings::NativeButton::R
-                           : i == Settings::NativeButton::Start ? Settings::NativeButton::Select
+        const int target = i == Settings::NativeButton::L        ? Settings::NativeButton::ZL
+                           : i == Settings::NativeButton::R      ? Settings::NativeButton::ZR
+                           : i == Settings::NativeButton::ZL     ? Settings::NativeButton::L
+                           : i == Settings::NativeButton::ZR     ? Settings::NativeButton::R
+                           : i == Settings::NativeButton::Start  ? Settings::NativeButton::Select
                            : i == Settings::NativeButton::Select ? Settings::NativeButton::Start
-                                                             : i;
+                                                                 : i;
         auto mapped = InputCommon::GetControllerButtonBinds(controller, target);
         if (mapped.Has("engine"))
             SaveBinding(i, QString::fromStdString(mapped.Serialize()));
@@ -318,8 +320,8 @@ void EnsureController() {
 }
 void BindingControls(QVBoxLayout* box, QWidget* parent) {
     auto* automatic = new QPushButton(QStringLiteral("Configure connected controller"));
-    automatic->setSizePolicy(QSizePolicy::Maximum,QSizePolicy::Preferred);
-    box->addWidget(automatic,0,Qt::AlignLeft);
+    automatic->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Preferred);
+    box->addWidget(automatic, 0, Qt::AlignLeft);
     QObject::connect(automatic, &QPushButton::clicked, parent, [parent] {
         Capture capture(parent);
         capture.setWindowTitle(QStringLiteral("Press your confirm button (game A)"));
@@ -389,8 +391,11 @@ void VolumeControl(QVBoxLayout* box, bool running) {
         }
     });
 }
-void Finalize(const QString& suppliedStage, const QString& root, const QString& pack, bool dark) {
-    const QString id = dark ? QStringLiteral("dark-link") : QStringLiteral("adult-link"),
+void Finalize(const QString& suppliedStage, const QString& root, const QString& pack, bool dark,
+              bool twilight) {
+    const QString id = twilight ? QStringLiteral("twilight-link")
+                       : dark   ? QStringLiteral("dark-link")
+                                : QStringLiteral("adult-link"),
                   parent = root + QStringLiteral("/user/load/mm3d-models");
     const auto stage = QFileInfo(suppliedStage).canonicalFilePath();
     Require(
@@ -398,7 +403,21 @@ void Finalize(const QString& suppliedStage, const QString& root, const QString& 
             QFileInfo(stage).absolutePath() == QFileInfo(parent).canonicalFilePath() &&
             QFileInfo(stage).fileName().startsWith(QStringLiteral(".") + id + QStringLiteral("-")),
         QStringLiteral("Invalid generated model directory"));
+    if (twilight) {
+        for (const auto& variant : {QStringLiteral("kokiri"), QStringLiteral("master")})
+            Require(QFileInfo(stage + QStringLiteral("/variants/") + variant +
+                              QStringLiteral("/romfs/actors/zelda2_link_child_new.gar.lzs"))
+                            .size() > 0,
+                    QStringLiteral("Generated TP model is incomplete"));
+        Require(QFileInfo(stage + QStringLiteral("/voices/romfs/sound/sequence/JokerSound.bcsar"))
+                        .size() > 0,
+                QStringLiteral("Generated TP voices are missing"));
+    }
     QHash<QString, QString> index;
+    QHash<QString, quint64> scores;
+    const QRegularExpression dolphin(
+        QStringLiteral("^tex1_(\\d+)x(\\d+)(?:_m)?_([0-9A-Fa-f]{16})_\\d+(?:_mip0)?\\.(png|dds)$"),
+        QRegularExpression::CaseInsensitiveOption);
     const QRegularExpression pattern(
         QStringLiteral("^tex1_\\d+x\\d+_([0-9A-Fa-f]{16})_\\d+_mip0\\.(png|dds|ktx)$"),
         QRegularExpression::CaseInsensitiveOption);
@@ -409,30 +428,42 @@ void Finalize(const QString& suppliedStage, const QString& root, const QString& 
         int count = 0;
         while (files.hasNext()) {
             const auto path = files.next();
-            Require(++count <= 50000 &&
-                        QDir(pack).relativeFilePath(path).count(QLatin1Char('/')) < 40,
+            Require(++count <= 100000 &&
+                        QDir(pack).relativeFilePath(path).count(QLatin1Char('/')) < 64,
                     QStringLiteral("Texture folder is too large or too deep"));
             if (!QFileInfo(path).isFile())
                 continue;
-            const auto match = pattern.match(QFileInfo(path).fileName());
-            if (match.hasMatch() && !index.contains(match.captured(1).toUpper()))
-                index.insert(match.captured(1).toUpper(), path);
+            const auto match = (twilight ? dolphin : pattern).match(QFileInfo(path).fileName());
+            if (match.hasMatch()) {
+                const auto hash = match.captured(twilight ? 3 : 1).toUpper();
+                const quint64 score =
+                    twilight ? match.captured(1).toULongLong() * match.captured(2).toULongLong()
+                             : 1;
+                if (!index.contains(hash) || score > scores.value(hash) ||
+                    (score == scores.value(hash) && path < index.value(hash))) {
+                    index.insert(hash, path);
+                    scores.insert(hash, score);
+                }
+            }
         }
     }
     const auto document = QJsonDocument::fromJson(
-        Read(stage + QStringLiteral("/texture-sources/manifest.json"), 1024 * 1024));
+        Read(stage + (twilight ? QStringLiteral("/texture-manifest.json")
+                               : QStringLiteral("/texture-sources/manifest.json")),
+             1024 * 1024));
     Require(document.isArray(), QStringLiteral("Invalid generated texture manifest"));
     std::set<QString> copied;
     int replacements = 0;
     for (const auto& entry : document.array()) {
         const auto t = entry.toObject();
         const auto relative = t.value(QStringLiteral("file")).toString();
-        Require(relative.startsWith(QStringLiteral("texture-sources/")) &&
+        Require((relative.startsWith(twilight ? QStringLiteral("build/")
+                                              : QStringLiteral("texture-sources/"))) &&
                     !relative.contains(QStringLiteral("..")) && !QDir::isAbsolutePath(relative),
                 QStringLiteral("Invalid texture asset path"));
         const int w = t.value(QStringLiteral("width")).toInt(),
                   h = t.value(QStringLiteral("height")).toInt(),
-                  format = t.value(QStringLiteral("format")).toInt();
+                  format = twilight ? 13 : t.value(QStringLiteral("format")).toInt();
         Require(w >= 8 && h >= 8 && w <= 4096 && h <= 4096 && w % 8 == 0 && h % 8 == 0 &&
                     (format == 3 || format == 12 || format == 13),
                 QStringLiteral("Unsupported generated texture"));
@@ -447,8 +478,55 @@ void Finalize(const QString& suppliedStage, const QString& root, const QString& 
                        Common::CityHash64(reinterpret_cast<const char*>(raw.data()), raw.size())),
                    modern = Hex(Common::CityHash64(reinterpret_cast<const char*>(linear.data()),
                                                    linear.size()));
-        const auto source = index.value(modern, index.value(old));
-        if (t.value(QStringLiteral("icon")).toBool()) {
+        const auto source =
+            twilight ? index.value(t.value(QStringLiteral("source_hash")).toString().toUpper())
+                     : index.value(modern, index.value(old));
+        if (twilight && !source.isEmpty() && copied.insert(old).second) {
+            const auto replacement = Read(source);
+            QImage image;
+            auto word = [&](int at) {
+                return qFromLittleEndian<quint32>(
+                    reinterpret_cast<const uchar*>(replacement.constData() + at));
+            };
+            if (replacement.size() >= 148 && replacement.first(4) == "DDS " &&
+                replacement.sliced(84, 4) == "DX10" && word(128) == 134) {
+                const auto width = word(16), height = word(12);
+                Require(width > 0 && height > 0 && width <= 4096 && height <= 4096,
+                        QStringLiteral("Unsupported TP replacement dimensions"));
+                const size_t encoded = size_t((width + 3) / 4) * ((height + 3) / 4) * 16;
+                Require(size_t(replacement.size() - 148) >= encoded,
+                        QStringLiteral("Incomplete ASTC replacement"));
+                image = QImage(int(width), int(height), QImage::Format_ARGB32);
+                Require(
+                    !image.isNull() &&
+                        decode_astc(reinterpret_cast<const uint8_t*>(replacement.constData() + 148),
+                                    width, height, 4, 4,
+                                    reinterpret_cast<uint32_t*>(image.bits())) != 0,
+                    QStringLiteral("Cannot decode TP ASTC replacement"));
+            } else {
+                QImageReader reader(source);
+                const auto size = reader.size();
+                Require(
+                    size.width() > 0 && size.height() > 0 && size.width() <= 4096 &&
+                        size.height() <= 4096,
+                    QStringLiteral("Unsupported TP replacement. Use PNG or ASTC DDS textures."));
+                image = reader.read();
+            }
+            Require(!image.isNull() && qint64(image.width()) * h == qint64(image.height()) * w,
+                    QStringLiteral("TP replacement aspect ratio differs from its source"));
+            image = image.mirrored(false, true);
+            for (const auto& hash : std::set<QString>{old, modern}) {
+                const auto destination =
+                    stage + QStringLiteral("/texture-overrides/tex1_%1x%2_%3_13_mip0.png")
+                                .arg(w)
+                                .arg(h)
+                                .arg(hash);
+                Require(QDir().mkpath(QFileInfo(destination).absolutePath()) &&
+                            image.save(destination, "PNG"),
+                        QStringLiteral("Cannot write TP texture replacement"));
+            }
+            ++replacements;
+        } else if (t.value(QStringLiteral("icon")).toBool()) {
             Common::FlipRGBA8Texture(linear, w, h);
             SwordIcon(stage, QImage(linear.data(), w, h, QImage::Format_RGBA8888));
             if (source.endsWith(QStringLiteral(".png"), Qt::CaseInsensitive)) {
@@ -478,17 +556,22 @@ void Finalize(const QString& suppliedStage, const QString& root, const QString& 
         }
     }
     QDir(stage + QStringLiteral("/texture-sources")).removeRecursively();
+    if (twilight) {
+        QDir(stage + QStringLiteral("/build")).removeRecursively();
+        QFile::remove(stage + QStringLiteral("/texture-manifest.json"));
+    }
     auto report = QJsonDocument::fromJson(Read(stage + QStringLiteral("/generated.json"))).object();
     report.insert(QStringLiteral("hd_textures"), replacements);
     Write(stage + QStringLiteral("/generated.json"), QJsonDocument(report).toJson());
     const QString target = parent + QStringLiteral("/") + id,
                   stamp = QString::number(QDateTime::currentMSecsSinceEpoch()),
                   backup = target + QStringLiteral("-backup-") + stamp;
-    const QString textures = root + QStringLiteral("/user/load/mm3d-model-textures/0004000000125500"),
+    const QString textures =
+                      root + QStringLiteral("/user/load/mm3d-model-textures/0004000000125500"),
                   textureTarget =
                       textures + QStringLiteral("/") + id + QStringLiteral("-generated"),
-                  textureBackup =
-                      parent + QStringLiteral("/.") + id + QStringLiteral("-textures-backup-") + stamp;
+                  textureBackup = parent + QStringLiteral("/.") + id +
+                                  QStringLiteral("-textures-backup-") + stamp;
     Require(QDir().mkpath(textures), QStringLiteral("Cannot create texture directory"));
     Require(QDir().mkpath(stage + QStringLiteral("/texture-overrides")),
             QStringLiteral("Cannot stage generated textures"));

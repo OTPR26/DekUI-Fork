@@ -39,11 +39,11 @@
 #include <QtConcurrent/QtConcurrentRun>
 #include "citra_qt/dekui_frontend.h"
 #include "citra_qt/dekui_import.h"
-#include "mm3d/camera_distance.h"
 #include "common/param_package.h"
 #include "common/settings.h"
 #include "core/frontend/input.h"
 #include "input_common/main.h"
+#include "mm3d/camera_distance.h"
 #include "mm3d/diagnostics.h"
 #include "mm3d/game_folder.h"
 #include "mm3d/game_setup.h"
@@ -91,7 +91,8 @@ QString PresentationPath() {
     return Root() + QStringLiteral("/user/config/mm3d-local/presentation.json");
 }
 QJsonObject Presentation() {
-    auto defaults = Read(GameFolder::PackageRoot() + QStringLiteral("/resources/mm3d/defaults/presentation.json"));
+    auto defaults = Read(GameFolder::PackageRoot() +
+                         QStringLiteral("/resources/mm3d/defaults/presentation.json"));
     const auto saved = Read(PresentationPath());
     for (auto i = saved.begin(); i != saved.end(); ++i)
         defaults.insert(i.key(), i.value());
@@ -122,8 +123,8 @@ void SetPreference(const QString& key, const QString& value) {
 }
 QPushButton* Button(QVBoxLayout* box, const QString& text, std::function<void()> callback) {
     auto* b = new QPushButton(text);
-    b->setSizePolicy(QSizePolicy::Maximum,QSizePolicy::Preferred);
-    box->addWidget(b,0,Qt::AlignLeft);
+    b->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Preferred);
+    box->addWidget(b, 0, Qt::AlignLeft);
     QObject::connect(b, &QPushButton::clicked, b, std::move(callback));
     return b;
 }
@@ -263,7 +264,7 @@ class SettingsDialog final : public QDialog {
             out.sync();
         });
     }
-    void Generate(bool dark) {
+    void Generate(bool dark, bool twilight = false) {
         if (running) {
             QMessageBox::information(
                 this, QStringLiteral("Mod setup"),
@@ -272,10 +273,12 @@ class SettingsDialog final : public QDialog {
         }
         const auto prefs = Read(PrefsPath());
         const auto mm = GameFolder::Rom();
-        const auto oot = prefs.value(QStringLiteral("oot_rom")).toString();
+        const auto oot =
+            prefs.value(twilight ? QStringLiteral("tp_rom") : QStringLiteral("oot_rom")).toString();
         if (mm.isEmpty() || oot.isEmpty()) {
-            QMessageBox::information(this, QStringLiteral("Mod setup"),
-                                     QStringLiteral("Select your MM3D and OoT3D ROMs first."));
+            QMessageBox::information(
+                this, QStringLiteral("Mod setup"),
+                QStringLiteral("Select your MM3D ROM and the source ROM for this mod first."));
             return;
         }
         if (!QFileInfo::exists(Root() + QStringLiteral("/user/setup/ready.json"))) {
@@ -287,8 +290,9 @@ class SettingsDialog final : public QDialog {
             DesktopImport::ApplyPendingSettings();
         }
         QProgressDialog progress(QStringLiteral("Preparing…"), QString{}, 0, 0, this);
-        progress.setWindowTitle(dark ? QStringLiteral("Creating Dark Link")
-                                     : QStringLiteral("Creating Adult Link"));
+        progress.setWindowTitle(twilight ? QStringLiteral("Creating Twilight Princess Link")
+                                : dark   ? QStringLiteral("Creating Dark Link")
+                                         : QStringLiteral("Creating Adult Link"));
         progress.setWindowModality(Qt::WindowModal);
         progress.setCancelButton(nullptr);
         progress.show();
@@ -299,7 +303,8 @@ class SettingsDialog final : public QDialog {
 #elif defined(Q_OS_WIN)
         const QString python = Root() + QStringLiteral("/runtime/python/python.exe");
 #else
-        const QString python = QStandardPaths::findExecutable(QStringLiteral("python3"));
+        const QString python =
+            GameFolder::PackageRoot() + QStringLiteral("/runtime/tp-python/python/bin/python3");
 #endif
         QProcess process;
         QEventLoop loop;
@@ -323,13 +328,17 @@ class SettingsDialog final : public QDialog {
         QStringList args{QStringLiteral("-E"),
                          QStringLiteral("-s"),
                          QStringLiteral("-B"),
-                         GameFolder::PackageRoot() + QStringLiteral("/tools/mm3d/mod_import/generate.py"),
+                         GameFolder::PackageRoot() +
+                             (twilight ? QStringLiteral("/tools/mm3d/generate_tp_mod.py")
+                                       : QStringLiteral("/tools/mm3d/mod_import/generate.py")),
                          QStringLiteral("--root"),
                          Root(),
                          QStringLiteral("--mm-rom"),
                          mm,
-                         QStringLiteral("--oot-rom"),
+                         twilight ? QStringLiteral("--tp-rom") : QStringLiteral("--oot-rom"),
                          oot};
+        if (twilight)
+            args << QStringLiteral("--package") << GameFolder::PackageRoot();
         if (dark)
             args << QStringLiteral("--dark");
         process.start(python, args);
@@ -344,13 +353,16 @@ class SettingsDialog final : public QDialog {
             progress.setLabelText(QStringLiteral("Importing matching textures…"));
             QApplication::processEvents();
             const auto stage = result.value(QStringLiteral("stage")).toString();
-            const auto root = Root(), pack = prefs.value(QStringLiteral("oot_textures")).toString();
+            const auto root = Root(), pack = prefs
+                                                 .value(twilight ? QStringLiteral("tp_textures")
+                                                                 : QStringLiteral("oot_textures"))
+                                                 .toString();
             QFutureWatcher<QString> watcher;
             QEventLoop finishing;
             connect(&watcher, &QFutureWatcher<QString>::finished, &finishing, &QEventLoop::quit);
-            watcher.setFuture(QtConcurrent::run([stage, root, pack, dark] {
+            watcher.setFuture(QtConcurrent::run([stage, root, pack, dark, twilight] {
                 try {
-                    DesktopImport::Finalize(stage, root, pack, dark);
+                    DesktopImport::Finalize(stage, root, pack, dark, twilight);
                     return QString{};
                 } catch (const std::exception& error) {
                     return QString::fromUtf8(error.what());
@@ -360,8 +372,9 @@ class SettingsDialog final : public QDialog {
             const auto failure = watcher.result();
             if (!failure.isEmpty())
                 throw std::runtime_error(failure.toStdString());
-            Set(QStringLiteral("adult_link_model"), !dark);
-            Set(QStringLiteral("dark_link_model"), dark);
+            Set(QStringLiteral("twilight_link_model"), twilight);
+            Set(QStringLiteral("adult_link_model"), !dark && !twilight);
+            Set(QStringLiteral("dark_link_model"), dark && !twilight);
             progress.close();
             QMessageBox::information(
                 this, QStringLiteral("Mod ready"),
@@ -377,13 +390,15 @@ class SettingsDialog final : public QDialog {
     }
     void Mods() {
         const auto data = Presentation();
-        int model = data.value(QStringLiteral("dark_link_model")).toBool()    ? 2
-                    : data.value(QStringLiteral("adult_link_model")).toBool() ? 1
-                                                                              : 0;
+        int model = data.value(QStringLiteral("twilight_link_model")).toBool() ? 3
+                    : data.value(QStringLiteral("dark_link_model")).toBool()   ? 2
+                    : data.value(QStringLiteral("adult_link_model")).toBool()  ? 1
+                                                                               : 0;
         Choice(QStringLiteral("Player model"),
                {QStringLiteral("Original Link"), QStringLiteral("Adult Link"),
-                QStringLiteral("Dark Link")},
+                QStringLiteral("Dark Link"), QStringLiteral("Twilight Princess Link")},
                model, [this](int index) {
+                   Set(QStringLiteral("twilight_link_model"), index == 3);
                    Set(QStringLiteral("adult_link_model"), index == 1);
                    Set(QStringLiteral("dark_link_model"), index == 2);
                    Render();
@@ -396,6 +411,48 @@ class SettingsDialog final : public QDialog {
                    data.value(QStringLiteral("adult_link_tunic_color")).toInt(),
                    [](int v) { Set(QStringLiteral("adult_link_tunic_color"), v); });
             Bool(QStringLiteral("Master Sword"), QStringLiteral("adult_link_master_sword"));
+        }
+        if (model == 3) {
+            Bool(QStringLiteral("Master Sword"), QStringLiteral("twilight_link_master_sword"),
+                 true);
+            Note(box, QStringLiteral("TP Master Sword and sheath. Turn off to keep your MM3D "
+                                     "sword. Appearance only; damage is unchanged."));
+            Heading(box, QStringLiteral("Twilight Princess setup"));
+            const auto prefs = Read(PrefsPath());
+            Note(
+                box,
+                QStringLiteral("TP GameCube ROM: ") +
+                    prefs.value(QStringLiteral("tp_rom")).toString(QStringLiteral("Not selected")));
+            Button(box, QStringLiteral("Select your Twilight Princess ROM"), [this] {
+                const auto file = QFileDialog::getOpenFileName(
+                    this, QStringLiteral("Select your TP GameCube ROM"), {},
+                    QStringLiteral("GameCube disc images (*.iso *.gcm *.rvz)"));
+                if (!file.isEmpty()) {
+                    SetPreference(QStringLiteral("tp_rom"), file);
+                    Render();
+                }
+            })->setEnabled(!running);
+            Note(box, QStringLiteral("TP textures: ") +
+                          prefs.value(QStringLiteral("tp_textures"))
+                              .toString(QStringLiteral("Original ROM textures")));
+            Button(box, QStringLiteral("Choose your TP texture pack"), [this] {
+                const auto folder = QFileDialog::getExistingDirectory(
+                    this, QStringLiteral("Choose your TP texture folder"));
+                if (!folder.isEmpty()) {
+                    SetPreference(QStringLiteral("tp_textures"), folder);
+                    Render();
+                }
+            })->setEnabled(!running);
+            Button(box, QStringLiteral("Generate Twilight Princess Link mod"),
+                   [this] { Generate(false, true); })
+                ->setEnabled(!running && !GameFolder::Rom().isEmpty() &&
+                             !prefs.value(QStringLiteral("tp_rom")).toString().isEmpty());
+            Note(box, QStringLiteral(
+                          "Includes TP action voices. Searches the selected texture folder and all "
+                          "subfolders. Supports PNG and ASTC DDS replacements. Cap animation, "
+                          "facial expressions, and mask fitting remain unfinished. Generate before "
+                          "gameplay and restart the game after changing models."));
+            return;
         }
         Note(box, QStringLiteral(
                       "Imported models include adult voices. Restart the game after changing "
@@ -461,8 +518,8 @@ class SettingsDialog final : public QDialog {
                    Render();
                });
         Number(QStringLiteral("Field of View"), QStringLiteral("game_camera_fov"), 65, 45, 70, .5);
-        Number(QStringLiteral("Cutscene Field of View"), QStringLiteral("cutscene_camera_fov"),
-               49, 45, 70, .5);
+        Number(QStringLiteral("Cutscene Field of View"), QStringLiteral("cutscene_camera_fov"), 49,
+               45, 70, .5);
         Number(QStringLiteral("Camera Distance (x)"), QStringLiteral("camera_distance"), 1, .5, 3,
                .05);
         Button(box, QStringLiteral("Reset current camera"), [] {
@@ -581,14 +638,14 @@ class SettingsDialog final : public QDialog {
         auto* content = new QWidget;
         content->setObjectName(QStringLiteral("Panel"));
         auto* columns = new QHBoxLayout(content);
-        columns->setContentsMargins(12,12,12,12);
+        columns->setContentsMargins(12, 12, 12, 12);
         auto* form = new QWidget(content);
-        form->setMaximumWidth(fontMetrics().height()*24);
-        form->setSizePolicy(QSizePolicy::Preferred,QSizePolicy::Preferred);
-        columns->addWidget(form,1,Qt::AlignTop);
+        form->setMaximumWidth(fontMetrics().height() * 24);
+        form->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+        columns->addWidget(form, 1, Qt::AlignTop);
         columns->addStretch(0);
         box = new QVBoxLayout(form);
-        box->setContentsMargins(0,0,0,0);
+        box->setContentsMargins(0, 0, 0, 0);
         box->setSpacing(14);
         Heading(box, page);
         if (page == QStringLiteral("General")) {
@@ -603,8 +660,7 @@ class SettingsDialog final : public QDialog {
                     Render();
                 }
             })->setEnabled(!running);
-            Number(QStringLiteral("Menu size"), QStringLiteral("desktop_menu_text_size"), 5, 0,
-                   40);
+            Number(QStringLiteral("Menu size"), QStringLiteral("desktop_menu_text_size"), 5, 0, 40);
             Note(box,
                  QStringLiteral(
                      "Settings save as you change them and are shared with the in-game menu."));

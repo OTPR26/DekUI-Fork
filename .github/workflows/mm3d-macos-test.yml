@@ -34,6 +34,7 @@ jobs:
           path: .ccache-macos
           key: macos-arm64-ccache-v1-${{ github.sha }}
           restore-keys: macos-arm64-ccache-v1-
+      - uses: dtolnay/rust-toolchain@stable
       - name: Configure, build, test and package
         run: |
           set -o pipefail

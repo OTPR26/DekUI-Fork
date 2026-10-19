@@ -11,7 +11,8 @@ void ChooseTextures(QWidget* parent, bool clear = false);
 bool CaptureBinding(QWidget* parent, unsigned index, bool clear = false);
 void RefreshBindings();
 void EnsureController();
-void Finalize(const QString& stage, const QString& root, const QString& pack, bool dark);
+void Finalize(const QString& stage, const QString& root, const QString& pack, bool dark,
+              bool twilight = false);
 void BindingControls(QVBoxLayout* layout, QWidget* parent);
 void VolumeControl(QVBoxLayout* layout, bool running);
 } // namespace MM3D::DesktopImport

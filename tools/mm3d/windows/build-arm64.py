@@ -34,6 +34,7 @@ for directory in runtime_dirs:
         shutil.copy2(dll, build / 'bundle' / dll.name)
 runtime = build / 'python-embed-arm64.zip'
 run('python', 'tools/mm3d/windows_python.py', str(runtime), '--architecture', 'arm64')
+run('python', 'tools/mm3d/build_desktop_tp_runtime.py')
 version = subprocess.check_output(['python', 'tools/mm3d/release_version.py'], text=True).strip()
 package = f'artifacts/DekUI-Fork-{version}-Windows-arm64.zip'
 run('python', 'tools/mm3d/package_windows.py', str(build / 'bundle'), package,

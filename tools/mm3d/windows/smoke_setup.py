@@ -19,6 +19,9 @@ def check(package):
         env['PATH'] = str(Path(os.environ['SystemRoot']) / 'System32')
         env['PYTHONHOME'] = str(root / 'invalid-system-python')
         env['PYTHONPATH'] = str(root / 'invalid-system-modules')
+        payload = root
+        subprocess.run([str(python), '-E', '-s', '-B', str(payload / 'tools/mm3d/generate_tp_mod.py'),
+                        '--package', str(payload), '--probe-runtime'], cwd=tmp, env=env, check=True, timeout=60)
         subprocess.run([str(python), '-B', '-c',
                         'import sys, graphical_setup, hashlib, tempfile, json, shutil, zipfile; '
                         'assert sys.flags.isolated and sys.flags.ignore_environment; '

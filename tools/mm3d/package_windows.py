@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Package a clean Windows bundle with allowlisted setup files, never local user data."""
+from bundle_tp_runtime import copy_tp_runtime
 from bundle_restoration import copy_restoration, copy_desktop_hud
 from windows_python import install as install_python
 import argparse
@@ -34,6 +35,7 @@ def package(bundle, output, python_archive, architecture='x64'):
         scripts = root / 'tools/mm3d'; scripts.mkdir(parents=True)
         for name in SCRIPTS:
             shutil.copy2(ROOT / 'tools/mm3d' / name, scripts / name)
+        copy_tp_runtime(ROOT, root)
         resources = root / 'resources/mm3d'; resources.mkdir(parents=True)
         for name in ('supported-rom.json', 'setup-fingerprints.json', 'layout-migration.json'):
             shutil.copy2(ROOT / 'resources/mm3d' / name, resources / name)

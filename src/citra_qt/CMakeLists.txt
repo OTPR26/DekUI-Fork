@@ -370,6 +370,8 @@ if (CITRA_USE_PRECOMPILED_HEADERS)
 endif()
 
 if(ENABLE_MM3D_GAME_FOLDER AND ENABLE_MM3D_PRESENTATION)
+    target_sources(citra_qt PRIVATE ../../externals/tp_texture_decoder/astc.cpp)
+    target_include_directories(citra_qt PRIVATE "${PROJECT_SOURCE_DIR}/externals/tp_texture_decoder")
     add_executable(mm3d_desktop_import_tests dekui_import_tests.cpp)
     target_link_libraries(mm3d_desktop_import_tests PRIVATE citra_qt Qt6::Widgets Boost::boost)
     if(APPLE)

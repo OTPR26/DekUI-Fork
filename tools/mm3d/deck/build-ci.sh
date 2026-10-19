@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 python3 -m unittest discover -s tools/mm3d -p 'test_*.py'
+python3 tools/mm3d/build_desktop_tp_runtime.py
 cmake -S . -B build-deck -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
@@ -20,3 +21,5 @@ test "${#images[@]}" -eq 1
 release_version=$(python3 tools/mm3d/release_version.py)
 python3 tools/mm3d/package_deck.py "${images[0]}" "artifacts/DekUI-Fork-${release_version}-Linux-x86_64.tar.gz"
 df -h .
+
+python3 tools/mm3d/linux/smoke_setup.py "artifacts/DekUI-Fork-${release_version}-Linux-x86_64.tar.gz"

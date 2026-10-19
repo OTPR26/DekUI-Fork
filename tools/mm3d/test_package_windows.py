@@ -4,6 +4,7 @@ import unittest
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
+from test_bundle_tp_runtime import fixture_runtime
 import package_windows
 import windows_python
 from test_windows_python import fixture_archive
@@ -41,6 +42,7 @@ class WindowsPackageTest(unittest.TestCase):
             shutil.copy2(package_windows.ROOT / 'resources/mm3d/layout-migration.json', repo / 'resources/mm3d/layout-migration.json')
             presentation = (package_windows.ROOT / 'resources/mm3d/defaults/presentation.json').read_bytes()
             (repo / 'resources/mm3d/defaults/presentation.json').write_bytes(presentation)
+            fixture_runtime(repo)
             output = root / 'dekui.zip'
             python_archive = root / 'python.zip'
             digest = fixture_archive(python_archive)

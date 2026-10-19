@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Allowlisted Linux package; never copies local user data or installed mod directories."""
+from bundle_tp_runtime import copy_tp_runtime
 from bundle_restoration import copy_restoration, copy_desktop_hud
 import argparse
 from layout_migration import policy as verify_layout_policy
@@ -26,6 +27,7 @@ def package(appimage, output):
             shutil.copy2(ROOT/'resources/mm3d/release-docs'/name, root/name)
         scripts=root/'tools/mm3d';scripts.mkdir(parents=True)
         for name in SCRIPTS: shutil.copy2(ROOT/'tools/mm3d'/name,scripts/name)
+        copy_tp_runtime(ROOT, root)
         for name in ('supported-rom.json','setup-fingerprints.json','layout-migration.json'):
             target=root/'resources/mm3d'/name;target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(ROOT/'resources/mm3d'/name,target)

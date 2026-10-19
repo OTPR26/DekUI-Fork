@@ -4,6 +4,7 @@ export CCACHE_DIR="$PWD/.ccache-windows"
 export CCACHE_MAXSIZE=2G
 export CCACHE_COMPILERCHECK=content
 python -m unittest discover -s tools/mm3d -p 'test_*.py'
+python tools/mm3d/build_desktop_tp_runtime.py
 cmake -S . -B build-windows -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
   -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
