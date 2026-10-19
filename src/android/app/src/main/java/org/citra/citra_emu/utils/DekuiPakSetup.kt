@@ -59,6 +59,7 @@ object DekuiPakSetup {
             val result = JSONObject(Python.getInstance().getModule("zobj_import.android")
                 .callAttr("import_model", DekuiStorage.root(c).absolutePath,
                     DekuiStorage.game(c).absolutePath, selected.absolutePath, Bridge(progress)).toString())
+            check(!result.has("error")) { result.getString("error") }
             DekuiPresentationStore(c).update(mapOf("pak_link_model" to true,
                 "twilight_link_model" to false, "adult_link_model" to false, "dark_link_model" to false))
             return "Imported ${result.getString("name")}. Start the game to use it."

@@ -45,4 +45,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as error:
+        from zobj_import.errors import message
+
+        print(json.dumps({"error": message(error)}), flush=True)
+        sys.exit(1)

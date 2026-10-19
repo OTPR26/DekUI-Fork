@@ -432,6 +432,8 @@ class SettingsDialog final : public QDialog {
                 if (line.contains(QStringLiteral("progress")))
                     progress.setLabelText(line.value(QStringLiteral("progress")).toString());
                 if (line.value(QStringLiteral("installed")).toBool()) result = line;
+                if (line.contains(QStringLiteral("error")))
+                    failure = line.value(QStringLiteral("error")).toString();
             }
         };
         connect(&process, &QProcess::readyReadStandardOutput, this, readOutput);

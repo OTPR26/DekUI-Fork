@@ -43,6 +43,19 @@ class ZobjReaderTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "human"):
             skeleton(d)
 
+    def test_mm_ascii_human_tag_keeps_skeleton_validation(self):
+        data = human()
+        data[0x500B] = ord("h")
+        self.assertEqual(skeleton(data), skeleton(human()))
+        data[0x5500 + 20 * 12 + 6] = 0
+        with self.assertRaises(ValueError):
+            skeleton(data)
+
+    def test_truncated_header_is_a_validation_error(self):
+        for size in (0, 0x500A, 0x500B, 0x500C, 0x5017):
+            with self.subTest(size=size), self.assertRaises(ValueError):
+                skeleton(human()[:size])
+
     def test_truncated_skeleton_rejected(self):
         d = human()
         struct.pack_into(">I", d, 0x5400 + 4 * 20, 0x06005FFF)

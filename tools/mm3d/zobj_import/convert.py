@@ -255,7 +255,7 @@ def convert(mm_rom, model, output, entry=None):
             continue  # Preserve native equipment.
         for tri in interpreter.run_limb(limbs[limb]["dl"], slots.index(limb)):
             total += 1
-            require(total <= 20000, "Prototype supports at most 20,000 triangles")
+            require(total <= 20000, "This model exceeds the 20,000-triangle import limit")
             tile = tri.tile
             state = tuple((k, getattr(tile, k)) for k in tile.__dataclass_fields__)
             packet = packets[(limb, state)]

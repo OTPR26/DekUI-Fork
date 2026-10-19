@@ -129,10 +129,12 @@ def select(path, entry=None):
 
 def skeleton(data):
     require(
-        len(data) <= LIMIT and data[0x5000:0x500B] == b"MODLOADER64",
+        0x5018 <= len(data) <= LIMIT and data[0x5000:0x500B] == b"MODLOADER64",
         "Unsupported .zobj header",
     )
-    require(data[0x500B] in (0, 1, 4), "Prototype supports human/OoT Link rigs only")
+    # Some MM human exports use ASCII 'h' rather than a numeric form ID.
+    require(data[0x500B] in (0, 1, 4, ord("h")),
+            "This model uses an unsupported rig. Choose a human Link player model.")
     u32 = lambda at: struct.unpack_from(">I", data, at)[0]
 
     def offset(pointer, size):
@@ -144,7 +146,7 @@ def skeleton(data):
     def parse(at):
         require(
             at + 9 <= len(data) and data[at + 4] == 21,
-            "Prototype requires a 21-limb human Link skeleton",
+            "Only 21-limb human Link skeletons are supported",
         )
         array = offset(u32(at), 21 * 4)
         limbs = []
