@@ -75,10 +75,19 @@ int main() {
             poller.Stop();
 
             Check(candidate.Get("engine","")=="sdl"&&candidate.Get("api","")=="controller","recognized gamepad");
-            const auto buttons=[&](const Common::ParamPackage& p,int i){return state.GetSDLControllerButtonBind(p,static_cast<Settings::NativeButton::Values>(i));};
+            const auto buttons=[&](const Common::ParamPackage& p,int i){return state.GetSDLControllerButtonBind(p,static_cast<Settings::NativeButton::Values>(A::PhysicalButton(i)));};
             const auto analogs=[&](const Common::ParamPackage& p,int i){return state.GetSDLControllerAnalogBindByGUID(p.Get("guid",""),p.Get("port",0),static_cast<Settings::NativeAnalog::Values>(i));};
             auto mapped=original;Check(A::Map(mapped,candidate,buttons,analogs),"full auto map succeeds");
             Check(A::Managed(mapped,buttons,analogs),"automatic binding identity recognized");
+            const auto legacy_buttons=[&](const auto& p,int i) {
+                return state.GetSDLControllerButtonBind(p,static_cast<Settings::NativeButton::Values>(i));
+            };
+            auto legacy=original;Check(A::Map(legacy,candidate,legacy_buttons,analogs),"original controller template created");
+            Check(A::Managed(legacy,buttons,analogs),"original automatic template recognized for migration");
+            auto migrated=A::Select(legacy,{candidate},original.buttons,original.analogs,buttons,analogs);
+            Check(migrated&&A::SameBindings(migrated->buttons,mapped.buttons),"original automatic shoulders migrate to gameplay layout");
+            legacy.name="Controller (custom)";
+            Check(!A::Select(legacy,{candidate},original.buttons,original.analogs,buttons,analogs),"explicit original-layout custom mappings remain unchanged");
             auto explicitly_custom=mapped;explicitly_custom.name="Controller (custom)";
             auto active_other=candidate;active_other.Set("guid","other");active_other.Set("active",1);
             Check(!A::Select(explicitly_custom,{active_other},original.buttons,original.analogs,buttons,analogs),"manual mapping equal to template must remain protected");
@@ -107,10 +116,12 @@ int main() {
             const auto button=[&](int i){return Common::ParamPackage(mapped.buttons[i]);};
             Check(button(Settings::NativeButton::A).Get("button",-1)==SDL_CONTROLLER_BUTTON_B,"A maps to right face");
             Check(button(Settings::NativeButton::B).Get("button",-1)==SDL_CONTROLLER_BUTTON_A,"B maps to bottom face");
-            Check(button(Settings::NativeButton::Start).Get("button",-1)==SDL_CONTROLLER_BUTTON_START,"Start mapping");
-            Check(button(Settings::NativeButton::Select).Get("button",-1)==SDL_CONTROLLER_BUTTON_BACK,"Select mapping");
-            Check(button(Settings::NativeButton::ZR).Get("axis",-1)==SDL_CONTROLLER_AXIS_TRIGGERRIGHT,"ZR trigger");
-            Check(button(Settings::NativeButton::ZL).Get("axis",-1)==SDL_CONTROLLER_AXIS_TRIGGERLEFT,"ZL trigger");
+            Check(button(Settings::NativeButton::Start).Get("button",-1)==SDL_CONTROLLER_BUTTON_BACK,"Start uses the left menu button");
+            Check(button(Settings::NativeButton::Select).Get("button",-1)==SDL_CONTROLLER_BUTTON_START,"Select uses the right menu button");
+            Check(button(Settings::NativeButton::ZR).Get("button",-1)==SDL_CONTROLLER_BUTTON_RIGHTSHOULDER,"R bumper uses item II");
+            Check(button(Settings::NativeButton::R).Get("axis",-1)==SDL_CONTROLLER_AXIS_TRIGGERRIGHT,"ZR trigger shields");
+            Check(button(Settings::NativeButton::ZL).Get("button",-1)==SDL_CONTROLLER_BUTTON_LEFTSHOULDER,"L bumper uses item I");
+            Check(button(Settings::NativeButton::L).Get("axis",-1)==SDL_CONTROLLER_AXIS_TRIGGERLEFT,"ZL trigger targets");
             Check(Common::ParamPackage(mapped.analogs[0]).Get("axis_x",-1)==SDL_CONTROLLER_AXIS_LEFTX,"movement stick");
             Check(Common::ParamPackage(mapped.analogs[1]).Get("axis_x",-1)==SDL_CONTROLLER_AXIS_RIGHTX,"camera stick");
             Check(mapped.buttons[Settings::NativeButton::Power]==original.buttons[Settings::NativeButton::Power],"unmapped emulator keys retained");

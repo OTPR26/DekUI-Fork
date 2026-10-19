@@ -34,6 +34,7 @@
 #include "common/texture.h"
 #include "input_common/main.h"
 #include "mm3d/android_menu.h"
+#include "mm3d/controller_autoconfig.h"
 #include "mm3d/game_folder.h"
 #include "mm3d/player_settings.h"
 #include "video_core/rasterizer_cache/texture_codec.h"
@@ -290,14 +291,8 @@ bool CaptureBinding(QWidget* parent, unsigned index, bool clear) {
 }
 void MapController(Common::ParamPackage controller) {
     for (int i = 0; i < Settings::NativeButton::NumButtons; ++i) {
-        const int target = i == Settings::NativeButton::L        ? Settings::NativeButton::ZL
-                           : i == Settings::NativeButton::R      ? Settings::NativeButton::ZR
-                           : i == Settings::NativeButton::ZL     ? Settings::NativeButton::L
-                           : i == Settings::NativeButton::ZR     ? Settings::NativeButton::R
-                           : i == Settings::NativeButton::Start  ? Settings::NativeButton::Select
-                           : i == Settings::NativeButton::Select ? Settings::NativeButton::Start
-                                                                 : i;
-        auto mapped = InputCommon::GetControllerButtonBinds(controller, target);
+        auto mapped = InputCommon::GetControllerButtonBinds(
+            controller, ControllerAutoConfig::PhysicalButton(i));
         if (mapped.Has("engine"))
             SaveBinding(i, QString::fromStdString(mapped.Serialize()));
     }
@@ -348,10 +343,10 @@ void BindingControls(QVBoxLayout* box, QWidget* parent) {
                              QStringLiteral("X"),           QStringLiteral("Y"),
                              QStringLiteral("D-pad up"),    QStringLiteral("D-pad down"),
                              QStringLiteral("D-pad left"),  QStringLiteral("D-pad right"),
-                             QStringLiteral("L — target"),  QStringLiteral("R — shield"),
+                             QStringLiteral("ZL / L2: targeting"),  QStringLiteral("ZR / R2: shield"),
                              QStringLiteral("Start"),       QStringLiteral("Select"),
                              QStringLiteral("Debug"),       QStringLiteral("GPIO14"),
-                             QStringLiteral("ZL — item I"), QStringLiteral("ZR — item II"),
+                             QStringLiteral("L / L1: item I"), QStringLiteral("R / R1: item II"),
                              QStringLiteral("Home"),        QStringLiteral("Power")};
     for (int i = 0; i < Settings::NativeButton::NumButtons; ++i) {
         auto* b =

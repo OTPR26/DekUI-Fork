@@ -7,6 +7,14 @@
 #include "common/param_package.h"
 
 namespace MM3D::ControllerAutoConfig {
+// Translate gameplay actions to physical controller positions. Keep native
+// 3DS input IDs internal; the controls UI names the physical shoulder buttons.
+inline int PhysicalButton(int native_button) {
+    using namespace Settings::NativeButton;
+    return native_button==L?ZL:native_button==R?ZR:native_button==ZL?L:
+        native_button==ZR?R:native_button==Start?Settings::NativeButton::Select:
+        native_button==Settings::NativeButton::Select?Start:native_button;
+}
 template<class Bindings> bool SameBindings(const Bindings& a,const Bindings& b) {
     for(unsigned i=0;i<a.size();++i) {
         if(a[i]==b[i])continue;
@@ -50,9 +58,15 @@ template<class Buttons,class Analogs> bool Managed(const Settings::InputProfile&
     if(p.name!="Controller (automatic)"||p.maptype!=Settings::InputMappingType::GuidPort)return false;
     auto candidate=Common::ParamPackage(p.buttons[Settings::NativeButton::A]);
     auto expected=p;
-    // Reconstruct what we originally generated, including the face layout.
-    return Map(expected,candidate,buttons,analogs)&&SameBindings(p.buttons,expected.buttons)&&
-        SameBindings(p.analogs,expected.analogs);
+    // Recognize both the gameplay layout and the original native-3DS template.
+    // Only a complete automatic template is eligible for migration.
+    if(Map(expected,candidate,buttons,analogs)&&SameBindings(p.buttons,expected.buttons)&&
+       SameBindings(p.analogs,expected.analogs))return true;
+    const auto legacy_buttons=[&](const auto& device,int i) {
+        return buttons(device,PhysicalButton(i));
+    };
+    return Map(expected,candidate,legacy_buttons,analogs)&&
+        SameBindings(p.buttons,expected.buttons)&&SameBindings(p.analogs,expected.analogs);
 }
 template<class Buttons,class Analogs> std::optional<Settings::InputProfile> Select(
     const Settings::InputProfile& current,std::vector<Common::ParamPackage> controllers,

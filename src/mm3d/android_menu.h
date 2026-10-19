@@ -23,7 +23,7 @@ inline std::mutex mutex;
 inline State state;
 inline State Snapshot() { std::scoped_lock lock{mutex}; return state; }
 inline constexpr const char* BindingLabels[]{"A","B","X","Y","Select","Start","Home",
-    "L","R","ZL","ZR","D-pad up","D-pad down","D-pad left","D-pad right",
+    "ZL / L2: targeting","ZR / R2: shield","L / L1: item I","R / R1: item II","D-pad up","D-pad down","D-pad left","D-pad right",
     "Left stick vertical","Left stick horizontal","Right stick vertical","Right stick horizontal",
     "D-pad vertical axis","D-pad horizontal axis"};
 }

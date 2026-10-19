@@ -1301,9 +1301,7 @@ void GMainWindow::ConnectWidgetEvents() {
             }
             using namespace MM3D::ControllerAutoConfig;
             const auto button_binds=[](const Common::ParamPackage& device,int i){
-                using namespace Settings::NativeButton;
-                const int mapped=i==L?ZL:i==R?ZR:i==ZL?L:i==ZR?R:i==Start?Settings::NativeButton::Select:i==Settings::NativeButton::Select?Start:i;
-                return InputCommon::GetControllerButtonBinds(device,mapped);
+                return InputCommon::GetControllerButtonBinds(device,PhysicalButton(i));
             };
             const auto& current=Settings::values.current_input_profile;
             auto mapped=Select(current,InputCommon::GetConnectedControllers(),buttons,analogs,
