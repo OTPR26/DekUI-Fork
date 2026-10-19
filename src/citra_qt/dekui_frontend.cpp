@@ -836,7 +836,7 @@ class SettingsDialog final : public QDialog {
             Note(
                 box,
                 QStringLiteral(
-                    "DekUI Fork uses DekUI, Azahar, and Project Restoration. This is an "
+                    "Majora ReMasked uses DekUI, Azahar, and Project Restoration. This is an "
                     "emulator-based fork, not a recompilation. See bundled credits and licenses."));
         box->addStretch();
         // A setting can rebuild its own page from a widget signal. setWidget()
@@ -854,7 +854,7 @@ public:
     SettingsDialog(QWidget* parent, bool active, bool open_mods = false)
         : QDialog(parent), running(active) {
         setProperty("dekuiMenu", true);
-        setWindowTitle(QStringLiteral("DekUI / Settings"));
+        setWindowTitle(QStringLiteral("Majora ReMasked / Settings"));
         const int text_size =
             16 + int(Presentation().value(QStringLiteral("desktop_menu_text_size")).toInt(5) * .3);
         setStyleSheet(QString::fromUtf8(Theme) +
@@ -864,7 +864,7 @@ public:
         resize(parent ? parent->size() : QSize(1100, 720));
         auto* root = new QVBoxLayout(this);
         auto* header = new QHBoxLayout;
-        auto* title = new QLabel(QStringLiteral("DekUI / Settings"));
+        auto* title = new QLabel(QStringLiteral("Majora ReMasked / Settings"));
         title->setObjectName(QStringLiteral("Heading"));
         header->addWidget(title, 1);
         auto* back = new QPushButton(QStringLiteral("Back"));
@@ -910,7 +910,7 @@ protected:
         p.setFont(font);
         p.setPen(QColor(QStringLiteral("#9993a5")));
         p.drawText(QRect(28, height() - 36, width() - 56, 24), Qt::AlignLeft | Qt::AlignVCenter,
-                   QStringLiteral("DEKUI  ·  v%1").arg(QString::fromUtf8(Common::g_build_version)));
+                   QStringLiteral("MAJORA REMASKED  ·  v%1").arg(QString::fromUtf8(Common::g_build_version)));
     }
 
 public:
@@ -918,21 +918,21 @@ public:
         : QDialog(parent), image(QStringLiteral(":/dekui/startup.png")) {
         setProperty("dekuiMenu", true);
         setObjectName(QStringLiteral("Startup"));
-        setWindowTitle(QStringLiteral("DekUI Fork"));
+        setWindowTitle(QStringLiteral("Majora ReMasked"));
         setStyleSheet(QString::fromUtf8(Theme));
         resize(1200, 720);
         auto* all = new QHBoxLayout(this);
         all->setContentsMargins(36, 30, 40, 32);
         all->addStretch(3);
         auto* menu = new QVBoxLayout;
-        auto* brand = new QLabel(QStringLiteral("DekUI Fork"));
+        auto* brand = new QLabel(QStringLiteral("A DekUI Fork"));
         brand->setAlignment(Qt::AlignRight);
-        brand->setStyleSheet(QStringLiteral("color:#b97df2;font-weight:bold;font-size:24px;"));
-        menu->addWidget(brand);
-        auto* title = new QLabel(QStringLiteral("Majora’s Mask 3D"));
+        brand->setStyleSheet(QStringLiteral("color:#b97df2;font-style:italic;font-size:24px;"));
+        auto* title = new QLabel(QStringLiteral("Majora ReMasked"));
         title->setAlignment(Qt::AlignRight);
         title->setStyleSheet(QStringLiteral("font-weight:bold;font-size:44px;"));
         menu->addWidget(title);
+        menu->addWidget(brand);
         menu->addStretch();
         auto* start =
             Button(menu,
@@ -954,9 +954,9 @@ public:
         Button(menu, QStringLiteral("Settings"), [this] { SettingsDialog(this, false).exec(); });
         Button(menu, QStringLiteral("About"), [this] {
             QMessageBox::information(
-                this, QStringLiteral("DekUI Fork"),
+                this, QStringLiteral("Majora ReMasked"),
                 QStringLiteral(
-                    "DekUI Fork — Majora’s Mask 3D\nBuilt on DekUI, Azahar and Project "
+                    "Majora ReMasked\nA DekUI Fork\n\nMajora’s Mask 3D\nBuilt on DekUI, Azahar and Project "
                     "Restoration.\nYour game and optional OoT3D mod inputs are supplied by you."));
         });
         Button(menu, QStringLiteral("Quit"), [this] { reject(); });

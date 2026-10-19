@@ -36,10 +36,10 @@ runtime = build / 'python-embed-arm64.zip'
 run('python', 'tools/mm3d/windows_python.py', str(runtime), '--architecture', 'arm64')
 run('python', 'tools/mm3d/build_desktop_tp_runtime.py')
 version = subprocess.check_output(['python', 'tools/mm3d/release_version.py'], text=True).strip()
-package = f'artifacts/DekUI-Fork-{version}-Windows-arm64.zip'
+package = f'artifacts/Majora-ReMasked-{version}-Windows-arm64.zip'
 run('python', 'tools/mm3d/package_windows.py', str(build / 'bundle'), package,
     '--python-archive', str(runtime), '--architecture', 'arm64')
 run('python', 'tools/mm3d/check_binary_arch.py', package, 'arm64')
 run('python', 'tools/mm3d/windows/smoke_setup.py', package)
 run('python', 'tools/mm3d/package_source.py',
-    f'artifacts/DekUI-Fork-{version}-Windows-arm64-Source.tar.gz')
+    f'artifacts/Majora-ReMasked-{version}-Windows-arm64-Source.tar.gz')

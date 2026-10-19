@@ -17,16 +17,16 @@ inline QString Prepare() {
     if(!QFileInfo::exists(helper))return QStringLiteral("Setup files are missing. Extract the entire Dekui download and keep the app beside its tools and resources folders.");
 #ifdef Q_OS_WIN
     const auto python=Root()+QStringLiteral("/runtime/python/python.exe");
-    if(!QFileInfo(python).isFile())return QStringLiteral("The bundled setup runtime is missing. Extract the complete DekUI Fork ZIP again, keeping its runtime folder beside Dekui.exe.");
+    if(!QFileInfo(python).isFile())return QStringLiteral("The bundled setup runtime is missing. Extract the complete Majora ReMasked ZIP again, keeping its runtime folder beside Majora-ReMasked.exe.");
 #elif defined(Q_OS_MACOS)
     const auto python=QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(QStringLiteral("../Resources/runtime/python/bin/python3"));
-    if(!QFileInfo(python).isExecutable())return QStringLiteral("The bundled setup runtime is missing. Extract the complete DekUI Fork ZIP again; do not remove files inside DekUI Fork.app.");
+    if(!QFileInfo(python).isExecutable())return QStringLiteral("The bundled setup runtime is missing. Extract the complete Majora ReMasked ZIP again; do not remove files inside Majora ReMasked.app.");
 #else
     const auto python=QStandardPaths::findExecutable(QStringLiteral("python3"));
     if(python.isEmpty())return QStringLiteral("Python 3.9 or newer is required for setup and resource checks.");
 #endif
     QProgressDialog progress(QStringLiteral("Preparing your game and checking installed resources…"),QString{},0,0);
-    progress.setWindowTitle(QStringLiteral("DekUI Fork"));progress.setCancelButton(nullptr);progress.setMinimumDuration(0);progress.setWindowModality(Qt::ApplicationModal);progress.show();
+    progress.setWindowTitle(QStringLiteral("Majora ReMasked"));progress.setCancelButton(nullptr);progress.setMinimumDuration(0);progress.setWindowModality(Qt::ApplicationModal);progress.show();
     QProcess process;
     QEventLoop loop;
     QString error;

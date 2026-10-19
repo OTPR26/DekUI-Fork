@@ -17,7 +17,7 @@ inline QString LegacyRoot() {
     // AppImage mounts its executable read-only; use the folder holding the image.
     const auto appimage = qEnvironmentVariable("APPIMAGE");
 #ifdef Q_OS_MACOS
-    // The executable is inside DekUI Fork.app/Contents/MacOS; portable data and
+    // The executable is inside Majora ReMasked.app/Contents/MacOS; portable data and
     // the user's game belong beside the app, outside its signed contents.
     QDir bundle(QCoreApplication::applicationDirPath());
     if (bundle.dirName() == QStringLiteral("MacOS") && bundle.cdUp() &&
@@ -37,6 +37,7 @@ inline QString PackageRoot() {
 }
 inline QString Root() {
 #ifdef Q_OS_MACOS
+    // Keep the established data directory across display-name changes.
     return QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)+QStringLiteral("/DekUI Fork");
 #else
     return LegacyRoot();
@@ -88,7 +89,7 @@ inline QString ValidateSetup(const QString& user) {
     if(setup[QStringLiteral("resource_version")].toInt()!=2 ||
        setup[QStringLiteral("layout_version")].toInt()!=2 ||
        QFileInfo::exists(QDir(user).filePath(QStringLiteral("setup/resource-upgrade-pending"))))
-        return QStringLiteral("Game resource upgrade is incomplete. Close Dekui and launch again to retry. Preserve your user folder and its upgrade backups.");
+        return QStringLiteral("Game resource upgrade is incomplete. Close Majora ReMasked and launch again to retry. Preserve your user folder and its upgrade backups.");
     return {};
 }
 inline QString Validate() {

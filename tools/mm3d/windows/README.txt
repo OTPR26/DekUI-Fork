@@ -1,13 +1,13 @@
-DekUI Fork for Windows
+Majora ReMasked for Windows
 
-Extract the complete ZIP into a writable location. Keep Dekui.exe, DLLs,
+Extract the complete ZIP into a writable location. Keep Majora-ReMasked.exe, DLLs,
 plugins, tools, resources, runtime and user data together. Open the app and
 select your decrypted MM3D USA Rev 1 (.cci/.3ds) ROM from the startup screen.
 The ROM stays in its existing folder. Setup shows progress and preserves saves.
 A private Python runtime is included; no developer tools are required.
 
 Startup Settings uses the same sidebar and preferences as the in-game menu.
-During gameplay use DekUI Fork > Settings, Ctrl-comma, or Start + Select on a
+During gameplay use Majora ReMasked > Settings, Ctrl-comma, or Start + Select on a
 controller. F1 remains available. Menu confirmation follows saved bindings.
 Graphics includes custom texture-folder selection. Before starting gameplay,
 Mods can generate Adult Link or Dark Link from your decrypted OoT3D ROM and

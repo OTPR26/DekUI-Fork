@@ -1,14 +1,16 @@
-# DekUI Fork
+# Majora ReMasked
+
+*A DekUI Fork*
 
 **An emulator fork tailored for High Res 60 FPS with Player Model Mods in Majora’s Mask 3D.**
 
 Supports Android, Windows, Linux, and macOS.
 
-DekUI Fork builds on [tgacquin’s DekUI](https://github.com/tgacquin/mm3d-dekui), the [Azahar emulator](https://github.com/azahar-emu/azahar), and [Project Restoration](https://restoration.zora.re/). It runs MM3D through an adapted 3DS emulator; it is not a game recompilation or a native rewrite of the game.
+Majora ReMasked builds on [tgacquin’s DekUI](https://github.com/tgacquin/mm3d-dekui), the [Azahar emulator](https://github.com/azahar-emu/azahar), and [Project Restoration](https://restoration.zora.re/). It runs MM3D through an adapted 3DS emulator; it is not a game recompilation or a native rewrite of the game.
 
 [Downloads](https://github.com/OTPR26/DekUI-Fork/releases) · [Android setup](docs/android/SETUP.md) · [Build instructions](docs/android/BUILD.md)
 
-![DekUI Fork startup screen](docs/artwork/android-startup.jpg)
+![Majora ReMasked masks](src/android/app/src/main/res/drawable-nodpi/dekui_launcher_masks.png)
 
 ## Features
 
@@ -47,6 +49,6 @@ The experimental Cheats still need broader testing; it is not advertised as a re
 - **leoetlino / Project Restoration contributors:** Restoration patches and features.
 - Additional libraries and contributors retain their original notices throughout the source tree.
 
-This project retains its upstream GPL licensing; see [license.txt](license.txt) and the notices in individual files and dependencies. DekUI Fork is an unofficial fan project and is not affiliated with Nintendo. The new Deku flower branding and mask startup artwork are included with this fork; inherited emulator credits remain in place.
+This project retains its upstream GPL licensing; see [license.txt](license.txt) and the notices in individual files and dependencies. Majora ReMasked is an unofficial fan project and is not affiliated with Nintendo. The new Deku flower branding and mask startup artwork are included with this fork; inherited emulator credits remain in place.
 
 For the upstream DekUI feature and development notes, see [the preserved upstream README](docs/UPSTREAM-DEKUI.md).

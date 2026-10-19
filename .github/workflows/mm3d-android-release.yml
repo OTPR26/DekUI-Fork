@@ -1,4 +1,4 @@
-name: DekUI Fork Android
+name: Majora ReMasked Android
 on:
   workflow_dispatch:
     inputs:
@@ -175,7 +175,7 @@ jobs:
           for flag in ('debuggable', 'testOnly'):
               if any('android:'+flag+'(' in line and '0xffffffff' in line for line in manifest.splitlines()):
                   raise SystemExit('APK must be optimized and installable outside development tools')
-          out = Path('artifacts')/('DekUI-Fork-'+os.environ['RELEASE_VERSION']+'-Android-arm64.apk')
+          out = Path('artifacts')/('Majora-ReMasked-'+os.environ['RELEASE_VERSION']+'-Android-arm64.apk')
           out.parent.mkdir(exist_ok=True)
           shutil.copy2(apk, out)
           PY
@@ -185,16 +185,16 @@ jobs:
         run: rm -f "$ANDROID_USER_HOME/debug.keystore" "$RUNNER_TEMP/dekui-ci.init.gradle"
       - uses: actions/upload-artifact@v7
         with:
-          name: DekUI-Fork-${{ steps.source.outputs.version }}-Android-arm64-${{ steps.source.outputs.sha }}
+          name: Majora-ReMasked-${{ steps.source.outputs.version }}-Android-arm64-${{ steps.source.outputs.sha }}
           path: artifacts/*.apk
           if-no-files-found: error
       - name: Archive matching source
-        run: python3 tools/mm3d/package_source.py artifacts/DekUI-Fork-${{ steps.source.outputs.version }}-Source.tar.gz
+        run: python3 tools/mm3d/package_source.py artifacts/Majora-ReMasked-${{ steps.source.outputs.version }}-Source.tar.gz
       - name: Check source privacy
         run: python3 tools/mm3d/check_release_privacy.py artifacts/*Source.tar.gz
       - uses: actions/upload-artifact@v7
         with:
-          name: DekUI-Fork-${{ steps.source.outputs.version }}-Android-Source-${{ steps.source.outputs.sha }}
+          name: Majora-ReMasked-${{ steps.source.outputs.version }}-Android-Source-${{ steps.source.outputs.sha }}
           path: artifacts/*Source.tar.gz
           if-no-files-found: error
 
@@ -279,7 +279,7 @@ jobs:
           key = Path(os.environ['RUNNER_TEMP'])/'signing.keystore'
           key.write_bytes(base64.b64decode(os.environ['KEYSTORE_BASE64'],validate=True))
           key.chmod(0o600)
-          out = Path('artifacts/DekUI-Fork-0.2.2-Android-arm64.apk')
+          out = Path('artifacts/Majora-ReMasked-0.2.2-Android-arm64.apk')
           out.parent.mkdir(exist_ok=True)
           try:
               subprocess.run([str(sdk/'apksigner'),'sign','--ks',str(key),'--ks-key-alias',os.environ['ANDROID_KEY_ALIAS'],
@@ -300,6 +300,6 @@ jobs:
           python3 tools/mm3d/check_release_privacy.py artifacts/*.apk
       - uses: actions/upload-artifact@v7
         with:
-          name: DekUI-Fork-Android-TP-preview-${{ github.sha }}
+          name: Majora-ReMasked-Android-TP-preview-${{ github.sha }}
           path: artifacts/*.apk
           if-no-files-found: error

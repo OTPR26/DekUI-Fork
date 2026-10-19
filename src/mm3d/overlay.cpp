@@ -746,7 +746,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
         ImGui::SetNextWindowPos({0,0},ImGuiCond_Always);
         ImGui::SetNextWindowSize(screen,ImGuiCond_Always);
         ImGui::SetNextWindowSizeConstraints(screen,screen);
-        ImGui::Begin("DekUI settings",nullptr,ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize|
+        ImGui::Begin("Majora ReMasked settings",nullptr,ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize|
             ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoCollapse|
             ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse);
 #else
@@ -759,9 +759,9 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
         ImGui::SetNextWindowSizeConstraints({std::min(300.f*ui_scale,float(width)),
             std::min(200.f*ui_scale,float(height))},{float(width),float(height)});
 #if defined(ENABLE_MM3D_GAME_FOLDER)
-        ImGui::Begin("Dekui settings (F1)");
+        ImGui::Begin("Majora ReMasked settings (F1)");
 #else
-        ImGui::Begin(PlayerOverlay()?"Dekui settings (F2)":"MM3D editor (F1)");
+        ImGui::Begin(PlayerOverlay()?"Majora ReMasked settings (F2)":"MM3D editor (F1)");
 #endif
 #endif
         state.resize_settings_window=false;
@@ -1048,7 +1048,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 else if(state.settings.Load(state.directory+"presentation.json")) {
                     ApplyPresentationSettings(state.settings);
                     menu_reset_status="Menu layouts reset. Previous settings backed up.";
-                } else menu_reset_status="Could not reload reset settings. Restart Dekui.";
+                } else menu_reset_status="Could not reload reset settings. Restart Majora ReMasked.";
             }
             hover_help("Restores the Songs, file-select and item-selection layouts to this release's defaults. Keeps gameplay settings, controls and HUD preferences. Backs up your previous settings.");
             if(!menu_reset_status.isEmpty())ImGui::TextWrapped("%s",menu_reset_status.toUtf8().constData());
@@ -1065,7 +1065,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 PlayerSettings::game_language_status.store(1);
                 PlayerSettings::set_game_language.store(languages[selected]);
             }
-            hover_help("Changes the game's text language. Restart Dekui to apply. Settings menus remain in English.");
+            hover_help("Changes the game's text language. Restart Majora ReMasked to apply. Settings menus remain in English.");
             if(PlayerSettings::game_language_status.load()==3)
                 ImGui::TextWrapped("Could not save the game language. Try selecting it again.");
         };
@@ -1122,7 +1122,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
             changed|=AndroidMenuStyle::Checkbox("Increase purchase prices and fees",&state.settings.double_prices);
             ImGui::BeginDisabled(!state.settings.double_prices);
             changed|=AndroidMenuStyle::SliderInt("Price multiplier",&state.settings.price_multiplier,2,3,"%dx",ImGuiSliderFlags_AlwaysClamp);
-            help_text("Multiplies purchase prices and fees. All-Night Mask, Biggest Bomb Bag upgrade and Chateau Romani cost at most 500 rupees. Restart Dekui after changing these settings.");
+            help_text("Multiplies purchase prices and fees. All-Night Mask, Biggest Bomb Bag upgrade and Chateau Romani cost at most 500 rupees. Restart Majora ReMasked after changing these settings.");
             ImGui::EndDisabled();
             if(ImGui::Button("Reset difficulty")){multiplier=1;state.settings.weaker_enhanced_defense=false;state.settings.red_potion_hearts=20;state.settings.blue_potion_hearts=20;state.settings.bottled_fairy_hearts=10;state.settings.disable_heart_drops=false;state.settings.disable_rupee_drops=false;state.settings.disable_fairy_drops=false;state.settings.disable_magic_drops=false;state.settings.disable_ammo_pickups=false;state.settings.double_prices=false;state.settings.price_multiplier=2;state.settings.lose_rupees_on_death=false;state.settings.world_ends_on_death=false;state.settings.advance_six_hours_on_death=false;state.settings.fast_time=false;changed=true;}
             if(changed){state.settings.damage_multiplier=multiplier;Difficulty::damage_multiplier.store(multiplier);
@@ -1242,7 +1242,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
 #ifdef ENABLE_MM3D_GAME_FOLDER
         constexpr const char* exit_popup="Return to startup?";
 #else
-        constexpr const char* exit_popup="Quit Dekui?";
+        constexpr const char* exit_popup="Quit Majora ReMasked?";
 #endif
 #if defined(__ANDROID__) || defined(ENABLE_MM3D_GAME_FOLDER)
         bool android_resume=false,android_quit=false;
@@ -1361,13 +1361,13 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 bool async=async_shaders.load()!=0;
                 if(AndroidMenuStyle::Checkbox("Async shader compilation (restart required)",&async))
                     set_async_shaders.store(async);
-                hover_help("Restart Dekui for this change to take effect. Compiles shaders in the background; graphics may be temporarily missing during compilation.");
+                hover_help("Restart Majora ReMasked for this change to take effect. Compiles shaders in the background; graphics may be temporarily missing during compilation.");
 #ifdef ANDROID
                 ImGui::SeparatorText("Custom textures");
 #endif
                 bool custom=textures.load()!=0;
                 if(AndroidMenuStyle::Checkbox("Use custom textures",&custom))set_textures.store(custom);
-                hover_help("Load a compatible texture pack from your texture folder. Restart Dekui after adding or replacing texture files.");
+                hover_help("Load a compatible texture pack from your texture folder. Restart Majora ReMasked after adding or replacing texture files.");
 #if defined(ANDROID) || defined(ENABLE_MM3D_GAME_FOLDER)
                 const auto texture_state=AndroidMenu::Snapshot();
                 ImGui::TextWrapped("Textures: %s",texture_state.textures.c_str());
@@ -1377,7 +1377,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
 #endif
 #ifndef __ANDROID__
                 if(ImGui::Button("Open texture folder"))open_textures.store(true);
-                help_text("Restart Dekui after installing or changing a texture pack.");
+                help_text("Restart Majora ReMasked after installing or changing a texture pack.");
                 if(ImGui::Button("Toggle fullscreen"))fullscreen.store(true);
 #endif
                 ImGui::Text("Game: %.1f FPS | Presentation: %.1f FPS",state.timing.guest_fps,state.timing.host_fps);
@@ -1490,7 +1490,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 end_page();
             }
             if(begin_page("About")) {
-                ImGui::TextWrapped("Dekui uses Azahar and Project Restoration. It is not affiliated with Nintendo.");
+                ImGui::TextWrapped("Majora ReMasked uses Azahar and Project Restoration. It is not affiliated with Nintendo.");
 #ifndef __ANDROID__
                 if(ImGui::Button("Licenses and credits"))about.store(true);
 #endif

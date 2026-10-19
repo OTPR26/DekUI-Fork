@@ -10,7 +10,7 @@ DEKUI_DIAGNOSTICS=1 %command%
 Or launch from a terminal beside the AppImage:
 
 ```sh
-DEKUI_DIAGNOSTICS=1 ./Dekui.AppImage
+DEKUI_DIAGNOSTICS=1 ./Majora-ReMasked.AppImage
 ```
 
 Open F1, select Diagnostics, then Capture performance (30 seconds). Close F1

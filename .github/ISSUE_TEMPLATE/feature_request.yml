@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest an improvement for DekUI Fork.
+description: Suggest an improvement for Majora ReMasked.
 body:
   - type: textarea
     id: proposal

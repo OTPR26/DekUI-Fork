@@ -40,7 +40,7 @@ if (APPLE)
 
     if(ENABLE_MM3D_GAME_FOLDER)
         set_target_properties(citra_meta PROPERTIES
-            MACOSX_BUNDLE_BUNDLE_NAME "DekUI Fork"
+            MACOSX_BUNDLE_BUNDLE_NAME "Majora ReMasked"
             MACOSX_BUNDLE_GUI_IDENTIFIER "io.github.otpr26.dekui")
     endif()
     if (IOS)

@@ -521,7 +521,7 @@ GMainWindow::GMainWindow(Core::System& system_)
     ui->menubar->clear();
     for(auto* menu:ui->menubar->findChildren<QMenu*>())
         for(auto* action:menu->actions())action->setShortcut(QKeySequence());
-    auto* dekui_menu=ui->menubar->addMenu(tr("DekUI Fork"));
+    auto* dekui_menu=ui->menubar->addMenu(tr("Majora ReMasked"));
     auto* settings_action=dekui_menu->addAction(tr("Settings…"));
     settings_action->setMenuRole(QAction::PreferencesRole);
     settings_action->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Comma));
@@ -4748,8 +4748,8 @@ void GMainWindow::OnSwitchDiskResources(VideoCore::LoadCallbackStage stage, std:
 
 void GMainWindow::UpdateWindowTitle() {
 #ifdef ENABLE_MM3D_GAME_FOLDER
-    setWindowTitle(QStringLiteral("DekUI Fork"));
-    if(render_window)render_window->setWindowTitle(QStringLiteral("DekUI Fork"));
+    setWindowTitle(QStringLiteral("Majora ReMasked"));
+    if(render_window)render_window->setWindowTitle(QStringLiteral("Majora ReMasked"));
     return;
 #endif
     const QString full_name = QString::fromUtf8(Common::g_build_fullname);
@@ -4927,7 +4927,7 @@ int LaunchQtFrontend(int argc, char* argv[]) {
     QCoreApplication::setOrganizationDomain(QStringLiteral("azahar_emu.org"));
     QCoreApplication::setApplicationName(QStringLiteral("Azahar"));
 #ifdef ENABLE_MM3D_GAME_FOLDER
-    QCoreApplication::setApplicationName(QStringLiteral("DekUI Fork"));
+    QCoreApplication::setApplicationName(QStringLiteral("Majora ReMasked"));
     QGuiApplication::setDesktopFileName(QStringLiteral("io.github.tgacquin.dekui"));
 #else
     QGuiApplication::setDesktopFileName(QStringLiteral("org.azahar_emu.Azahar"));
@@ -4958,7 +4958,7 @@ int LaunchQtFrontend(int argc, char* argv[]) {
 #ifdef ENABLE_MM3D_GAME_FOLDER
     app.setQuitOnLastWindowClosed(false);
     if(const auto error=MM3D::GameFolder::InitializeStorage();!error.isEmpty()) {
-        QMessageBox::critical(nullptr,QStringLiteral("DekUI Fork storage"),error);
+        QMessageBox::critical(nullptr,QStringLiteral("Majora ReMasked storage"),error);
         return 1;
     }
     Q_INIT_RESOURCE(dekui_frontend);
@@ -4967,11 +4967,11 @@ int LaunchQtFrontend(int argc, char* argv[]) {
     InputCommon::Shutdown();
     if(!start_game)return 0;
     if (const auto error=MM3D::GameFolder::Prepare(); !error.isEmpty()) {
-        QMessageBox::critical(nullptr, QStringLiteral("Dekui setup"), error);
+        QMessageBox::critical(nullptr, QStringLiteral("Majora ReMasked setup"), error);
         return 1;
     }
     if (const auto error=MM3D::GameFolder::Validate(); !error.isEmpty()) {
-        QMessageBox::critical(nullptr, QStringLiteral("Dekui setup"), error);
+        QMessageBox::critical(nullptr, QStringLiteral("Majora ReMasked setup"), error);
         return 1;
     }
     try { MM3D::DesktopImport::ApplyPendingSettings(); }

@@ -50,11 +50,11 @@ def package(bundle, output, python_archive):
         raise ValueError('Missing deployed Qt Cocoa plugin')
     with tempfile.TemporaryDirectory(prefix='dekui-macos-package-') as tmp:
         root = Path(tmp) / 'dekui'; root.mkdir()
-        app = root / 'DekUI Fork.app'
+        app = root / 'Majora ReMasked.app'
         shutil.copytree(bundle, app, symlinks=True)
         info = app / 'Contents/Info.plist'
         metadata = plistlib.loads(info.read_bytes())
-        metadata.update(CFBundleName='DekUI Fork', CFBundleDisplayName='DekUI Fork', CFBundleIdentifier='io.github.otpr26.dekui')
+        metadata.update(CFBundleName='Majora ReMasked', CFBundleDisplayName='Majora ReMasked', CFBundleIdentifier='io.github.otpr26.dekui')
         info.write_bytes(plistlib.dumps(metadata))
         runtime = app / 'Contents/Resources/runtime'
         install(python_archive, runtime)

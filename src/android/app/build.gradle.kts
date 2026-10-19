@@ -102,7 +102,7 @@ android {
             applicationId = "io.github.otpr26.dekuifork"
         }
         buildConfigField("boolean", "DEKUI_PRESENTATION", dekuiPresentation.toString())
-        manifestPlaceholders["applicationLabel"] = if (dekuiPresentation) "DekUI Fork" else "@string/app_name"
+        manifestPlaceholders["applicationLabel"] = if (dekuiPresentation) "Majora ReMasked" else "@string/app_name"
         minSdk = 29
         targetSdk = 37
         versionCode = autoVersion

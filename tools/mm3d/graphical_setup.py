@@ -23,13 +23,13 @@ def prepare(root, rom, patch=None, exheader=None, hud=None, in_place=False, upgr
     for name in ('Joker.Main.New.gar','Joker.Main.Play.gar','Joker.mfpj'):
         matches = list(hud.rglob(name)) if hud.is_dir() else []
         if len(matches) != 1:
-            raise ValueError(f'HD HUD folder must contain exactly one {name}. Extract the complete Dekui package again.')
+            raise ValueError(f'HD HUD folder must contain exactly one {name}. Extract the complete Majora ReMasked package again.')
         selected['romfs/layout/'+name] = matches[0]
     expected = json.loads((RESOURCES/'setup-fingerprints.json').read_text())
     for entry in expected['files']:
         if entry['input_root'] != 'restoration': continue
         path = selected[entry['input']]
-        if not path.is_file(): raise ValueError(f'Required {path.name} is missing. Extract the complete Dekui package again.')
+        if not path.is_file(): raise ValueError(f'Required {path.name} is missing. Extract the complete Majora ReMasked package again.')
         if hashlib.sha256(path.read_bytes()).hexdigest() != entry['input_sha256']:
             raise ValueError(f'{path.name} is not the supported version. Use the matching Restoration v110 standard-aiming patch and original HD HUD files, not already modified layouts.')
     with tempfile.TemporaryDirectory(prefix='.mm3d-inputs-',dir=root) as tmp:

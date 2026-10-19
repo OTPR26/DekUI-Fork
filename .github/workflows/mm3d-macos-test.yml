@@ -1,4 +1,4 @@
-name: DekUI Fork macOS (Apple Silicon)
+name: Majora ReMasked macOS (Apple Silicon)
 on:
   workflow_dispatch:
 concurrency:
@@ -43,26 +43,26 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: DekUI-Fork-macOS-Diagnostics-${{ github.sha }}
+          name: Majora-ReMasked-macOS-Diagnostics-${{ github.sha }}
           path: |
             macos-build.log
             build-macos/CMakeFiles/CMakeConfigureLog.yaml
             build-macos/Testing/Temporary/LastTest.log
           if-no-files-found: ignore
       - name: Check package privacy
-        run: python tools/mm3d/check_release_privacy.py artifacts/DekUI-Fork-${{ steps.release.outputs.version }}-macOS-arm64.zip
+        run: python tools/mm3d/check_release_privacy.py artifacts/Majora-ReMasked-${{ steps.release.outputs.version }}-macOS-arm64.zip
       - uses: actions/upload-artifact@v7
         with:
-          name: DekUI-Fork-${{ steps.release.outputs.version }}-macOS-arm64-${{ github.sha }}
-          path: artifacts/DekUI-Fork-${{ steps.release.outputs.version }}-macOS-arm64.zip
+          name: Majora-ReMasked-${{ steps.release.outputs.version }}-macOS-arm64-${{ github.sha }}
+          path: artifacts/Majora-ReMasked-${{ steps.release.outputs.version }}-macOS-arm64.zip
           if-no-files-found: error
       - name: Archive matching source
         timeout-minutes: 15
-        run: python3 tools/mm3d/package_source.py artifacts/DekUI-Fork-${{ steps.release.outputs.version }}-macOS-Source.tar.gz
+        run: python3 tools/mm3d/package_source.py artifacts/Majora-ReMasked-${{ steps.release.outputs.version }}-macOS-Source.tar.gz
       - name: Check package privacy
-        run: python tools/mm3d/check_release_privacy.py artifacts/DekUI-Fork-${{ steps.release.outputs.version }}-macOS-Source.tar.gz
+        run: python tools/mm3d/check_release_privacy.py artifacts/Majora-ReMasked-${{ steps.release.outputs.version }}-macOS-Source.tar.gz
       - uses: actions/upload-artifact@v7
         with:
-          name: DekUI-Fork-${{ steps.release.outputs.version }}-macOS-Source-${{ github.sha }}
-          path: artifacts/DekUI-Fork-${{ steps.release.outputs.version }}-macOS-Source.tar.gz
+          name: Majora-ReMasked-${{ steps.release.outputs.version }}-macOS-Source-${{ github.sha }}
+          path: artifacts/Majora-ReMasked-${{ steps.release.outputs.version }}-macOS-Source.tar.gz
           if-no-files-found: error

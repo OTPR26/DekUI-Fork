@@ -1,5 +1,5 @@
 name: Android bug report
-description: Report a problem in the DekUI Fork Android preview.
+description: Report a problem in the Majora ReMasked Android preview.
 title: "[Android] "
 body:
   - type: input
