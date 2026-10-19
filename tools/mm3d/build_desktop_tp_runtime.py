@@ -118,6 +118,12 @@ def main():
             if Path(entry).is_absolute() or '..' in Path(entry).parts:
                 raise RuntimeError('Unsafe wheel member')
         archive.extractall(runtime / 'tp-modules')
+    if sys.platform == 'darwin':
+        # Vendor wheels may retain source filenames in Mach-O debug symbols.
+        # Keep exported runtime symbols; package_macos signs the resulting files.
+        for native in (runtime / 'tp-modules').rglob('*'):
+            if native.is_file() and native.suffix in ('.so', '.dylib'):
+                run('strip', '-S', native)
     if sys.platform.startswith('linux'):
         archive = root/'python.tar.gz'
         name = f'cpython-3.13.2%2B20250317-{machine}-unknown-linux-gnu-install_only_stripped.tar.gz'
