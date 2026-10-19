@@ -158,7 +158,7 @@ class DekuiLaunchActivity : AppCompatActivity() {
         }
         pane.addView(status,LinearLayout.LayoutParams(-1,dp(32)))
         val version=TextView(this).apply {
-            text="DEKUI  ·  ANDROID";typeface=normal;textSize=10f;letterSpacing=.1f
+            text="DEKUI  ·  ANDROID  ·  v${org.citra.citra_emu.BuildConfig.VERSION_NAME}";typeface=normal;textSize=10f;letterSpacing=.1f
             setTextColor(0xFF9993A5.toInt());setPadding(dp(12),0,0,dp(8))
         }
         frame.addView(version,android.widget.FrameLayout.LayoutParams(-2,-2,android.view.Gravity.BOTTOM or android.view.Gravity.START))

@@ -40,6 +40,7 @@
 #include "citra_qt/dekui_frontend.h"
 #include "citra_qt/dekui_import.h"
 #include "common/param_package.h"
+#include "common/scm_rev.h"
 #include "common/settings.h"
 #include "core/frontend/input.h"
 #include "input_common/main.h"
@@ -815,6 +816,12 @@ protected:
             p.drawPixmap(qRound(width() * .30 - scaled.width() / 2.0),
                          qRound(height() * .55 - scaled.height() / 2.0), scaled);
         }
+        auto font = p.font();
+        font.setPixelSize(14);
+        p.setFont(font);
+        p.setPen(QColor(QStringLiteral("#9993a5")));
+        p.drawText(QRect(28, height() - 36, width() - 56, 24), Qt::AlignLeft | Qt::AlignVCenter,
+                   QStringLiteral("DEKUI  ·  v%1").arg(QString::fromUtf8(Common::g_build_version)));
     }
 
 public:
