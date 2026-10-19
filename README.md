@@ -13,10 +13,11 @@ DekUI Fork builds on [tgacquin’s DekUI](https://github.com/tgacquin/mm3d-dekui
 ## Features
 
 - Single-screen gear, masks, items, maps, file select, and Bomber’s Notebook inherited from DekUI.
-- A full-screen menu for touch, mouse, and controllers; Android also supports a swipe from the left edge during gameplay.
+- A full-screen menu for touch, mouse, and controllers.
 - Controller bindings and button-layout preferences, touch overlay controls, and screen swapping.
-- Customizable Wii U Style HUD with adjustable positions, scale, spacing, and visibility; custom texture-folder selection through Android’s file picker.
-- Separate Field of View and Camera Distance controls; adjustable walk, climb, and swim speeds.
+- Customizable Wii U Style HUD with adjustable positions, scale, spacing, and visibility; custom textures supported including Henriko's 4K Texture Pack.
+- Separate Field of View and Camera Distance controls
+- Adjustable walk, climb, and swim speeds.
 - Optional controller-neutral English item prompts.
 - Adult Link appearance mod generated on the device from your own OoT3D ROM, with adult voice clips imported from that ROM.
 - Dark Link appearance mod with red eyes, a matching sword, and adult voices.
@@ -35,9 +36,9 @@ No game ROM, imported player model, imported voices, save file, or personal text
 
 ## Preview limitations
 
-These appearance mods need broader gameplay testing. Some masks, facial expressions, and attachments still need broader testing with Adult Link. Texture replacement depends on a matching texture being present in the selected pack. The experimental Cheats page can remain disabled when its live save-layout check does not match; it is not advertised as a reliable save editor.
+Player model mods need broader gameplay testing. Some masks, facial expressions, and attachments still need broader testing with Adult Link. Texture replacement depends on a matching texture being present in the selected pack. 
 
-Android uses `io.github.otpr26.dekuifork`. When moving from the prototype, grant file access to reuse Internal storage/mm3dport, then reselect external texture folders. Existing saves, generated mods, HUD settings, and shared controller bindings are retained. Close the prototype before using the new app.
+The experimental Cheats still need broader testing; it is not advertised as a reliable save editor.
 
 ## Credits and license
 
