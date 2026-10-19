@@ -21,3 +21,6 @@ def copy_tp_runtime(repo, payload):
     shutil.copytree(repo/'tools/mm3d/tp_import',scripts/'tp_import',
                     ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
     shutil.copy2(repo/'tools/mm3d/generate_tp_mod.py',scripts/'generate_tp_mod.py')
+    shutil.copytree(repo/'tools/mm3d/zobj_import', scripts/'zobj_import',
+                    ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
+    shutil.copy2(repo/'tools/mm3d/import_pak.py', scripts/'import_pak.py')

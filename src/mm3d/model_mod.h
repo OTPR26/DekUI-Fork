@@ -10,6 +10,12 @@ namespace MM3D::ModelMod {
 // Legacy flag name: true for either imported tall human model.
 inline std::atomic<bool> adult_active{false};
 inline constexpr std::string_view actor_path="actors/zelda2_link_child_new.gar.lzs";
+inline bool PakSelected(std::string_view text) {
+    const auto object=nlohmann::json::parse(text,nullptr,false);
+    if(!object.is_object())return false;
+    const auto it=object.find("pak_link_model");
+    return it!=object.end() && it->is_boolean() && it->get<bool>();
+}
 inline bool DarkSelected(std::string_view text) {
     const auto object=nlohmann::json::parse(text,nullptr,false);
     if(!object.is_object())return false;

@@ -37,6 +37,18 @@ class DesktopHudTests(unittest.TestCase):
             self.assertEqual((user/ARCHIVE).read_bytes(),b'my-custom-layout')
             self.assertFalse((user/'load/mm3d-model-textures').exists())
 
+    def test_verified_rounding_variant_upgrades_and_unknown_changes_are_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            user,res,spec,source,target=self.fixture(Path(tmp))
+            variant=b'Owned-rom-layout'
+            spec['source_variants']=[{'sha256':hashlib.sha256(variant).hexdigest(),
+                'normalize':[{'at':0,'before':'Tw==','after':'bw=='}]}]
+            self.assertEqual(reconstruct(variant,spec),target)
+            self.assertEqual(reconstruct(target,spec),target)
+            with self.assertRaises(ValueError): reconstruct(variant+b'custom',spec)
+            spec['source_variants'][0]['normalize'][0]['before']='WA=='
+            with self.assertRaisesRegex(ValueError,'normalization'): reconstruct(variant,spec)
+
     def test_custom_positions_are_retained(self):
         with tempfile.TemporaryDirectory() as tmp:
             user,res,spec,source,target=self.fixture(Path(tmp));(user/CONFIG).write_text('{"hud_diamond_enabled":"custom"}')

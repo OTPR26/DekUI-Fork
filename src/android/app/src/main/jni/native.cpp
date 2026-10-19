@@ -40,6 +40,7 @@
 #ifdef ENABLE_MM3D_PRESENTATION
 #include "mm3d/diagnostics.h"
 #include "mm3d/player_settings_bridge.h"
+#include "mm3d/game_language.h"
 #include "mm3d/android_menu.h"
 #endif
 #include "common/string_util.h"
@@ -361,9 +362,21 @@ static Core::System::ResultStatus RunCitra(const std::string& filepath) {
     SCOPE_EXIT({ TryShutdown(); });
 
     system.RegisterCoreLoopThreadId();
+#ifdef ENABLE_MM3D_PRESENTATION
+    auto game_language_config = Service::CFG::GetModule(system);
+    MM3D::PlayerSettings::InitializeGameLanguage(*game_language_config);
+    const auto apply_game_language = [&] {
+        MM3D::PlayerSettings::ApplyPendingGameLanguage(*game_language_config);
+    };
+    // Flush a selection made immediately before stopping, before TryShutdown.
+    SCOPE_EXIT({ apply_game_language(); });
+#endif
 
     // Start running emulation
     while (!stop_run) {
+#ifdef ENABLE_MM3D_PRESENTATION
+        apply_game_language();
+#endif
         if (!pause_emulation) {
             const auto result = system.RunLoop();
             if (result == Core::System::ResultStatus::Success) {

@@ -85,6 +85,7 @@ struct Settings {
     float camera_zoom_out = 1.f;
     float game_camera_fov = 65.f;
     float camera_distance = 1.f;
+    bool pak_link_model = false;
     bool twilight_link_model = false;
     bool twilight_link_master_sword = true;
     bool adult_link_model = false;

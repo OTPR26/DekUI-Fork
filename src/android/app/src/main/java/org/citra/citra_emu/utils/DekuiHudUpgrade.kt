@@ -22,15 +22,31 @@ object DekuiHudUpgrade {
     private fun authored(context:Context, source:ByteArray, recipe:String):ByteArray {
         val spec=JSONObject(context.assets.open("dekui-hud8x/$recipe").bufferedReader().use{it.readText()})
         if(hash(source)==spec.getString("sha256"))return source
-        if(hash(source)!=spec.getString("source_sha256"))return source
+        var input=source
+        val variants=spec.optJSONArray("source_variants")
+        if(variants!=null)for(i in 0 until variants.length()) {
+            val variant=variants.getJSONObject(i)
+            if(hash(source)!=variant.getString("sha256"))continue
+            val normalized=source.copyOf();val changes=variant.getJSONArray("normalize")
+            for(j in 0 until changes.length()) {
+                val op=changes.getJSONObject(j);val at=op.getInt("at")
+                val before=Base64.decode(op.getString("before"),Base64.DEFAULT)
+                val after=Base64.decode(op.getString("after"),Base64.DEFAULT)
+                check(before.size==after.size&&at>=0&&at<=source.size-before.size)
+                check(source.copyOfRange(at,at+before.size).contentEquals(before))
+                after.copyInto(normalized,at)
+            }
+            input=normalized;break
+        }
+        if(hash(input)!=spec.getString("source_sha256"))return source
         val size=spec.getInt("size");check(size in 1..(512*1024))
         val output=java.io.ByteArrayOutputStream(size);val ops=spec.getJSONArray("ops")
         for(i in 0 until ops.length()) {
             val op=ops.getJSONObject(i)
             if(op.has("copy")) {
                 val at=op.getInt("copy");val count=op.getInt("size")
-                check(at>=0&&count>=0&&at<=source.size-count)
-                output.write(source,at,count)
+                check(at>=0&&count>=0&&at<=input.size-count)
+                output.write(input,at,count)
             } else output.write(Base64.decode(op.getString("data"),Base64.DEFAULT))
             check(output.size()<=size)
         }

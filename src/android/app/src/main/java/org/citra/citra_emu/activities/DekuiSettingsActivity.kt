@@ -59,15 +59,19 @@ class DekuiSettingsActivity : AppCompatActivity() {
     private val tpTexturePicker=registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri->
         if(uri!=null)runCatching { DekuiTwilightLinkSetup.selectPack(this,uri);render() }.onFailure { error(it) }
     }
+    private val pakPicker=registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri->
+        if(uri!=null)generateMod(pak=uri)
+    }
     @Suppress("DEPRECATION")
-    private fun generateMod(dark:Boolean=false,twilight:Boolean=false) {
+    private fun generateMod(dark:Boolean=false,twilight:Boolean=false,pak:android.net.Uri?=null) {
         if(generatingMod)return
         generatingMod=true
-        val dialog=android.app.ProgressDialog(this).apply { setTitle(if(twilight)"Creating Twilight Princess Link"else if(dark)"Creating Dark Link"else"Creating Adult Link");setMessage("Preparing…");setCancelable(false);show() }
+        val dialog=android.app.ProgressDialog(this).apply { setTitle(if(pak!=null)"Importing PAK player model"else if(twilight)"Creating Twilight Princess Link"else if(dark)"Creating Dark Link"else"Creating Adult Link");setMessage("Preparing…");setCancelable(false);show() }
         lifecycleScope.launch {
             val result=withContext(Dispatchers.IO){runCatching {
                 val progress:(String)->Unit={message->runOnUiThread { dialog.setMessage(message) }}
-                if(twilight)DekuiTwilightLinkSetup.generate(this@DekuiSettingsActivity,progress)
+                if(pak!=null)DekuiPakSetup.importModel(this@DekuiSettingsActivity,pak,progress)
+                else if(twilight)DekuiTwilightLinkSetup.generate(this@DekuiSettingsActivity,progress)
                 else if(dark)DekuiAdultLinkSetup.generateDarkLink(this@DekuiSettingsActivity,progress)
                 else DekuiAdultLinkSetup.generate(this@DekuiSettingsActivity,progress)
             }}
@@ -182,9 +186,16 @@ class DekuiSettingsActivity : AppCompatActivity() {
             "Mods" -> {
                 val data=store.read()
                 section("Appearance")
-                val model=if(data.optBoolean("twilight_link_model",false))3 else if(data.optBoolean("dark_link_model",false))2 else if(data.optBoolean("adult_link_model",false))1 else 0
-                choice("Player model",listOf("Original Link","Adult Link","Dark Link","Twilight Princess Link"),model) { index->
-                    update("twilight_link_model" to (index==3),"adult_link_model" to (index==1),"dark_link_model" to (index==2));render()
+                val model=if(data.optBoolean("pak_link_model",false))4 else if(data.optBoolean("twilight_link_model",false))3 else if(data.optBoolean("dark_link_model",false))2 else if(data.optBoolean("adult_link_model",false))1 else 0
+                choice("Player model",listOf("Original Link","Adult Link","Dark Link","Twilight Princess Link","PAK Importer"),model) { index->
+                    update("pak_link_model" to (index==4),"twilight_link_model" to (index==3),"adult_link_model" to (index==1),"dark_link_model" to (index==2));render()
+                }
+                if(model==4) {
+                    note(DekuiPakSetup.description(this))
+                    content.addView(button("Import PAK file") { pakPicker.launch(arrayOf("*/*")) }.apply {
+                        isEnabled=DekuiPakSetup.canImport(this@DekuiSettingsActivity)&&!generatingMod
+                    },LinearLayout.LayoutParams(-1,-2))
+                    note("Select a ModLoader64 .pak player-model package. Uses native MM3D equipment, abilities and voices. Import before gameplay; restart after changing models. Human Link rigs are supported; transformation forms and custom scripts are not imported.")
                 }
                 if(model==3) {
                     toggle("Master Sword",data.optBoolean("twilight_link_master_sword",true)) { enabled->
@@ -229,8 +240,8 @@ class DekuiSettingsActivity : AppCompatActivity() {
                     }
                     note("On: OoT3D Master Sword and sheath. Off: Kokiri sword and sheath. Appearance only; sword damage stays unchanged.")
                 }
-                note("Imported models include adult voice clips. Restart the game after changing models. Facial expressions and mask fitting are unfinished.")
-                if(model!=3) {
+                if(model!=4)note("Imported models include adult voice clips. Restart the game after changing models. Facial expressions and mask fitting are unfinished.")
+                if(model!=3&&model!=4) {
                 section("Mod setup")
                 note(DekuiAdultLinkSetup.description(this))
                 addButton("Select your OoT3D ROM") { modRomPicker.launch(arrayOf("*/*")) }

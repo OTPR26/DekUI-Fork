@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <array>
-#include "common/scm_rev.h"
 #include <functional>
 #include <stdexcept>
 #include <QApplication>
@@ -41,6 +40,7 @@
 #include "citra_qt/dekui_frontend.h"
 #include "citra_qt/dekui_import.h"
 #include "common/param_package.h"
+#include "common/scm_rev.h"
 #include "common/settings.h"
 #include "core/frontend/input.h"
 #include "input_common/main.h"
@@ -373,6 +373,7 @@ class SettingsDialog final : public QDialog {
             const auto failure = watcher.result();
             if (!failure.isEmpty())
                 throw std::runtime_error(failure.toStdString());
+            Set(QStringLiteral("pak_link_model"), false);
             Set(QStringLiteral("twilight_link_model"), twilight);
             Set(QStringLiteral("adult_link_model"), !dark && !twilight);
             Set(QStringLiteral("dark_link_model"), dark && !twilight);
@@ -389,21 +390,111 @@ class SettingsDialog final : public QDialog {
                                  QString::fromUtf8(error.what()));
         }
     }
+    void ImportPak() {
+        if (running) return;
+        const auto file = QFileDialog::getOpenFileName(
+            this, QStringLiteral("Import PAK player model"), {},
+            QStringLiteral("ModLoader64 model packages (*.pak *.PAK)"));
+        if (file.isEmpty()) return;
+        if (!QFileInfo::exists(Root() + QStringLiteral("/user/setup/ready.json"))) {
+            const auto error = GameFolder::Prepare();
+            if (!error.isEmpty()) {
+                QMessageBox::warning(this, QStringLiteral("PAK import"), error);
+                return;
+            }
+            DesktopImport::ApplyPendingSettings();
+        }
+#ifdef Q_OS_MACOS
+        const auto python = QDir(QCoreApplication::applicationDirPath())
+            .absoluteFilePath(QStringLiteral("../Resources/runtime/python/bin/python3"));
+#elif defined(Q_OS_WIN)
+        const auto python = Root() + QStringLiteral("/runtime/python/python.exe");
+#else
+        const auto python = GameFolder::PackageRoot() +
+            QStringLiteral("/runtime/tp-python/python/bin/python3");
+#endif
+        QProgressDialog progress(QStringLiteral("Reading the model package…"), QString{}, 0, 0, this);
+        progress.setWindowTitle(QStringLiteral("Importing PAK player model"));
+        progress.setWindowModality(Qt::WindowModal);
+        progress.setCancelButton(nullptr);
+        progress.show();
+        QProcess process;
+        QEventLoop loop;
+        QByteArray pending;
+        QJsonObject result;
+        QString failure;
+        const auto readOutput = [&] {
+            pending += process.readAllStandardOutput();
+            while (pending.contains('\n')) {
+                const auto at = pending.indexOf('\n');
+                const auto line = QJsonDocument::fromJson(pending.left(at)).object();
+                pending.remove(0, at + 1);
+                if (line.contains(QStringLiteral("progress")))
+                    progress.setLabelText(line.value(QStringLiteral("progress")).toString());
+                if (line.value(QStringLiteral("installed")).toBool()) result = line;
+                if (line.contains(QStringLiteral("error")))
+                    failure = line.value(QStringLiteral("error")).toString();
+            }
+        };
+        connect(&process, &QProcess::readyReadStandardOutput, this, readOutput);
+        connect(&process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), &loop,
+                &QEventLoop::quit);
+        connect(&process, &QProcess::errorOccurred, &loop, [&](QProcess::ProcessError error) {
+            if (error == QProcess::FailedToStart) failure = QStringLiteral("Could not start the bundled PAK importer.");
+            loop.quit();
+        });
+        QTimer::singleShot(0, &loop, [&] {
+            process.start(python, {QStringLiteral("-E"), QStringLiteral("-s"), QStringLiteral("-B"),
+                GameFolder::PackageRoot() + QStringLiteral("/tools/mm3d/import_pak.py"),
+                QStringLiteral("--root"), Root(), QStringLiteral("--package"), GameFolder::PackageRoot(),
+                QStringLiteral("--mm-rom"), GameFolder::Rom(), QStringLiteral("--model"), file});
+        });
+        loop.exec();
+        readOutput();
+        progress.close();
+        if (!failure.isEmpty() || process.exitStatus() != QProcess::NormalExit ||
+            process.exitCode() != 0 || !result.value(QStringLiteral("installed")).toBool()) {
+            if (failure.isEmpty()) failure = QString::fromUtf8(process.readAllStandardError()).right(2000);
+            QMessageBox::warning(this, QStringLiteral("PAK import"), failure.isEmpty()
+                ? QStringLiteral("Import did not complete. The previous imported model is preserved.") : failure);
+            return;
+        }
+        Set(QStringLiteral("pak_link_model"), true);
+        Set(QStringLiteral("twilight_link_model"), false);
+        Set(QStringLiteral("adult_link_model"), false);
+        Set(QStringLiteral("dark_link_model"), false);
+        QMessageBox::information(this, QStringLiteral("PAK model ready"),
+            QStringLiteral("Imported ") + result.value(QStringLiteral("name")).toString().left(256) +
+            QStringLiteral(". Start the game to use it."));
+        Render();
+    }
     void Mods() {
         const auto data = Presentation();
-        int model = data.value(QStringLiteral("twilight_link_model")).toBool() ? 3
+        int model = data.value(QStringLiteral("pak_link_model")).toBool() ? 4
+                    : data.value(QStringLiteral("twilight_link_model")).toBool() ? 3
                     : data.value(QStringLiteral("dark_link_model")).toBool()   ? 2
                     : data.value(QStringLiteral("adult_link_model")).toBool()  ? 1
                                                                                : 0;
         Choice(QStringLiteral("Player model"),
                {QStringLiteral("Original Link"), QStringLiteral("Adult Link"),
-                QStringLiteral("Dark Link"), QStringLiteral("Twilight Princess Link")},
+                QStringLiteral("Dark Link"), QStringLiteral("Twilight Princess Link"),
+                QStringLiteral("PAK Importer")},
                model, [this](int index) {
+                   Set(QStringLiteral("pak_link_model"), index == 4);
                    Set(QStringLiteral("twilight_link_model"), index == 3);
                    Set(QStringLiteral("adult_link_model"), index == 1);
                    Set(QStringLiteral("dark_link_model"), index == 2);
                    Render();
                });
+        if (model == 4) {
+            const auto imported = Read(Root() + QStringLiteral("/user/load/mm3d-models/pak-import/import.json"));
+            Note(box, imported.isEmpty() ? QStringLiteral("No PAK model imported.")
+                : QStringLiteral("Imported model: ") + imported.value(QStringLiteral("source_name")).toString().left(256));
+            Button(box, QStringLiteral("Import PAK file"), [this] { ImportPak(); })
+                ->setEnabled(!running && !GameFolder::Rom().isEmpty());
+            Note(box, QStringLiteral("Select a ModLoader64 .pak player-model package. Uses native MM3D equipment, abilities and voices. Import before gameplay; restart after changing models. Human Link rigs are supported; transformation forms and custom scripts are not imported."));
+            return;
+        }
         if (model == 1) {
             Choice(QStringLiteral("Link’s tunic color"),
                    {QStringLiteral("Green (Kokiri)"), QStringLiteral("Blue (Zora)"),

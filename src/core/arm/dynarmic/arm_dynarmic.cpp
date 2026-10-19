@@ -30,6 +30,7 @@
 #include "mm3d/bottle_healing.h"
 #include "mm3d/movement_speed.h"
 #include "mm3d/player_model_scale.h"
+#include "mm3d/mounted_player.h"
 #include "mm3d/adult_stick_contact.h"
 #include "mm3d/model_mod.h"
 
@@ -172,6 +173,7 @@ public:
     MM3D::NativeItemPresent::Hook item_present_hook;
     MM3D::NativeStartup::Hook startup_hook;
     MM3D::LinkPoseCapture::Hook link_pose_hook;
+    MM3D::MountedPlayer::Hook mounted_player_hook;
     MM3D::NativeStartup::PressHook press_hook;
     MM3D::NativeStartup::LoadingIconHook loading_icon_hook;
     MM3D::ItemPreview::Hook item_preview_hook;
@@ -800,9 +802,24 @@ public:
             auto& regs=parent.jit->Regs();
             if(swi==MM3D::NativeStartup::FirstSVC) {
                 startup_hook.Enter(guest,regs[0]);
+                mounted_player_hook.Submit(guest, regs[0], regs[1],
+                                           MM3D::ModelMod::adult_active.load());
+                static unsigned rider_reports = 0;
+                if (mounted_player_hook.weight > 0.f && rider_reports < 24 &&
+                    (regs[0] == mounted_player_hook.player_instance || rider_reports < 8)) {
+                    ++rider_reports;
+                    LOG_INFO(Core_ARM11,
+                             "Mounted player: animation={}, instance={:08x}, expected={:08x}, "
+                             "accepted={}, offset=({},{},{})",
+                             mounted_player_hook.animation_id, regs[0],
+                             mounted_player_hook.player_instance, mounted_player_hook.instance != 0,
+                             mounted_player_hook.offset[0], mounted_player_hook.offset[1],
+                             mounted_player_hook.offset[2]);
+                }
                 link_pose_hook.Enter(guest,regs[0]);regs[5]=regs[0];
             } else {
                 startup_hook.Matrix(guest,regs[5],regs[4]);
+                mounted_player_hook.MatrixBuilt(guest, regs[5], regs[4]);
                 link_pose_hook.MatrixBuilt(guest,regs[5],regs[4],MM3D::guest_frames.load());
                 regs[0]=memory.Read32(regs[5]+0xc);
             }

@@ -97,10 +97,12 @@ object DekuiAdultLinkSetup {
         return NativeLibrary.dekuiTextureHashes(bytes.copyOfRange(72,bytes.size),512,512,13).map{java.lang.Long.toUnsignedString(it,16).uppercase().padStart(16,'0')}
     }
     @Synchronized fun generate(c:Context,progress:(String)->Unit):String {
+        check(!DekuiPakSetup.generating && !DekuiTwilightLinkSetup.generating) { "Another mod is being generated" }
         generating=true
         try { return generateImpl(c,progress) } finally { generating=false }
     }
     @Synchronized fun generateDarkLink(c:Context,progress:(String)->Unit):String {
+        check(!DekuiPakSetup.generating && !DekuiTwilightLinkSetup.generating) { "Another mod is being generated" }
         generating=true
         try { return generateImpl(c,progress,true) } finally { generating=false }
     }
@@ -172,7 +174,7 @@ object DekuiAdultLinkSetup {
                 if(target.exists())check(target.renameTo(oldTextures)){"Could not back up generated textures"}
                 if(!generatedTextures.renameTo(target)){if(oldTextures.exists())oldTextures.renameTo(target);error("Could not install generated textures")}
             }
-            DekuiPresentationStore(c).update(mapOf("twilight_link_model" to false,"adult_link_model" to !dark,"dark_link_model" to dark))
+            DekuiPresentationStore(c).update(mapOf("pak_link_model" to false,"twilight_link_model" to false,"adult_link_model" to !dark,"dark_link_model" to dark))
             BooleanSetting.DISK_SHADER_CACHE.boolean=false
             val settings=mutableListOf<org.citra.citra_emu.features.settings.model.AbstractSetting>(BooleanSetting.DISK_SHADER_CACHE)
             if(copied>0){BooleanSetting.CUSTOM_TEXTURES.boolean=true;settings.add(BooleanSetting.CUSTOM_TEXTURES)}

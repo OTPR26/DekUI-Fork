@@ -19,6 +19,9 @@ def check(package):
         subprocess.run([str(python), '-E', '-s', '-B', str(root / 'tools/mm3d/generate_tp_mod.py'),
                         '--package', str(root), '--probe-runtime'],
                        cwd=folder, env=env, check=True, timeout=60)
+        subprocess.run([str(python), '-E', '-s', '-B', str(root / 'tools/mm3d/import_pak.py'),
+                        '--package', str(root), '--probe-runtime'],
+                       cwd=folder, env=env, check=True, timeout=60)
 
 
 if __name__ == '__main__':

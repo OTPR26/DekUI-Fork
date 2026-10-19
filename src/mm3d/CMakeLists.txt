@@ -25,6 +25,14 @@ add_executable(mm3d_player_settings_tests player_settings_bridge_tests.cpp)
 target_include_directories(mm3d_player_settings_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 add_test(NAME mm3d_player_settings COMMAND mm3d_player_settings_tests)
 
+add_executable(mm3d_game_language_tests game_language_tests.cpp)
+target_include_directories(mm3d_game_language_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
+add_test(NAME mm3d_game_language COMMAND mm3d_game_language_tests)
+
+add_executable(mm3d_mounted_player_tests mounted_player_tests.cpp)
+target_include_directories(mm3d_mounted_player_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
+add_test(NAME mm3d_mounted_player COMMAND mm3d_mounted_player_tests)
+
 add_executable(mm3d_interpolation_timeline_tests interpolation_timeline_tests.cpp)
 target_include_directories(mm3d_interpolation_timeline_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 add_test(NAME mm3d_interpolation_timeline COMMAND mm3d_interpolation_timeline_tests)

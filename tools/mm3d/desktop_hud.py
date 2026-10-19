@@ -14,6 +14,19 @@ def digest(data):
 def reconstruct(source, spec):
     if digest(source) == spec['sha256']:
         return source
+    for variant in spec.get('source_variants', []):
+        if digest(source) == variant['sha256']:
+            normalized = bytearray(source)
+            for op in variant['normalize']:
+                at = op['at']
+                before = base64.b64decode(op['before'], validate=True)
+                after = base64.b64decode(op['after'], validate=True)
+                if (len(before) != len(after) or at < 0 or at > len(source) - len(before)
+                        or source[at:at+len(before)] != before):
+                    raise ValueError('HUD source normalization mismatch')
+                normalized[at:at+len(after)] = after
+            source = bytes(normalized)
+            break
     if digest(source) != spec['source_sha256']:
         raise ValueError('HUD archive has custom changes; retained existing HUD')
     output = bytearray()
