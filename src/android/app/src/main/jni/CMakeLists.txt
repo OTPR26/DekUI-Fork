@@ -58,3 +58,5 @@ set(CPACK_PACKAGE_EXECUTABLES ${CPACK_PACKAGE_EXECUTABLES} citra-android)
 target_sources(citra-android PRIVATE
     ../../../../../../externals/tp_texture_decoder/astc.cpp
     tp_import.cpp)
+target_include_directories(citra-android PRIVATE
+    ../../../../../../externals/tp_texture_decoder)
