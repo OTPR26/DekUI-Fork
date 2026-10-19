@@ -39,3 +39,5 @@ the old app ID. Select the OoT3D source again only when regenerating a mod.
 After checking the new app, the prototype may be uninstalled.
 
 The Pictograph Box defaults to R3 (right-stick click), independent of equipped items. Change or clear its binding in Controls. Android Back opens settings; the L3+R3 settings shortcut also remains available.
+
+Before launching, choose English, French or Spanish under Settings → General → Game language. Startup and in-game settings share the saved language; changes during gameplay apply after restarting the game. Settings menus remain in English.

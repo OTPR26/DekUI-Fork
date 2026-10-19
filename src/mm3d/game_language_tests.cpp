@@ -76,5 +76,26 @@ int main() {
     InitializeGameLanguage(config);
     Check(game_language == 5 && game_language_status == 0,
           "a request immediately before shutdown survives restart");
+    Config startup;
+    for (int language : {2, 5, 1}) {
+        Check(SaveGameLanguage(startup, language), "startup selection failed");
+        startup.Restart();
+        InitializeGameLanguage(startup);
+        Check(game_language == language && set_game_language == -1,
+              "startup language did not reach the next game session");
+        const int changed_in_game = language == 2 ? 5 : 2;
+        set_game_language = changed_in_game;
+        ApplyPendingGameLanguage(startup);
+        startup.Restart();
+        Check(startup.GetSystemLanguage() == changed_in_game,
+              "startup would not read a later in-game language selection");
+    }
+    const int startup_saves = startup.saves;
+    Check(!SaveGameLanguage(startup, 99) && startup.saves == startup_saves,
+          "startup accepted an unsupported language");
+    startup.writable = false;
+    const auto previous = startup.current;
+    Check(!SaveGameLanguage(startup, 1) && startup.current == previous,
+          "startup failure did not retain the saved language");
     std::puts("Game language persistence and failure recovery checks passed.");
 }

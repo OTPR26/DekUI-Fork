@@ -32,6 +32,9 @@
 #include "common/param_package.h"
 #include "common/settings.h"
 #include "common/texture.h"
+#include "core/core.h"
+#include "core/hle/service/cfg/cfg.h"
+#include "mm3d/game_language.h"
 #include "input_common/main.h"
 #include "mm3d/android_menu.h"
 #include "mm3d/controller_autoconfig.h"
@@ -168,12 +171,47 @@ QString NativeSettingsPath() {
                ? root + QStringLiteral("/user/config/qt-config.ini")
                : root + QStringLiteral("/desktop-native.ini");
 }
+int GameLanguage() {
+    auto& system = Core::System::GetInstance();
+    if (system.IsPoweredOn()) return PlayerSettings::game_language.load();
+    QSettings ini(NativeSettingsPath(), QSettings::IniFormat);
+    const int pending = ini.value(QStringLiteral("System/startup_game_language"), -1).toInt();
+    if (PlayerSettings::SupportedLanguage(pending)) return pending;
+    if (!QFileInfo::exists(GameFolder::Root() + QStringLiteral("/user/setup/ready.json")))
+        return 1;
+    return Service::CFG::GetModule(system)->GetSystemLanguage();
+}
+bool SetGameLanguage(int language) {
+    if (!PlayerSettings::SupportedLanguage(language)) return false;
+    auto& system = Core::System::GetInstance();
+    if (system.IsPoweredOn()) {
+        PlayerSettings::game_language_status.store(1);
+        PlayerSettings::set_game_language.store(language);
+        return true;
+    }
+    if (!QFileInfo::exists(GameFolder::Root() + QStringLiteral("/user/setup/ready.json"))) {
+        // Before first setup, do not create a partial user/NAND directory.
+        QSettings ini(NativeSettingsPath(), QSettings::IniFormat);
+        ini.setValue(QStringLiteral("System/startup_game_language"), language);
+        ini.sync();
+        return ini.status() == QSettings::NoError;
+    }
+    return PlayerSettings::SaveGameLanguage(*Service::CFG::GetModule(system), language);
+}
 void ApplyPendingSettings() {
     const auto root = GameFolder::Root();
     QSettings pending(root + QStringLiteral("/desktop-native.ini"), QSettings::IniFormat),
         actual(root + QStringLiteral("/user/config/qt-config.ini"), QSettings::IniFormat);
     for (const auto& key : pending.allKeys())
         actual.setValue(key, pending.value(key));
+    const QString language_key = QStringLiteral("System/startup_game_language");
+    if (actual.contains(language_key)) {
+        const int language = actual.value(language_key).toInt();
+        Require(PlayerSettings::SaveGameLanguage(
+                    *Service::CFG::GetModule(Core::System::GetInstance()), language),
+                QStringLiteral("Could not save game language. Please select it again in Settings."));
+        actual.remove(language_key);
+    }
     actual.sync();
     Require(actual.status() == QSettings::NoError,
             QStringLiteral("Could not apply startup settings"));

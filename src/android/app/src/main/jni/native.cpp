@@ -480,6 +480,30 @@ jfloat Java_org_citra_citra_1emu_NativeLibrary_dekuiScrollbarCenter(JNIEnv*,jcla
     return -1.f;
 }
 
+jint Java_org_citra_citra_1emu_NativeLibrary_getDekuiGameLanguage(JNIEnv*,jclass) {
+#ifdef ENABLE_MM3D_PRESENTATION
+    auto& system = Core::System::GetInstance();
+    return system.IsPoweredOn() ? MM3D::PlayerSettings::game_language.load()
+                               : Service::CFG::GetModule(system)->GetSystemLanguage();
+#else
+    return 1;
+#endif
+}
+jboolean Java_org_citra_citra_1emu_NativeLibrary_setDekuiGameLanguage(JNIEnv*,jclass,jint language) {
+#ifdef ENABLE_MM3D_PRESENTATION
+    if (!MM3D::PlayerSettings::SupportedLanguage(language)) return false;
+    auto& system = Core::System::GetInstance();
+    if (system.IsPoweredOn()) {
+        MM3D::PlayerSettings::game_language_status.store(1);
+        MM3D::PlayerSettings::set_game_language.store(language);
+        return true;
+    }
+    return MM3D::PlayerSettings::SaveGameLanguage(*Service::CFG::GetModule(system), language);
+#else
+    return false;
+#endif
+}
+
 void Java_org_citra_citra_1emu_NativeLibrary_requestDekuiPictograph(JNIEnv*,jclass) {
 #ifdef ENABLE_MM3D_PRESENTATION
     if (Core::System::GetInstance().IsPoweredOn() && !MM3D::overlay_visible.load())

@@ -742,6 +742,19 @@ class SettingsDialog final : public QDialog {
         box->setSpacing(14);
         Heading(box, page);
         if (page == QStringLiteral("General")) {
+            const int language = DesktopImport::GameLanguage();
+            Choice(QStringLiteral("Game language"),
+                   {QStringLiteral("English"), QStringLiteral("Français"), QStringLiteral("Español")},
+                   language == 2 ? 1 : language == 5 ? 2 : 0, [this](int index) {
+                       constexpr int languages[]{1, 2, 5};
+                       if (!DesktopImport::SetGameLanguage(languages[index])) {
+                           QMessageBox::warning(this, QStringLiteral("Game language"),
+                                                QStringLiteral("Could not save the game language. Try selecting it again."));
+                           Render();
+                       }
+                   });
+            Note(box, running ? QStringLiteral("Restart the game to apply. Settings menus remain in English.")
+                              : QStringLiteral("Applies when you start the game. Settings menus remain in English."));
             Bool(QStringLiteral("Show frame rate"), QStringLiteral("show_performance"));
             Note(box, QStringLiteral("MM3D ROM: ") + GameFolder::Rom());
             Button(box, QStringLiteral("Choose MM3D ROM"), [this] {

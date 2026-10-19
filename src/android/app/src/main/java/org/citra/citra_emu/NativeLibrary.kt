@@ -116,6 +116,8 @@ object NativeLibrary {
     external fun dekuiScrollbarCenter(x: Float, y: Float): Float
     external fun onDekuiMenuKey(key: Int, down: Boolean)
     external fun requestDekuiPictograph()
+    external fun getDekuiGameLanguage(): Int
+    external fun setDekuiGameLanguage(language: Int): Boolean
     external fun onDekuiScroll(x: Float, y: Float, amount: Float)
 
     external fun closeDekuiSettings()

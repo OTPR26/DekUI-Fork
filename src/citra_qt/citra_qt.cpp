@@ -4959,6 +4959,10 @@ int LaunchQtFrontend(int argc, char* argv[]) {
         QMessageBox::critical(nullptr,QStringLiteral("Majora ReMasked storage"),error);
         return 1;
     }
+    // Existing startup settings read the same NAND used by gameplay. A fresh
+    // installation stages its language until setup has created the user tree.
+    if (QFileInfo::exists(MM3D::GameFolder::User() + QStringLiteral("setup/ready.json")))
+        FileUtil::SetUserPath(MM3D::GameFolder::User().toStdString());
     Q_INIT_RESOURCE(dekui_frontend);
     InputCommon::Init();
     const bool start_game=MM3D::DesktopFrontend::Startup();
@@ -4972,9 +4976,9 @@ int LaunchQtFrontend(int argc, char* argv[]) {
         QMessageBox::critical(nullptr, QStringLiteral("Majora ReMasked setup"), error);
         return 1;
     }
+    FileUtil::SetUserPath(MM3D::GameFolder::User().toStdString());
     try { MM3D::DesktopImport::ApplyPendingSettings(); }
     catch(const std::exception& error){QMessageBox::critical(nullptr,QStringLiteral("Settings"),QString::fromUtf8(error.what()));return 1;}
-    FileUtil::SetUserPath(MM3D::GameFolder::User().toStdString());
 #endif
 
     // Required when using .qrc resources from within a static library.

@@ -176,6 +176,15 @@ class DekuiSettingsActivity : AppCompatActivity() {
         root.addView(body,LinearLayout.LayoutParams(-1,0,1f))
         when(page) {
             "General" -> {
+                val languages=listOf(1,2,5)
+                val language=NativeLibrary.getDekuiGameLanguage()
+                choice("Game language",listOf("English","Français","Español"),languages.indexOf(language).coerceAtLeast(0)) { index->
+                    if(!NativeLibrary.setDekuiGameLanguage(languages[index])) {
+                        error(IllegalStateException("Could not save the game language. Try selecting it again."))
+                    }
+                    render()
+                }
+                note("Applies when you start the game. Settings menus remain in English.")
                 note("Game data: Internal storage/mm3dport\nHUD settings, controller bindings, saves and mods are stored here.")
                 bool("Show frame rate","show_performance")
                 slider("Menu size",size.toFloat(),0f,40f) { update("android_menu_text_size" to it.toInt());size=it.toInt();render() }
