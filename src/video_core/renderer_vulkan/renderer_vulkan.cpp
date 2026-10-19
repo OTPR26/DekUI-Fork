@@ -269,67 +269,71 @@ void RendererVulkan::RenderToWindow(PresentWindow& window, const Layout::Framebu
 
     unsigned passes=1;
 #ifdef ENABLE_MM3D_PRESENTATION
-    const bool enabled=MM3D::CameraMidpoint::present_60.load() &&
-        MM3D::CameraMidpoint::enabled.load() && !secondaryWindowEnabled &&
-        layout.top_screen_enabled && layout.is_rotated &&
-        layout.render_3d_mode==Settings::StereoRenderOption::Off &&
-        !layout.additional_screen_enabled && Settings::values.use_vsync.GetValue();
-    midpoint_async_skip = enabled;
-    if(midpoint_present_generation!=MM3D::CameraMidpoint::generation.load()) {
-        midpoint_clock.Reset();
-        midpoint_present_generation=MM3D::CameraMidpoint::generation.load();
-    }
-    if(enabled) {
-        const auto now=std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count();
-        using namespace MM3D::CameraMidpoint;
-        auto status=rasterizer.MidpointStatus(MM3D::guest_frames.load());
-        if(native_preview.load())status=PresentationStatus::Comparison;
-        const auto guest_us=MM3D::guest_frame_time_us.load();
-        const auto plan=midpoint_clock.Next(MM3D::guest_frames.load(),now,
-            status==PresentationStatus::Active,guest_us>=0 ?
-                std::optional<std::int64_t>{guest_us/1000} : std::nullopt);
-        MM3D::EffectCapture::ObservePresentation({MM3D::guest_frames.load(),
-            static_cast<unsigned>(status),static_cast<unsigned>(plan),true});
-        presentation_status=plan==Presentation::Skip || plan==Presentation::Pair ?
-            PresentationStatus::Active : status==PresentationStatus::Active ?
-            PresentationStatus::Cadence : status;
-        ++midpoint_status_counts[static_cast<unsigned>(presentation_status.load())];
-        if(plan==Presentation::Pair)++midpoint_status_pairs;
-        if(!midpoint_status_time)midpoint_status_time=now;
-        if(now-midpoint_status_time>=1000) {
-            if(MM3D::InputLatency::Active()) {
-            const auto count=[&](PresentationStatus value){return midpoint_status_counts[static_cast<unsigned>(value)];};
-            LOG_INFO(Render_Vulkan,
-                "Interpolation window {}ms: pairs={}, waiting_scene={}, frame_mismatch={}, camera_history={}, no_hud={}, unsupported_hud={}, cadence={}, active={}",
-                now-midpoint_status_time,midpoint_status_pairs,
-                count(PresentationStatus::WaitingScene),count(PresentationStatus::FrameMismatch),
-                count(PresentationStatus::NoMidpoint),count(PresentationStatus::NoHud),
-                count(PresentationStatus::UnsupportedHud),count(PresentationStatus::Cadence),
-                count(PresentationStatus::Active));
-            LOG_INFO(Render_Vulkan,
-                "Interpolation camera rejections: cpu_mismatch={}, lens_change={}, cut={}, gap_or_first={}",
-                camera_cpu_mismatch.exchange(0),camera_lens_change.exchange(0),
-                camera_cut.exchange(0),camera_gap.exchange(0));
+    // The primary display owns interpolation timing. A second, bottom-only
+    // display renders natively and must not reset that clock or its status.
+    if (!isSecondaryWindow) {
+        const bool enabled=MM3D::CameraMidpoint::present_60.load() &&
+            MM3D::CameraMidpoint::enabled.load() &&
+            layout.top_screen_enabled && layout.is_rotated &&
+            layout.render_3d_mode==Settings::StereoRenderOption::Off &&
+            !layout.additional_screen_enabled && Settings::values.use_vsync.GetValue();
+        midpoint_async_skip = enabled;
+        if(midpoint_present_generation!=MM3D::CameraMidpoint::generation.load()) {
+            midpoint_clock.Reset();
+            midpoint_present_generation=MM3D::CameraMidpoint::generation.load();
+        }
+        if(enabled) {
+            const auto now=std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            using namespace MM3D::CameraMidpoint;
+            auto status=rasterizer.MidpointStatus(MM3D::guest_frames.load());
+            if(native_preview.load())status=PresentationStatus::Comparison;
+            const auto guest_us=MM3D::guest_frame_time_us.load();
+            const auto plan=midpoint_clock.Next(MM3D::guest_frames.load(),now,
+                status==PresentationStatus::Active,guest_us>=0 ?
+                    std::optional<std::int64_t>{guest_us/1000} : std::nullopt);
+            MM3D::EffectCapture::ObservePresentation({MM3D::guest_frames.load(),
+                static_cast<unsigned>(status),static_cast<unsigned>(plan),true});
+            presentation_status=plan==Presentation::Skip || plan==Presentation::Pair ?
+                PresentationStatus::Active : status==PresentationStatus::Active ?
+                PresentationStatus::Cadence : status;
+            ++midpoint_status_counts[static_cast<unsigned>(presentation_status.load())];
+            if(plan==Presentation::Pair)++midpoint_status_pairs;
+            if(!midpoint_status_time)midpoint_status_time=now;
+            if(now-midpoint_status_time>=1000) {
+                if(MM3D::InputLatency::Active()) {
+                const auto count=[&](PresentationStatus value){return midpoint_status_counts[static_cast<unsigned>(value)];};
+                LOG_INFO(Render_Vulkan,
+                    "Interpolation window {}ms: pairs={}, waiting_scene={}, frame_mismatch={}, camera_history={}, no_hud={}, unsupported_hud={}, cadence={}, active={}",
+                    now-midpoint_status_time,midpoint_status_pairs,
+                    count(PresentationStatus::WaitingScene),count(PresentationStatus::FrameMismatch),
+                    count(PresentationStatus::NoMidpoint),count(PresentationStatus::NoHud),
+                    count(PresentationStatus::UnsupportedHud),count(PresentationStatus::Cadence),
+                    count(PresentationStatus::Active));
+                LOG_INFO(Render_Vulkan,
+                    "Interpolation camera rejections: cpu_mismatch={}, lens_change={}, cut={}, gap_or_first={}",
+                    camera_cpu_mismatch.exchange(0),camera_lens_change.exchange(0),
+                    camera_cut.exchange(0),camera_gap.exchange(0));
+                }
+                midpoint_status_time=now;midpoint_status_pairs=0;midpoint_status_counts={};
             }
-            midpoint_status_time=now;midpoint_status_pairs=0;midpoint_status_counts={};
+            if(plan==MM3D::CameraMidpoint::Presentation::Skip) {
+                screenRendered=true;
+                Core::PerfStats::game_frames_updated=false;
+                return;
+            }
+            if(plan==MM3D::CameraMidpoint::Presentation::Pair) {
+                passes=2;++MM3D::CameraMidpoint::presented_pairs;
+            }
+        } else {
+            MM3D::EffectCapture::ObservePresentation({MM3D::guest_frames.load(),
+                static_cast<unsigned>(MM3D::CameraMidpoint::PresentationStatus::Settings),0,false});
+            midpoint_clock.Reset();
+            midpoint_status_time=0;midpoint_status_pairs=0;midpoint_status_counts={};
+            MM3D::CameraMidpoint::presentation_status=MM3D::CameraMidpoint::present_60.load() ?
+                MM3D::CameraMidpoint::PresentationStatus::Settings :
+                MM3D::CameraMidpoint::PresentationStatus::Off;
         }
-        if(plan==MM3D::CameraMidpoint::Presentation::Skip) {
-            screenRendered=true;
-            Core::PerfStats::game_frames_updated=false;
-            return;
-        }
-        if(plan==MM3D::CameraMidpoint::Presentation::Pair) {
-            passes=2;++MM3D::CameraMidpoint::presented_pairs;
-        }
-    } else {
-        MM3D::EffectCapture::ObservePresentation({MM3D::guest_frames.load(),
-            static_cast<unsigned>(MM3D::CameraMidpoint::PresentationStatus::Settings),0,false});
-        midpoint_clock.Reset();
-        midpoint_status_time=0;midpoint_status_pairs=0;midpoint_status_counts={};
-        MM3D::CameraMidpoint::presentation_status=MM3D::CameraMidpoint::present_60.load() ?
-            MM3D::CameraMidpoint::PresentationStatus::Settings :
-            MM3D::CameraMidpoint::PresentationStatus::Off;
     }
 #endif
 #ifdef ENABLE_MM3D_PRESENTATION

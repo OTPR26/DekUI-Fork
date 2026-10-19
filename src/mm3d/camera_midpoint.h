@@ -374,7 +374,7 @@ inline std::atomic<PresentationStatus> presentation_status{PresentationStatus::O
 inline const char* StatusText(PresentationStatus status) {
     switch(status) {
     case PresentationStatus::Off:return "Off";
-    case PresentationStatus::Settings:return "Waiting: enable VSync and preview; use one landscape screen view";
+    case PresentationStatus::Settings:return "Waiting: enable VSync and interpolation; use a landscape main screen";
     case PresentationStatus::WaitingScene:return "Native: waiting for supported scene";
     case PresentationStatus::FrameMismatch:return "Native: captured scene is not the completed frame";
     case PresentationStatus::NoMidpoint:return "Native: camera history not ready";
