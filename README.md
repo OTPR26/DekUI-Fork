@@ -20,6 +20,7 @@ DekUI Fork builds on [tgacquin’s DekUI](https://github.com/tgacquin/mm3d-dekui
 - Optional controller-neutral English item prompts.
 - Adult Link appearance mod generated on the device from your own OoT3D ROM, with adult voice clips imported from that ROM.
 - Dark Link appearance mod with red eyes, a matching sword, and adult voices.
+- Twilight Princess Link generated from your own GameCube Twilight Princess ROM, including action voices, matching high-resolution textures from subfolders, and an optional TP Master Sword and sheath.
 - Original green, blue, and red tunic variants, an optional Master Sword model and matching HUD icon, and matching textures from your own OoT3D texture pack when available.
 
 ## Get started
@@ -28,6 +29,7 @@ DekUI Fork builds on [tgacquin’s DekUI](https://github.com/tgacquin/mm3d-dekui
 2. Select your own **Majora’s Mask 3D USA Rev 1 / v1.1** ROM during setup.
 3. Open Settings to choose a custom-texture folder, controller bindings, and HUD options.
 4. For Adult Link or Dark Link, open **Settings → Mods**, select your own supported OoT3D ROM and optional texture folder, then generate the mod before starting gameplay.
+5. For Twilight Princess Link, choose that player model in **Settings → Mods**, select your own GameCube Twilight Princess ROM (ISO, GCM, or RVZ) and optional texture folder, then generate the mod. Texture matching searches subfolders.
 
 No game ROM, imported player model, imported voices, save file, or personal texture pack is supplied with the release. Generated assets stay on your device. Changing Adult Link, tunic, sword, or voice selection requires restarting gameplay. See [setup](docs/android/SETUP.md) for details.
 
