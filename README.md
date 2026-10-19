@@ -1,8 +1,8 @@
 # DekUI Fork
 
-**An emulator fork tailored for a single-screen Majora’s Mask 3D experience.**
+**An emulator fork tailored for High Res 60 FPS with Player Model Mods in Majora’s Mask 3D.**
 
-Supports Android, Windows, Linux, and macOS. See Releases for available packages and supported architectures.
+Supports Android, Windows, Linux, and macOS.
 
 DekUI Fork builds on [tgacquin’s DekUI](https://github.com/tgacquin/mm3d-dekui), the [Azahar emulator](https://github.com/azahar-emu/azahar), and [Project Restoration](https://restoration.zora.re/). It runs MM3D through an adapted 3DS emulator; it is not a game recompilation or a native rewrite of the game.
 
