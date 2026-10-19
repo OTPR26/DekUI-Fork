@@ -88,7 +88,7 @@ def apply_controls(user, resources):
     original = target.read_bytes()
     if digest(original) == spec['patch_sha256']:
         return
-    if digest(original) != spec['baseline_patch_sha256']:
+    if digest(original) not in (spec['baseline_patch_sha256'], spec.get('legacy_patch_sha256')):
         raise ValueError('Custom gameplay patch retained; cannot apply the default input patch')
     backup = checked(user, 'config/dekui-backups/code-before-desktop-pc-input.bps')
     if not backup.exists(): atomic_write(backup, original)

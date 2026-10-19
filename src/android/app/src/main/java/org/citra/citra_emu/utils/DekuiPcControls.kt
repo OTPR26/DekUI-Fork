@@ -21,18 +21,22 @@ object DekuiPcControls {
     }
     fun apply(context: Context) {
         val prefs=PreferenceManager.getDefaultSharedPreferences(context)
-        if(prefs.getBoolean("dekui-pc-input-v1",false))return
         val root=org.citra.citra_emu.utils.DekuiStorage.root(context)
         val patch=File(root,"load/mods/0004000000125500/code.bps")
         check(patch.isFile) { "Installed gameplay patch is missing" }
         val spec=context.assets.open("dekui-pc-controls/provenance.json").bufferedReader().use { JSONObject(it.readText()) }
         val current=patch.readBytes();val currentHash=hash(current)
-        check(currentHash==spec.getString("baseline_patch_sha256") || currentHash==spec.getString("patch_sha256")) {
+        val known=currentHash==spec.getString("baseline_patch_sha256") ||
+            currentHash==spec.getString("patch_sha256") || currentHash==spec.optString("legacy_patch_sha256")
+        if(!known && prefs.getBoolean("dekui-pc-input-v1",false))return // Preserve an opted-in custom patch.
+        check(currentHash==spec.getString("baseline_patch_sha256") || currentHash==spec.getString("patch_sha256") || currentHash==spec.optString("legacy_patch_sha256")) {
             "Gameplay patch differs from the verified PC migration; existing patch retained"
         }
         val pc=context.assets.open("dekui-pc-controls/code.bps").use { it.readBytes() }
         check(hash(pc)==spec.getString("patch_sha256")) { "PC gameplay patch checksum mismatch" }
-        if(currentHash==spec.getString("patch_sha256") && DekuiStorage.hasSharedBindings(context)) {
+        if(prefs.getBoolean("dekui-pc-input-v1",false) ||
+            ((currentHash==spec.getString("patch_sha256") || currentHash==spec.optString("legacy_patch_sha256")) && DekuiStorage.hasSharedBindings(context))) {
+            if(currentHash!=hash(pc))write(patch,pc)
             check(prefs.edit().putBoolean("dekui-pc-input-v1",true).commit())
             return
         }

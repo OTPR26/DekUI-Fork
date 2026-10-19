@@ -55,6 +55,21 @@ class DesktopHudTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'Custom gameplay patch'):apply_controls(user,res)
             self.assertEqual(target.read_bytes(),b'my-custom-patch')
 
+    def test_legacy_input_patch_upgrades_without_touching_custom_bindings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp); user=root/'user'; res=root/'resources'
+            folder=res/'desktop-controls';folder.mkdir(parents=True)
+            legacy=b'legacy-patch';new=b'source-copy-patch'
+            spec={'patch_sha256':hashlib.sha256(new).hexdigest(),
+                  'baseline_patch_sha256':hashlib.sha256(b'baseline').hexdigest(),
+                  'legacy_patch_sha256':hashlib.sha256(legacy).hexdigest()}
+            (folder/'provenance.json').write_text(json.dumps(spec));(folder/'code.bps').write_bytes(new)
+            target=user/'load/mods/0004000000125500/code.bps';target.parent.mkdir(parents=True);target.write_bytes(legacy)
+            controls=user/'config/qt-config.ini';controls.parent.mkdir(parents=True);controls.write_bytes(b'custom bindings')
+            apply_controls(user,res);apply_controls(user,res)
+            self.assertEqual(target.read_bytes(),new)
+            self.assertEqual(controls.read_bytes(),b'custom bindings')
+
     def test_shared_android_desktop_hud_defaults_are_identical(self):
         root=Path(__file__).resolve().parents[2]
         resources=root/'resources/mm3d'
