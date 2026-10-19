@@ -27,7 +27,7 @@
 #include "mm3d/texture_picker.h"
 #include "mm3d/diagnostics.h"
 #include "mm3d/input_latency.h"
-#include "mm3d/player_settings.h"
+#include "mm3d/game_language.h"
 #include "core/hle/service/cfg/cfg.h"
 #endif
 #include "input_common/motion_emu.h"
@@ -116,24 +116,9 @@ void EmuThread::run() {
     bool was_active = false;
 #ifdef ENABLE_MM3D_PRESENTATION
     auto game_language_config = Service::CFG::GetModule(system);
-    MM3D::PlayerSettings::game_language.store(game_language_config->GetSystemLanguage());
-    MM3D::PlayerSettings::game_language_status.store(0);
+    MM3D::PlayerSettings::InitializeGameLanguage(*game_language_config);
     const auto apply_game_language = [&] {
-        using namespace MM3D::PlayerSettings;
-        const int requested = set_game_language.exchange(-1);
-        if (!SupportedLanguage(requested)) return;
-        const auto old_language=game_language_config->GetSystemLanguage();
-        game_language_config->SetSystemLanguage(static_cast<Service::CFG::SystemLanguage>(requested));
-        if(game_language_config->GetSystemLanguage()!=requested) {
-            game_language_config->SetSystemLanguage(old_language);
-            game_language_status.store(3);
-            game_language.store(old_language);
-            return;
-        }
-        const auto result=game_language_config->UpdateConfigNANDSavegame();
-        if(!result.IsSuccess())game_language_config->SetSystemLanguage(old_language);
-        game_language_status.store(result.IsSuccess()?2:3);
-        game_language.store(game_language_config->GetSystemLanguage());
+        MM3D::PlayerSettings::ApplyPendingGameLanguage(*game_language_config);
     };
 #endif
     while (!stop_run) {
