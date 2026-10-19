@@ -10,13 +10,13 @@ def check(package):
     with tempfile.TemporaryDirectory(prefix='Dekui setup smoke ') as tmp:
         subprocess.run(['ditto', '-x', '-k', str(package.resolve()), tmp], check=True)
         root = Path(tmp) / 'dekui'
-        python = root / 'DekUI Fork.app/Contents/Resources/runtime/python/bin/python3'
-        subprocess.run([str(python), '-E', '-s', '-B', str(root / 'DekUI Fork.app/Contents/Resources/tools/mm3d/package_setup_check.py')], cwd=tmp, check=True, timeout=30)
-        helper = root / 'DekUI Fork.app/Contents/Resources/tools/mm3d/graphical_setup.py'
+        python = root / 'Majora ReMasked.app/Contents/Resources/runtime/python/bin/python3'
+        subprocess.run([str(python), '-E', '-s', '-B', str(root / 'Majora ReMasked.app/Contents/Resources/tools/mm3d/package_setup_check.py')], cwd=tmp, check=True, timeout=30)
+        helper = root / 'Majora ReMasked.app/Contents/Resources/tools/mm3d/graphical_setup.py'
         env = os.environ.copy()
         env.update(PATH='/usr/bin:/bin', PYTHONHOME='/nonexistent-python',
                    PYTHONPATH='/nonexistent-modules')
-        payload = root / 'DekUI Fork.app/Contents/Resources'
+        payload = root / 'Majora ReMasked.app/Contents/Resources'
         subprocess.run([str(python), '-E', '-s', '-B', str(payload / 'tools/mm3d/generate_tp_mod.py'),
                         '--package', str(payload), '--probe-runtime'], cwd=tmp, env=env, check=True, timeout=60)
         subprocess.run([str(python), '-E', '-s', '-B', str(helper), '--help'],
@@ -29,7 +29,7 @@ def check(package):
         if (root / 'user').exists():
             raise RuntimeError('Invalid input unexpectedly created user data')
         # Load the actual deployed binary and Qt platform plugin, without a ROM.
-        app = root / 'DekUI Fork.app'
+        app = root / 'Majora ReMasked.app'
         env.update(QT_QPA_PLATFORM='cocoa', HOME=str(root / 'smoke-home'))
         result = subprocess.run([str(app / 'Contents/MacOS/azahar'), '-v'],
                                 cwd=tmp, env=env, capture_output=True, text=True, timeout=30)

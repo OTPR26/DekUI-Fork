@@ -1,10 +1,10 @@
-Dekui for Linux
+Majora ReMasked for Linux
 
 1. Extract the download into a writable location. If downloading from GitHub
    Actions, extract the ZIP first, then the tar.gz inside it. Open the dekui folder.
 2. Put exactly one decrypted USA v1.1 game-card dump (.cci or .3ds) beside
-   Dekui.AppImage. Any filename is accepted. Use a card with v1.1 preinstalled.
-3. Open Dekui.AppImage. If needed, enable Properties > Permissions > Is executable.
+   Majora-ReMasked.AppImage. Any filename is accepted. Use a card with v1.1 preinstalled.
+3. Open Majora-ReMasked.AppImage. If needed, enable Properties > Permissions > Is executable.
    First launch silently checks the game and prepares the included Restoration
    and HD HUD files before opening the game. Allow extra time on first launch.
    No file-selection prompts or separate mod downloads are needed.
@@ -31,7 +31,7 @@ Launch the new version. Saves, settings, textures and unrelated mods are preserv
 If an upgrade is interrupted, relaunch to retry. Keep user/ and upgrade backups.
 
 If FUSE is unavailable, run from a terminal:
-APPIMAGE_EXTRACT_AND_RUN=1 ./Dekui.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./Majora-ReMasked.AppImage
 
 Optional custom textures: use F1 > Graphics > Open texture folder, install a
 compatible pack, enable Use custom textures, then restart Dekui. The folder is

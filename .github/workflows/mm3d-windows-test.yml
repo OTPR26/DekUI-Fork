@@ -1,4 +1,4 @@
-name: DekUI Fork Windows
+name: Majora ReMasked Windows
 on:
   workflow_dispatch:
     inputs:
@@ -74,7 +74,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: DekUI-Fork-Windows-Diagnostics-${{ github.sha }}
+          name: Majora-ReMasked-Windows-Diagnostics-${{ github.sha }}
           path: |
             windows-build.log
             build-windows/CMakeFiles/CMakeConfigureLog.yaml
@@ -82,21 +82,21 @@ jobs:
             build-windows/Testing/Temporary/LastTestsFailed.log
           if-no-files-found: ignore
       - name: Check package privacy
-        run: python tools/mm3d/check_release_privacy.py artifacts/DekUI-Fork-${{ steps.release.outputs.version }}-Windows-x64.zip
+        run: python tools/mm3d/check_release_privacy.py artifacts/Majora-ReMasked-${{ steps.release.outputs.version }}-Windows-x64.zip
       - uses: actions/upload-artifact@v7
         with:
-          name: DekUI-Fork-${{ steps.release.outputs.version }}-Windows-x64-${{ github.sha }}
-          path: artifacts/DekUI-Fork-${{ steps.release.outputs.version }}-Windows-x64.zip
+          name: Majora-ReMasked-${{ steps.release.outputs.version }}-Windows-x64-${{ github.sha }}
+          path: artifacts/Majora-ReMasked-${{ steps.release.outputs.version }}-Windows-x64.zip
           if-no-files-found: error
       - name: Archive matching source
         timeout-minutes: 15
-        run: python tools/mm3d/package_source.py artifacts/DekUI-Fork-${{ steps.release.outputs.version }}-Source.tar.gz
+        run: python tools/mm3d/package_source.py artifacts/Majora-ReMasked-${{ steps.release.outputs.version }}-Source.tar.gz
       - name: Check package privacy
-        run: python tools/mm3d/check_release_privacy.py artifacts/DekUI-Fork-${{ steps.release.outputs.version }}-Source.tar.gz
+        run: python tools/mm3d/check_release_privacy.py artifacts/Majora-ReMasked-${{ steps.release.outputs.version }}-Source.tar.gz
       - uses: actions/upload-artifact@v7
         with:
-          name: DekUI-Fork-${{ steps.release.outputs.version }}-Source-${{ github.sha }}
-          path: artifacts/DekUI-Fork-${{ steps.release.outputs.version }}-Source.tar.gz
+          name: Majora-ReMasked-${{ steps.release.outputs.version }}-Source-${{ github.sha }}
+          path: artifacts/Majora-ReMasked-${{ steps.release.outputs.version }}-Source.tar.gz
           if-no-files-found: error
 
   windows-arm64:
@@ -148,16 +148,16 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: DekUI-Fork-Windows-arm64-Diagnostics-${{ github.sha }}
+          name: Majora-ReMasked-Windows-arm64-Diagnostics-${{ github.sha }}
           path: |
             windows-arm64-build.log
             build-windows-arm64/CMakeFiles/CMakeConfigureLog.yaml
             build-windows-arm64/Testing/Temporary/LastTest.log
           if-no-files-found: ignore
       - name: Check package privacy
-        run: python tools/mm3d/check_release_privacy.py artifacts/DekUI-Fork-*-Windows-arm64*
+        run: python tools/mm3d/check_release_privacy.py artifacts/Majora-ReMasked-*-Windows-arm64*
       - uses: actions/upload-artifact@v7
         with:
-          name: DekUI-Fork-Windows-arm64-${{ github.sha }}
-          path: artifacts/DekUI-Fork-*-Windows-arm64*
+          name: Majora-ReMasked-Windows-arm64-${{ github.sha }}
+          path: artifacts/Majora-ReMasked-*-Windows-arm64*
           if-no-files-found: error

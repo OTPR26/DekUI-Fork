@@ -1,4 +1,4 @@
-# DekUI Fork changes
+# Majora ReMasked changes
 
 ## 0.2.0 — Android and Desktop
 

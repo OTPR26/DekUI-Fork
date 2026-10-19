@@ -8,31 +8,31 @@ Project Restoration and the required HUD layouts are included. Optional custom t
 
 ## Windows
 
-1. Extract `DekUI-Fork-Windows-x64.zip` into a writable location and open the `dekui` folder.
-2. Keep `Dekui.exe`, its DLLs, and the `plugins`, `tools`, `resources`, and `runtime` folders together.
-3. Open `Dekui.exe` and select your game from the startup screen.
+1. Extract `Majora-ReMasked-Windows-x64.zip` into a writable location and open the `dekui` folder.
+2. Keep `Majora-ReMasked.exe`, its DLLs, and the `plugins`, `tools`, `resources`, and `runtime` folders together.
+3. Open `Majora-ReMasked.exe` and select your game from the startup screen.
 
 Windows 10/11 x64 and a Vulkan-capable graphics driver are required. Python is bundled privately for setup; you do not need to install it or modify PATH. The application is unsigned.
 
 ## Linux
 
-1. Extract `DekUI-Fork-Linux-x86_64.tar.gz` and open the `dekui` folder. If downloading a build artifact from Actions, extract its outer ZIP first.
-2. Put the extracted folder somewhere writable under your home directory. Keep `Dekui.AppImage`, `tools`, and `resources` together.
+1. Extract `Majora-ReMasked-Linux-x86_64.tar.gz` and open the `dekui` folder. If downloading a build artifact from Actions, extract its outer ZIP first.
+2. Put the extracted folder somewhere writable under your home directory. Keep `Majora-ReMasked.AppImage`, `tools`, and `resources` together.
 3. Make the AppImage executable if needed; select your game from its startup screen.
-4. Launch `Dekui.AppImage`.
+4. Launch `Majora-ReMasked.AppImage`.
 
 Python 3.9 or newer and a Vulkan-capable graphics driver are required. Keep Python installed for startup resource checks and upgrades.
 
 If FUSE is unavailable, launch from a terminal with:
 
 ```sh
-APPIMAGE_EXTRACT_AND_RUN=1 ./Dekui.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./Majora-ReMasked.AppImage
 ```
 
 ## macOS (Apple Silicon)
 
-1. Extract `DekUI-Fork-macOS-arm64.zip`. If downloading a build artifact from Actions, extract its outer ZIP first.
-2. Move `DekUI Fork.app` to Applications. The app bundles its setup tools and resources.
+1. Extract `Majora-ReMasked-macOS-arm64.zip`. If downloading a build artifact from Actions, extract its outer ZIP first.
+2. Move `Majora ReMasked.app` to Applications. The app bundles its setup tools and resources.
 3. Open the app and select your game from the startup screen.
 4. If macOS blocks the app because the developer cannot be verified, open **System Settings → Privacy & Security → Open Anyway**, then confirm **Open**.
 
@@ -48,7 +48,7 @@ Setup references your selected game in place. Later launches check for resource 
 
 ## Settings
 
-Use Settings on the startup screen. In game, choose DekUI Fork → Settings, press Command-comma on macOS or Ctrl-comma elsewhere, or press Start + Select together on a controller. F1 remains an alternative. Confirm/back follow the saved controller bindings.
+Use Settings on the startup screen. In game, choose Majora ReMasked → Settings, press Command-comma on macOS or Ctrl-comma elsewhere, or press Start + Select together on a controller. F1 remains an alternative. Confirm/back follow the saved controller bindings.
 
 The same sidebar organizes General, Controls, Touch, Graphics, Audio, HUD, Difficulty, Restoration, Quality of life, Mods, Cheats and About. Graphics includes an existing custom texture-folder picker. Touch → Swap screens exposes the game's touchscreen for mouse input.
 
@@ -58,7 +58,7 @@ Hold ZR and press SELECT during gameplay to toggle the minimap. In-game cheats r
 
 ## Updates and saves
 
-1. Close Dekui and back up your entire `user` folder.
+1. Close Majora ReMasked and back up your entire `user` folder.
 2. Extract the complete new release into a separate writable folder.
 3. Copy your existing `user` folder and game file beside the new application.
 4. Launch the new version.

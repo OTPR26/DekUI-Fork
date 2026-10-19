@@ -149,12 +149,12 @@ inline bool Combo(const char* label,int* v,const char* items,int height=-1) {
 inline constexpr const char* Pages[]={"General","Controls","Touch","Graphics","Audio","HUD",
     "Difficulty","Restoration","Quality of life","Mods","Cheats","About"};
 inline constexpr const char* Descriptions[]={
-    "Make DekUI comfortable on your screen.","Map your controller and game instructions.",
+    "Make Majora ReMasked comfortable on your screen.","Map your controller and game instructions.",
     "Touch controls and the game's touchscreen.","Frame rate, resolution and custom textures.",
     "Sound, music and volume.","Adjust the HUD while keeping your chosen layout.",
     "Damage, healing and world rules.","Choose your Project Restoration features.",
     "Small changes for a more comfortable adventure.","Optional character and equipment mods.","Game modifications and availability.",
-    "About DekUI and its contributors."};
+    "About Majora ReMasked and its contributors."};
 
 // Fixed header/footer, independently scrolling category rail and content. Text
 // enlargement never scales the panel or consumes the content's scroll height.
@@ -168,7 +168,7 @@ inline void Begin(int& page,int width,int height,bool& resume,bool& quit) {
     const float rail=std::clamp(f*8.8f,float(width)*.22f,float(width)*.32f);
     const float body=float(height)-header-footer-gap*3;
     ImGui::SetCursorPos({gap,gap});
-    ImGui::TextColored(Accent,"DEKUI");ImGui::SameLine();ImGui::TextUnformatted("/ Settings");
+    ImGui::TextColored(Accent,"Majora ReMasked");ImGui::SameLine();ImGui::TextUnformatted("/ Settings");
     ImGui::SetCursorPos({float(width)-gap-f*5.5f,gap});
     resume=ImGui::Button("Resume",{f*5.5f,header-gap});
     ImGui::SetCursorPos({gap,header+gap});

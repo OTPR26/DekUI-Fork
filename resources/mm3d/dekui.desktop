@@ -1,8 +1,8 @@
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=DekUI Fork
-Comment=Play Majora’s Mask 3D with DekUI Fork
+Name=Majora ReMasked
+Comment=Play Majora’s Mask 3D with Majora ReMasked
 Icon=io.github.tgacquin.dekui
 Exec=azahar
 TryExec=azahar

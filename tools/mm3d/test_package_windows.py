@@ -55,7 +55,7 @@ class WindowsPackageTest(unittest.TestCase):
                 import subprocess, sys
                 subprocess.run([sys.executable,'-E','-s',str(root/'unpacked/dekui/tools/mm3d/package_setup_check.py')], check=True, capture_output=True)
                 self.assertEqual(archive.read('dekui/resources/mm3d/defaults/presentation.json'), presentation)
-                self.assertIn('dekui/Dekui.exe', names)
+                self.assertIn('dekui/Majora-ReMasked.exe', names)
                 self.assertEqual(archive.read('dekui/README.md'),
                                  (repo / 'resources/mm3d/release-docs/README.md').read_bytes())
                 self.assertNotIn('dekui/INSTALL.txt', names)

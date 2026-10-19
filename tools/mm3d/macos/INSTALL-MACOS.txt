@@ -1,6 +1,6 @@
-DekUI Fork — Apple Silicon, macOS 13.4 or newer
+Majora ReMasked — Apple Silicon, macOS 13.4 or newer
 
-Extract the ZIP and open DekUI Fork.app. The app contains its setup tools,
+Extract the ZIP and open Majora ReMasked.app. The app contains its setup tools,
 resources and Python runtime; no developer tools are required.
 Select your own decrypted MM3D USA Rev 1 (.cci/.3ds) ROM at startup. Selected
 ROMs and texture packs stay in their existing locations.
@@ -27,7 +27,7 @@ No ROMs, models, voice banks, texture packs or saves are included in this ZIP.
 Touch > Swap screens shows the game's touchscreen for mouse input. Swap back
 to return to the single-screen game. In-game cheats need a loaded save.
 
-Updating: close DekUI Fork and replace the app. Your Application Support
+Updating: close Majora ReMasked and replace the app. Your Application Support
 data stays in place. Back up that folder before making manual changes.
 For the first upgrade from the portable version, place the updated app beside
 the existing user folder so it can migrate your saves and settings once.

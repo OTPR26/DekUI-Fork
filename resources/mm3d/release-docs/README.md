@@ -1,12 +1,14 @@
-# DekUI Fork
+# Majora ReMasked
+
+*A DekUI Fork*
 
 **An emulator fork tailored for a single-screen Majora’s Mask 3D experience.**
 
 Supports Android, Windows, Linux, and macOS. See Releases for available packages and supported architectures.
 
-DekUI Fork builds on [tgacquin’s DekUI](https://github.com/tgacquin/mm3d-dekui), the [Azahar emulator](https://github.com/azahar-emu/azahar), and [Project Restoration](https://restoration.zora.re/). It runs MM3D through an adapted 3DS emulator; it is not a game recompilation or a native rewrite of the game.
+Majora ReMasked builds on [tgacquin’s DekUI](https://github.com/tgacquin/mm3d-dekui), the [Azahar emulator](https://github.com/azahar-emu/azahar), and [Project Restoration](https://restoration.zora.re/). It runs MM3D through an adapted 3DS emulator; it is not a game recompilation or a native rewrite of the game.
 
-[Downloads](https://github.com/OTPR26/DekUI-Fork/releases) · [Android setup](https://github.com/OTPR26/DekUI-Fork/blob/main/docs/android/SETUP.md) · [Build instructions](https://github.com/OTPR26/DekUI-Fork/blob/main/docs/android/BUILD.md)
+[Downloads](https://github.com/OTPR26/DekUI-Fork/releases) · [Android setup](https://github.com/OTPR26/DekUI-Fork/blob/android/docs/android/SETUP.md) · [Build instructions](https://github.com/OTPR26/DekUI-Fork/blob/android/docs/android/BUILD.md)
 
 ## Features
 
@@ -27,7 +29,7 @@ DekUI Fork builds on [tgacquin’s DekUI](https://github.com/tgacquin/mm3d-dekui
 3. Open Settings to choose a custom-texture folder, controller bindings, and HUD options.
 4. For Adult Link or Dark Link, open **Settings → Mods**, select your own supported OoT3D ROM and optional texture folder, then generate the mod before starting gameplay.
 
-No game ROM, imported player model, imported voices, save file, or personal texture pack is supplied with the release. Generated assets stay on your device. Changing Adult Link, tunic, sword, or voice selection requires restarting gameplay. See [setup](https://github.com/OTPR26/DekUI-Fork/blob/main/docs/android/SETUP.md) for details.
+No game ROM, imported player model, imported voices, save file, or personal texture pack is supplied with the release. Generated assets stay on your device. Changing Adult Link, tunic, sword, or voice selection requires restarting gameplay. See [setup](https://github.com/OTPR26/DekUI-Fork/blob/android/docs/android/SETUP.md) for details.
 
 ## Preview limitations
 
@@ -42,6 +44,6 @@ Android uses `io.github.otpr26.dekuifork`. When moving from the prototype, grant
 - **leoetlino / Project Restoration contributors:** Restoration patches and features.
 - Additional libraries and contributors retain their original notices throughout the source tree.
 
-This project retains its upstream GPL licensing; see [license.txt](LICENSE.txt) and the notices in individual files and dependencies. DekUI Fork is an unofficial fan project and is not affiliated with Nintendo. The new Deku flower branding and mask startup artwork are included with this fork; inherited emulator credits remain in place.
+This project retains its upstream GPL licensing; see [license.txt](LICENSE.txt) and the notices in individual files and dependencies. Majora ReMasked is an unofficial fan project and is not affiliated with Nintendo. The new Deku flower branding and mask startup artwork are included with this fork; inherited emulator credits remain in place.
 
-For the upstream DekUI feature and development notes, see [the preserved upstream README](https://github.com/OTPR26/DekUI-Fork/blob/main/docs/UPSTREAM-DEKUI.md).
+For the upstream DekUI feature and development notes, see [the preserved upstream README](https://github.com/OTPR26/DekUI-Fork/blob/android/docs/UPSTREAM-DEKUI.md).

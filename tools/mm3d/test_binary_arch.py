@@ -20,7 +20,7 @@ class PackageArchitectureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             package = Path(directory) / 'arm64.zip'
             with zipfile.ZipFile(package, 'w') as archive:
-                archive.writestr('dekui/Dekui.exe', pe(0xaa64))
+                archive.writestr('dekui/Majora-ReMasked.exe', pe(0xaa64))
                 archive.writestr('dekui/plugins/platforms/qwindows.dll', pe(0x8664))
             with self.assertRaisesRegex(ValueError, 'qwindows.dll.*found x64'):
                 check(package, 'arm64')
@@ -29,7 +29,7 @@ class PackageArchitectureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             package = Path(directory) / 'arm64.zip'
             with zipfile.ZipFile(package, 'w') as archive:
-                archive.writestr('dekui/Dekui.exe', pe(0xaa64))
+                archive.writestr('dekui/Majora-ReMasked.exe', pe(0xaa64))
                 archive.writestr('dekui/runtime/python/_socket.pyd', pe(0xaa64))
             check(package, 'arm64')
 

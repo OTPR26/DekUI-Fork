@@ -208,7 +208,11 @@ static Core::System::ResultStatus RunCitra(const std::string& filepath) {
     // Citra core only supports a single running instance
     std::scoped_lock lock(running_mutex);
 
+#ifdef ENABLE_MM3D_PRESENTATION
+    LOG_INFO(Frontend, "Majora ReMasked starting...");
+#else
     LOG_INFO(Frontend, "Azahar starting...");
+#endif
 
     MicroProfileOnThreadCreate("EmuThread");
 
@@ -1384,7 +1388,12 @@ void Java_org_citra_citra_1emu_NativeLibrary_loadState([[maybe_unused]] JNIEnv* 
 
 void Java_org_citra_citra_1emu_NativeLibrary_logDeviceInfo([[maybe_unused]] JNIEnv* env,
                                                            [[maybe_unused]] jobject obj) {
-    LOG_INFO(Frontend, "Azahar Version: {} | {}-{}", Common::g_build_fullname, Common::g_scm_branch,
+#ifdef ENABLE_MM3D_PRESENTATION
+    constexpr const char* version_label = "Majora ReMasked Version: {} | {}-{}";
+#else
+    constexpr const char* version_label = "Azahar Version: {} | {}-{}";
+#endif
+    LOG_INFO(Frontend, version_label, Common::g_build_fullname, Common::g_scm_branch,
              Common::g_scm_desc);
     LOG_INFO(Frontend, "Host CPU: {}", Common::GetCPUCaps().cpu_string);
     // There is no decent way to get the OS version, so we log the API level instead.

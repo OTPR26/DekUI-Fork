@@ -47,7 +47,7 @@ class DekuiLaunchActivity : AppCompatActivity() {
         if(preparingStorage)return
         if(!org.citra.citra_emu.utils.DekuiStorage.hasAccess(this)) {
             val panel=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setPadding(48,48,48,48) }
-            panel.addView(TextView(this).apply { text="Game data folder\n\nDekUI stores saves, mods and settings in Internal storage/mm3dport. Allow file access to create this folder and migrate existing data. Your existing private data will be kept as a backup.";textSize=20f })
+            panel.addView(TextView(this).apply { text="Game data folder\n\nMajora ReMasked stores saves, mods and settings in Internal storage/mm3dport. Allow file access to create this folder and migrate existing data. Your existing private data will be kept as a backup.";textSize=20f })
             panel.addView(Button(this).apply { text="Allow file access";setOnClickListener {
                 if(android.os.Build.VERSION.SDK_INT>=30)storagePermission.launch(Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,Uri.parse("package:$packageName")))
                 else legacyStoragePermission.launch(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
@@ -101,18 +101,18 @@ class DekuiLaunchActivity : AppCompatActivity() {
         frame.addView(pane,android.widget.FrameLayout.LayoutParams(
             (resources.displayMetrics.widthPixels*.69f).toInt(),-1,android.view.Gravity.END))
         val titleLabel=TextView(this).apply {
-            text="DekUI Fork";typeface=bold;textSize=16f;setTextColor(purple)
+            text="A DekUI Fork";typeface=android.graphics.Typeface.create(normal,android.graphics.Typeface.ITALIC);textSize=16f;setTextColor(purple)
             gravity=android.view.Gravity.END;letterSpacing=.07f
             importantForAccessibility=android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }
         val title=TextView(this).apply {
-            text="Majora's Mask 3D";typeface=bold;textSize=34f;setTextColor(light)
+            text="Majora ReMasked";typeface=bold;textSize=34f;setTextColor(light)
             gravity=android.view.Gravity.END;letterSpacing=.03f
             maxLines=1
             setAutoSizeTextTypeUniformWithConfiguration(22,34,1,android.util.TypedValue.COMPLEX_UNIT_SP)
         }
-        pane.addView(titleLabel,LinearLayout.LayoutParams(-1,dp(24)))
         pane.addView(title,LinearLayout.LayoutParams(-1,dp(52)))
+        pane.addView(titleLabel,LinearLayout.LayoutParams(-1,dp(24)))
         pane.addView(android.view.View(this),LinearLayout.LayoutParams(1,0,1f))
         fun menuButton(label: String, action: () -> Unit): Button {
             return Button(this).apply {
@@ -142,9 +142,9 @@ class DekuiLaunchActivity : AppCompatActivity() {
             menuButton("Settings") { openSettings() }
             menuButton("About") {
                 androidx.appcompat.app.AlertDialog.Builder(this)
-                    .setTitle("DekUI for Android")
-                    .setMessage("Majora’s Mask 3D\n\n"+
-                        "Swipe from the left edge during play for DekUI settings.\n\n"+
+                    .setTitle("Majora ReMasked")
+                    .setMessage("A DekUI Fork\n\nMajora’s Mask 3D\n\n"+
+                        "Swipe from the left edge during play for settings.\n\n"+
                         ""+
                         org.citra.citra_emu.BuildConfig.VERSION_NAME)
                     .setPositiveButton("Close",null).show()
@@ -158,7 +158,7 @@ class DekuiLaunchActivity : AppCompatActivity() {
         }
         pane.addView(status,LinearLayout.LayoutParams(-1,dp(32)))
         val version=TextView(this).apply {
-            text="DEKUI  ·  ANDROID";typeface=normal;textSize=10f;letterSpacing=.1f
+            text="MAJORA REMASKED  ·  ANDROID  ·  v${org.citra.citra_emu.BuildConfig.VERSION_NAME}";typeface=normal;textSize=10f;letterSpacing=.1f
             setTextColor(0xFF9993A5.toInt());setPadding(dp(12),0,0,dp(8))
         }
         frame.addView(version,android.widget.FrameLayout.LayoutParams(-2,-2,android.view.Gravity.BOTTOM or android.view.Gravity.START))

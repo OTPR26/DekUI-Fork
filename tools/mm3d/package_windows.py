@@ -22,7 +22,7 @@ def package(bundle, output, python_archive, architecture='x64'):
         raise ValueError('Missing Qt Windows platform plugin')
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / 'dekui'; root.mkdir()
-        shutil.copy2(bundle / 'azahar.exe', root / 'Dekui.exe')
+        shutil.copy2(bundle / 'azahar.exe', root / 'Majora-ReMasked.exe')
         install_python(python_archive, root / 'runtime/python', architecture)
         # The CI bundle is clean; only deployment files are accepted here.
         for p in bundle.rglob('*'):

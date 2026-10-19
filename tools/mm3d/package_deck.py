@@ -21,7 +21,7 @@ def package(appimage, output):
     if output.exists(): raise ValueError('Refusing to overwrite package')
     with tempfile.TemporaryDirectory() as tmp:
         root=Path(tmp)/'dekui';root.mkdir()
-        shutil.copy2(appimage,root/'Dekui.AppImage');(root/'Dekui.AppImage').chmod(0o755)
+        shutil.copy2(appimage,root/'Majora-ReMasked.AppImage');(root/'Majora-ReMasked.AppImage').chmod(0o755)
         shutil.copy2(ROOT/'resources/mm3d/release-docs/README.md',root/'README.md')
         for name in ('CHANGELOG.md','CREDITS.md','KNOWN_ISSUES.md', 'INSTALL.md'):
             shutil.copy2(ROOT/'resources/mm3d/release-docs'/name, root/name)

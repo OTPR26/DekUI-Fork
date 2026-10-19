@@ -18,9 +18,9 @@ mapfile -t images < <(find build-linux-arm64/bundle -maxdepth 1 -name '*.AppImag
 test "${#images[@]}" -eq 1
 python3 tools/mm3d/build_desktop_tp_runtime.py
 release_version=$(python3 tools/mm3d/release_version.py)
-package="artifacts/DekUI-Fork-${release_version}-Linux-arm64.tar.gz"
+package="artifacts/Majora-ReMasked-${release_version}-Linux-arm64.tar.gz"
 python3 tools/mm3d/package_deck.py "${images[0]}" "$package"
 python3 tools/mm3d/linux/smoke_setup.py "$package"
 python3 tools/mm3d/check_binary_arch.py "$package" arm64
-python3 tools/mm3d/package_source.py "artifacts/DekUI-Fork-${release_version}-Linux-arm64-Source.tar.gz"
+python3 tools/mm3d/package_source.py "artifacts/Majora-ReMasked-${release_version}-Linux-arm64-Source.tar.gz"
 ccache -s
