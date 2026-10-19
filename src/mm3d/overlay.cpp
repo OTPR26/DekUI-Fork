@@ -1460,7 +1460,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 const auto android = AndroidMenu::Snapshot();
                 ImGui::TextWrapped("L1 / R1: items I / II. L2 / R2: targeting / shield. Hold game X with a bumper for its alternate action. Select a binding to change it.");
 #ifdef ENABLE_MM3D_GAME_FOLDER
-                constexpr const char* binding_labels[]{"A","B","X","Y","Select","Start","Home","ZL / L2: targeting","ZR / R2: shield","L / L1: item I","R / R1: item II","D-pad up","D-pad down","D-pad left","D-pad right","Left stick","Right stick"};
+                const auto& binding_labels=AndroidMenu::DesktopBindingLabels;
 #else
                 const auto& binding_labels=AndroidMenu::BindingLabels;
 #endif

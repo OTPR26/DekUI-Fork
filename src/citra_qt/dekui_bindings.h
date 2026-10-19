@@ -5,6 +5,12 @@
 #include "common/settings.h"
 
 namespace MM3D::ControllerBindings {
+inline constexpr int Buttons[]{Settings::NativeButton::A, Settings::NativeButton::B,
+    Settings::NativeButton::X, Settings::NativeButton::Y, Settings::NativeButton::Select,
+    Settings::NativeButton::Start, Settings::NativeButton::Home, Settings::NativeButton::L,
+    Settings::NativeButton::R, Settings::NativeButton::ZL, Settings::NativeButton::ZR,
+    Settings::NativeButton::Up, Settings::NativeButton::Down, Settings::NativeButton::Left,
+    Settings::NativeButton::Right};
 // Startup and gameplay share this transaction. Publish to disk and the loaded
 // profile together so the next emulator settings save cannot restore old binds.
 inline bool Save(const QString& path, int index, const QString& binding, bool analog = false) {
@@ -33,8 +39,9 @@ inline bool Save(const QString& path, int index, const QString& binding, bool an
     ini.sync();
     if (ini.status() != QSettings::NoError)
         return false;
-    if (selected == Settings::values.current_input_profile_index &&
-        selected < static_cast<int>(Settings::values.input_profiles.size())) {
+    if (selected < static_cast<int>(Settings::values.input_profiles.size())) {
+        if (selected != Settings::values.current_input_profile_index)
+            Settings::LoadProfile(selected);
         auto& current = Settings::values.current_input_profile;
         if (analog)
             current.analogs[index] = binding.toStdString();

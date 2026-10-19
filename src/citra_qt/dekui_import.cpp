@@ -239,14 +239,7 @@ void ChooseTextures(QWidget* parent, bool clear) {
 void RefreshBindings() {
     std::scoped_lock lock{AndroidMenu::mutex};
     AndroidMenu::state.bindings.clear();
-    const int buttons[]{Settings::NativeButton::A,      Settings::NativeButton::B,
-                        Settings::NativeButton::X,      Settings::NativeButton::Y,
-                        Settings::NativeButton::Select, Settings::NativeButton::Start,
-                        Settings::NativeButton::Home,   Settings::NativeButton::L,
-                        Settings::NativeButton::R,      Settings::NativeButton::ZL,
-                        Settings::NativeButton::ZR,     Settings::NativeButton::Up,
-                        Settings::NativeButton::Down,   Settings::NativeButton::Left,
-                        Settings::NativeButton::Right};
+    const auto& buttons=ControllerBindings::Buttons;
     for (const int i : buttons)
         AndroidMenu::state.bindings.push_back(BindingLabel(Binding(i)).toStdString());
     for (int i = 0; i < 2; ++i)
@@ -254,14 +247,7 @@ void RefreshBindings() {
             InputCommon::AnalogToText(Common::ParamPackage(AnalogBinding(i).toStdString()), "up"));
 }
 bool CaptureBinding(QWidget* parent, unsigned index, bool clear) {
-    const int buttons[]{Settings::NativeButton::A,      Settings::NativeButton::B,
-                        Settings::NativeButton::X,      Settings::NativeButton::Y,
-                        Settings::NativeButton::Select, Settings::NativeButton::Start,
-                        Settings::NativeButton::Home,   Settings::NativeButton::L,
-                        Settings::NativeButton::R,      Settings::NativeButton::ZL,
-                        Settings::NativeButton::ZR,     Settings::NativeButton::Up,
-                        Settings::NativeButton::Down,   Settings::NativeButton::Left,
-                        Settings::NativeButton::Right};
+    const auto& buttons=ControllerBindings::Buttons;
     if (index >= std::size(buttons)) {
         if (index > 16)
             return false;
@@ -335,37 +321,33 @@ void BindingControls(QVBoxLayout* box, QWidget* parent) {
             QStringLiteral("Controller configured. L1/R1 use items I/II; L2/R2 target and shield. "
                            "Reopen Controls to see the updated bindings."));
     });
-    auto* note = new QLabel(QStringLiteral("Bindings use the game’s logical buttons, independently "
-                                           "of the controller’s printed labels."));
+    auto* note = new QLabel(QStringLiteral("L/R bumpers use items I/II; ZL/ZR triggers target and shield. "
+                                           "These bindings are shared with gameplay."));
     note->setWordWrap(true);
     box->addWidget(note);
-    const QStringList labels{QStringLiteral("A"),           QStringLiteral("B"),
-                             QStringLiteral("X"),           QStringLiteral("Y"),
-                             QStringLiteral("D-pad up"),    QStringLiteral("D-pad down"),
-                             QStringLiteral("D-pad left"),  QStringLiteral("D-pad right"),
-                             QStringLiteral("ZL / L2: targeting"),  QStringLiteral("ZR / R2: shield"),
-                             QStringLiteral("Start"),       QStringLiteral("Select"),
-                             QStringLiteral("Debug"),       QStringLiteral("GPIO14"),
-                             QStringLiteral("L / L1: item I"), QStringLiteral("R / R1: item II"),
-                             QStringLiteral("Home"),        QStringLiteral("Power")};
-    for (int i = 0; i < Settings::NativeButton::NumButtons; ++i) {
-        auto* b =
-            new QPushButton(labels.value(i, QString::fromUtf8(Settings::NativeButton::mapping[i])) +
-                            QStringLiteral(": ") + BindingLabel(Binding(i)));
-        box->addWidget(b);
-        QObject::connect(b, &QPushButton::clicked, parent, [=] {
-            Capture capture(parent);
-            if (capture.exec() == QDialog::Accepted) {
-                SaveBinding(i, capture.binding);
-                b->setText(labels.value(i) + QStringLiteral(": ") + BindingLabel(capture.binding));
+    RefreshBindings();
+    const auto initial = AndroidMenu::Snapshot();
+    for (unsigned i = 0; i < AndroidMenu::DesktopBindingLabels.size(); ++i) {
+        box->addWidget(new QLabel(QString::fromUtf8(AndroidMenu::DesktopBindingLabels[i])));
+        auto* row = new QHBoxLayout;
+        auto* binding = new QPushButton(i < initial.bindings.size()
+            ? QString::fromStdString(initial.bindings[i]) : QStringLiteral("Unbound"));
+        auto* clear = new QPushButton(QStringLiteral("Clear"));
+        binding->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Preferred);
+        clear->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Preferred);
+        row->addWidget(binding);
+        row->addWidget(clear);
+        row->addStretch();
+        box->addLayout(row);
+        const auto capture = [parent, i, binding](bool erase) {
+            if (CaptureBinding(parent, i, erase)) {
+                const auto state = AndroidMenu::Snapshot();
+                binding->setText(i < state.bindings.size()
+                    ? QString::fromStdString(state.bindings[i]) : QStringLiteral("Unbound"));
             }
-        });
-    }
-    for (int i = 0; i < 2; ++i) {
-        auto* b = new QPushButton(i == 0 ? QStringLiteral("Bind left stick")
-                                         : QStringLiteral("Bind right stick"));
-        box->addWidget(b);
-        QObject::connect(b, &QPushButton::clicked, parent, [=] { CaptureBinding(parent, 15 + i); });
+        };
+        QObject::connect(binding, &QPushButton::clicked, parent, [capture] { capture(false); });
+        QObject::connect(clear, &QPushButton::clicked, parent, [capture] { capture(true); });
     }
 }
 void VolumeControl(QVBoxLayout* box, bool running) {

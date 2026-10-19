@@ -184,6 +184,29 @@ int main(int argc, char** argv) {
             config.Reload();
             Check(Settings::values.current_input_profile.buttons == kept_buttons,
                   "stick edit changed face mappings");
+            // Startup can select a saved profile before gameplay adopts it.
+            // A later emulator save must not discard edits made to that profile.
+            const auto first = Settings::values.current_input_profile;
+            Settings::values.input_profiles.push_back(first);
+            const int second = int(Settings::values.input_profiles.size()) - 1;
+            config.Save();
+            saved.sync();
+            saved.setValue(QStringLiteral("Controls/profile"), second);
+            saved.setValue(QStringLiteral("Controls/profile/default"), false);
+            saved.sync();
+            const auto startup_binding = QStringLiteral("engine:sdl,api:controller,guid:test,port:0,button:7");
+            Check(MM3D::ControllerBindings::Save(bindings_path, Settings::NativeButton::A, startup_binding),
+                  "startup edit on newly selected profile");
+            Check(Settings::values.current_input_profile_index == second &&
+                      Settings::values.current_input_profile.buttons[Settings::NativeButton::A] == startup_binding.toStdString(),
+                  "startup profile selection was not adopted by gameplay");
+            config.Save();
+            config.Reload();
+            Check(Settings::values.current_input_profile_index == second &&
+                      Settings::values.current_input_profile.buttons[Settings::NativeButton::A] == startup_binding.toStdString(),
+                  "gameplay save discarded startup bindings");
+            Check(Settings::values.input_profiles.front().buttons == first.buttons,
+                  "editing selected profile changed the other profile");
             saved.sync();
             Check(!saved.contains(QStringLiteral("Controls/profiles/999/name")),
                   "save retained stale profile keys");

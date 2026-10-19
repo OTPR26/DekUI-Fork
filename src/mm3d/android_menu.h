@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 #include <atomic>
+#include <array>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -26,4 +27,11 @@ inline constexpr const char* BindingLabels[]{"A","B","X","Y","Select","Start","H
     "ZL / L2: targeting","ZR / R2: shield","L / L1: item I","R / R1: item II","D-pad up","D-pad down","D-pad left","D-pad right",
     "Left stick vertical","Left stick horizontal","Right stick vertical","Right stick horizontal",
     "D-pad vertical axis","D-pad horizontal axis"};
+inline constexpr auto DesktopBindingLabels=[] {
+    std::array<const char*,17> labels{};
+    for(unsigned i=0;i<15;++i)labels[i]=BindingLabels[i];
+    labels[15]="Left stick";
+    labels[16]="Right stick";
+    return labels;
+}();
 }
