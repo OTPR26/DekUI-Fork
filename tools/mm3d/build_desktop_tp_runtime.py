@@ -52,7 +52,11 @@ def main():
         env['CC_x86_64_pc_windows_gnu'] = 'gcc'
         env['CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER'] = 'gcc'
     if target:
-        run('rustup','target','add',target,env=env)
+        # Windows CreateProcess does not resolve executables against env['PATH'].
+        rustup = shutil.which('rustup', path=env['PATH'])
+        if not rustup:
+            raise RuntimeError('Rust toolchain manager was not found beside Cargo')
+        run(rustup,'target','add',target,env=env)
     source = root/'nod-source'
     if not source.exists():
         archive = root/'nod-source.tar.gz'
