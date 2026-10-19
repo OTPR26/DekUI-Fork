@@ -3,7 +3,8 @@ from pathlib import Path
 import tempfile
 import unittest
 import zipfile
-from check_release_privacy import PUBLIC_RUNNER_HOME, CHUNK, inspect_archive, inspect_stream, patterns
+from check_release_privacy import (PUBLIC_RUNNER_HOME, PUBLIC_VENDOR_FILENAMES, CHUNK,
+                                   inspect_archive, inspect_stream, patterns)
 
 
 class ReleasePrivacyTests(unittest.TestCase):
@@ -39,3 +40,20 @@ class ReleasePrivacyTests(unittest.TestCase):
         for name in ('check_release_privacy.py', 'test_release_privacy.py'):
             with Path(__file__).with_name(name).open('rb') as stream:
                 self.assertFalse(inspect_stream(stream, forbidden))
+
+    def test_vendor_source_exception_is_scoped_and_preserves_private_checks(self):
+        forbidden = patterns([PUBLIC_RUNNER_HOME.decode(), '/Users/example'])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'app.apk'
+            for name, public_path in PUBLIC_VENDOR_FILENAMES.items():
+                for member, contents, expected in (
+                    (name, public_path, False),
+                    ('other/file', public_path, True),
+                    (name, public_path + b'/Users/example/private', True),
+                    (name, public_path + PUBLIC_RUNNER_HOME + b'/private', True),
+                    (name, public_path[:-1] + b'/private\0', True),
+                ):
+                    with self.subTest(member=member, expected=expected):
+                        with zipfile.ZipFile(path, 'w') as archive:
+                            archive.writestr(member, contents)
+                        self.assertEqual(bool(inspect_archive(path, forbidden)), expected)

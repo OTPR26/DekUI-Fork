@@ -17,6 +17,14 @@ PUBLIC_RUNNER_CACHE_FILES = frozenset({
     'externals/catch2/.github/workflows/linux-bazel-builds.yml',
     'externals/dynarmic/externals/catch/.github/workflows/linux-bazel-builds.yml',
 })
+# Chaquopy 17.1.0 embeds its public CI source filename in these two libraries.
+# Match the complete NUL-terminated filename, only in the expected APK member.
+PUBLIC_VENDOR_FILENAMES = {
+    'lib/arm64-v8a/libchaquopy_java.so': PUBLIC_RUNNER_HOME +
+        b'/work/chaquopy/chaquopy/product/runtime/build/cython/chaquopy_java.c\0',
+    'assets/chaquopy/bootstrap-native/arm64-v8a/java/chaquopy.so': PUBLIC_RUNNER_HOME +
+        b'/work/chaquopy/chaquopy/product/runtime/build/cython/chaquopy.c\0',
+}
 
 
 def patterns(prefixes):
@@ -52,6 +60,9 @@ def inspect_archive(path, forbidden):
         if inspect_stream(io.BytesIO(name.encode()), forbidden):
             failures.append((name, 'private path in entry name'))
         if stream:
+            if name in PUBLIC_VENDOR_FILENAMES:
+                stream = io.BytesIO(stream.read().replace(PUBLIC_VENDOR_FILENAMES[name],
+                                                         b'public-vendor-source\0'))
             if name in PUBLIC_RUNNER_CACHE_FILES:
                 # These vendored workflows name GitHub's public runner cache.
                 # Ignore only that exact convention, retaining all other checks.
