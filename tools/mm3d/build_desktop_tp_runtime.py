@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -21,6 +22,15 @@ LINUX_PYTHON = {
 
 def run(*args, **kwargs):
     subprocess.run([str(x) for x in args], check=True, **kwargs)
+
+
+def sanitize_numpy_metadata(runtime):
+    # This generated report describes NumPy's wheel build, not runtime paths.
+    config = runtime / 'tp-modules/numpy/__config__.py'
+    source = config.read_text(encoding='utf-8')
+    source = re.sub(r'(?i)[a-z]:[\\/]+Users[\\/]+[^\\/"\r\n]+', 'C:/build', source)
+    compile(source, '__config__.py', 'exec')
+    config.write_text(source, encoding='utf-8')
 
 
 def main():
@@ -118,6 +128,7 @@ def main():
             if Path(entry).is_absolute() or '..' in Path(entry).parts:
                 raise RuntimeError('Unsafe wheel member')
         archive.extractall(runtime / 'tp-modules')
+    sanitize_numpy_metadata(runtime)
     if sys.platform == 'darwin':
         # Vendor wheels may retain source filenames in Mach-O debug symbols.
         # Keep exported runtime symbols; package_macos signs the resulting files.
