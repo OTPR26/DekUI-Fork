@@ -721,7 +721,9 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
         ImGui::SetNextWindowPos({8,8});
         ImGui::SetNextWindowBgAlpha(.6f);
         ImGui::Begin("Performance",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_AlwaysAutoResize|ImGuiWindowFlags_NoInputs);
-        ImGui::Text("%.1f FPS",state.timing.guest_fps);ImGui::End();
+        ImGui::Text("Presentation: %.1f FPS",state.timing.host_fps);
+        ImGui::Text("Game: %.1f FPS",state.timing.guest_fps);
+        ImGui::End();
     }
     #if !defined(ENABLE_MM3D_GAME_FOLDER) && !defined(__ANDROID__)
     if (state.settings.indicator&&!PlayerOverlay()) {
