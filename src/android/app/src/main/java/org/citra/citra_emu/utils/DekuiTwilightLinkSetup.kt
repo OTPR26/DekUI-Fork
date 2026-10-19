@@ -83,7 +83,7 @@ object DekuiTwilightLinkSetup {
     }
 
     @Synchronized fun generate(c: Context, progress: (String) -> Unit): String {
-        check(!generating && !DekuiAdultLinkSetup.generating) { "Another mod is being generated" }
+        check(!generating && !DekuiAdultLinkSetup.generating && !DekuiPakSetup.generating) { "Another mod is being generated" }
         check(!NativeLibrary.isRunning()) { "Return to the startup screen before generating a mod" }
         check(canGenerate(c)) { "Select your TP GameCube ROM and set up MM3D first" }
         generating = true
@@ -108,7 +108,7 @@ object DekuiTwilightLinkSetup {
             progress("Installing Twilight Princess Link…")
             module.callAttr("finish", root.absolutePath, generated)
             stage = null
-            DekuiPresentationStore(c).update(mapOf("twilight_link_model" to true,
+            DekuiPresentationStore(c).update(mapOf("pak_link_model" to false,"twilight_link_model" to true,
                 "adult_link_model" to false, "dark_link_model" to false))
             BooleanSetting.DISK_SHADER_CACHE.boolean = false
             val graphics = mutableListOf<org.citra.citra_emu.features.settings.model.AbstractSetting>(BooleanSetting.DISK_SHADER_CACHE)

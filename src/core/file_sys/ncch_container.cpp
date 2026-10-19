@@ -652,47 +652,57 @@ Loader::ResultStatus NCCHContainer::ReadRomFS(std::shared_ptr<RomFSReader>& romf
                               "mm3d-local/presentation.json";
         std::string text;
         if (FileUtil::GetSize(settings) <= 4 * 1024 * 1024 &&
-            FileUtil::ReadFileToString(true, settings, text) &&
-            MM3D::ModelMod::AppearanceSelected(text)) {
-            const bool twilight=MM3D::ModelMod::TwilightSelected(text);
-            const bool dark=!twilight && MM3D::ModelMod::DarkSelected(text);
-            const char* model_name=twilight?"Twilight Princess Link":dark?"Dark Link":"Adult Link";
-            const auto model_root = FileUtil::GetUserPath(FileUtil::UserPath::LoadDir) +
-                (twilight?"mm3d-models/twilight-link/":dark?"mm3d-models/dark-link/":"mm3d-models/adult-link/");
-            const bool master=twilight?MM3D::ModelMod::TwilightMasterSwordSelected(text):MM3D::ModelMod::MasterSwordSelected(text);
-            const auto variant = master?"master":"kokiri";
-            const int color=(dark||twilight)?0:MM3D::ModelMod::SelectedTunic(text);
-            const std::string suffix=color==1?"-blue":color==2?"-red":"";
-            auto model_path=dark?model_root+"romfs/":model_root+"variants/"+variant+suffix+"/romfs/";
-            if(!dark&&!FileUtil::Exists(model_path+std::string(MM3D::ModelMod::actor_path))) {
-                LOG_WARNING(Service_FS, "Requested Adult Link variant {}{} is not generated; using installed fallback", variant, suffix);
-                model_path=model_root+"variants/"+variant+"/romfs/";
-            }
-            if(!FileUtil::Exists(model_path+std::string(MM3D::ModelMod::actor_path)))
-                model_path=model_root+"romfs/"; // Existing prototype installations remain usable.
-            if (FileUtil::Exists(model_path + std::string(MM3D::ModelMod::actor_path))) {
-                romfs_file = std::make_shared<LayeredFS>(std::move(romfs_file), model_path, "");
-                MM3D::ModelMod::adult_active.store(true);
-                const auto voice_path=model_root+"voices/romfs/";
-                if(FileUtil::Exists(voice_path+"sound/sequence/JokerSound.bcsar")) {
-                    romfs_file=std::make_shared<LayeredFS>(std::move(romfs_file),voice_path,"");
-                    LOG_INFO(Service_FS,"{} imported adult voice bank enabled",model_name);
-                } else LOG_WARNING(Service_FS,"{} voices are not generated; regenerate the mod from the OoT3D ROM",model_name);
-                MM3D::TunicColor::selected.store(color<=2?0:color);
-                const auto icon_path=model_root+"master-sword-icon.png";
-                if((dark||master) &&
-                   (dark||model_path.find("variants/master")!=std::string::npos) &&
-                   FileUtil::Exists(icon_path) && FileUtil::GetSize(icon_path)<=16*1024*1024) {
-                    FileUtil::IOFile icon_file(icon_path,"rb");std::vector<u8> encoded(icon_file.GetSize());
-                    auto image=std::make_shared<MM3D::SwordIcon::Image>();
-                    if(icon_file.ReadBytes(encoded.data(),encoded.size())==encoded.size() &&
-                       Core::System::GetInstance().GetImageInterface()->DecodePNG(image->pixels,image->width,image->height,encoded) &&
-                       image->width<=2048 && image->height<=2048)
-                        MM3D::SwordIcon::Store(std::shared_ptr<const MM3D::SwordIcon::Image>(std::move(image)));
+            FileUtil::ReadFileToString(true, settings, text)) {
+            if (MM3D::ModelMod::PakSelected(text)) {
+                const auto path = FileUtil::GetUserPath(FileUtil::UserPath::LoadDir) +
+                                  "mm3d-models/pak-import/romfs/";
+                if (FileUtil::Exists(path + std::string(MM3D::ModelMod::actor_path))) {
+                    romfs_file = std::make_shared<LayeredFS>(std::move(romfs_file), path, "");
+                    LOG_INFO(Service_FS, "Imported PAK player model enabled");
+                } else {
+                    LOG_WARNING(Service_FS, "PAK Importer selected, but no model has been imported");
                 }
-                LOG_INFO(Service_FS, "{} model loaded: {} (requested tunic {}, imported sword {})", model_name, model_path, color, dark||master);
-            } else {
-                LOG_WARNING(Service_FS, "{} selected, but the converted model is missing",model_name);
+            } else if (MM3D::ModelMod::AppearanceSelected(text)) {
+                const bool twilight=MM3D::ModelMod::TwilightSelected(text);
+                const bool dark=!twilight && MM3D::ModelMod::DarkSelected(text);
+                const char* model_name=twilight?"Twilight Princess Link":dark?"Dark Link":"Adult Link";
+                const auto model_root = FileUtil::GetUserPath(FileUtil::UserPath::LoadDir) +
+                    (twilight?"mm3d-models/twilight-link/":dark?"mm3d-models/dark-link/":"mm3d-models/adult-link/");
+                const bool master=twilight?MM3D::ModelMod::TwilightMasterSwordSelected(text):MM3D::ModelMod::MasterSwordSelected(text);
+                const auto variant = master?"master":"kokiri";
+                const int color=(dark||twilight)?0:MM3D::ModelMod::SelectedTunic(text);
+                const std::string suffix=color==1?"-blue":color==2?"-red":"";
+                auto model_path=dark?model_root+"romfs/":model_root+"variants/"+variant+suffix+"/romfs/";
+                if(!dark&&!FileUtil::Exists(model_path+std::string(MM3D::ModelMod::actor_path))) {
+                    LOG_WARNING(Service_FS, "Requested Adult Link variant {}{} is not generated; using installed fallback", variant, suffix);
+                    model_path=model_root+"variants/"+variant+"/romfs/";
+                }
+                if(!FileUtil::Exists(model_path+std::string(MM3D::ModelMod::actor_path)))
+                    model_path=model_root+"romfs/"; // Existing prototype installations remain usable.
+                if (FileUtil::Exists(model_path + std::string(MM3D::ModelMod::actor_path))) {
+                    romfs_file = std::make_shared<LayeredFS>(std::move(romfs_file), model_path, "");
+                    MM3D::ModelMod::adult_active.store(true);
+                    const auto voice_path=model_root+"voices/romfs/";
+                    if(FileUtil::Exists(voice_path+"sound/sequence/JokerSound.bcsar")) {
+                        romfs_file=std::make_shared<LayeredFS>(std::move(romfs_file),voice_path,"");
+                        LOG_INFO(Service_FS,"{} imported adult voice bank enabled",model_name);
+                    } else LOG_WARNING(Service_FS,"{} voices are not generated; regenerate the mod from the OoT3D ROM",model_name);
+                    MM3D::TunicColor::selected.store(color<=2?0:color);
+                    const auto icon_path=model_root+"master-sword-icon.png";
+                    if((dark||master) &&
+                       (dark||model_path.find("variants/master")!=std::string::npos) &&
+                       FileUtil::Exists(icon_path) && FileUtil::GetSize(icon_path)<=16*1024*1024) {
+                        FileUtil::IOFile icon_file(icon_path,"rb");std::vector<u8> encoded(icon_file.GetSize());
+                        auto image=std::make_shared<MM3D::SwordIcon::Image>();
+                        if(icon_file.ReadBytes(encoded.data(),encoded.size())==encoded.size() &&
+                           Core::System::GetInstance().GetImageInterface()->DecodePNG(image->pixels,image->width,image->height,encoded) &&
+                           image->width<=2048 && image->height<=2048)
+                            MM3D::SwordIcon::Store(std::shared_ptr<const MM3D::SwordIcon::Image>(std::move(image)));
+                    }
+                    LOG_INFO(Service_FS, "{} model loaded: {} (requested tunic {}, imported sword {})", model_name, model_path, color, dark||master);
+                } else {
+                    LOG_WARNING(Service_FS, "{} selected, but the converted model is missing",model_name);
+                }
             }
         }
     }

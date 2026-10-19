@@ -228,7 +228,7 @@ jobs:
               raise SystemExit('Expected a successful Android build')
           base = info['head_sha']
           subprocess.run(['git','diff','--exit-code',base,'HEAD','--','src',':!src/android/app/build.gradle.kts',
-                          'externals','tools/mm3d/tp_import'],check=True)
+                          'externals','tools/mm3d/tp_import','tools/mm3d/zobj_import'],check=True)
           artifact = f'DekUI-Fork-0.2.2-Android-arm64-{base}'
           subprocess.run(['gh','run','download',run,'--repo',repo,'--name',artifact,'--dir','compiled'],check=True)
           PY

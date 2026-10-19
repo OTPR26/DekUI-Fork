@@ -19,6 +19,8 @@ def check(package):
         payload = root / 'DekUI Fork.app/Contents/Resources'
         subprocess.run([str(python), '-E', '-s', '-B', str(payload / 'tools/mm3d/generate_tp_mod.py'),
                         '--package', str(payload), '--probe-runtime'], cwd=tmp, env=env, check=True, timeout=60)
+        subprocess.run([str(python), '-E', '-s', '-B', str(payload / 'tools/mm3d/import_pak.py'),
+                        '--package', str(payload), '--probe-runtime'], cwd=tmp, env=env, check=True, timeout=60)
         subprocess.run([str(python), '-E', '-s', '-B', str(helper), '--help'],
                        cwd=tmp, env=env, check=True, timeout=30)
         result = subprocess.run([str(python), '-E', '-s', '-B', str(helper),

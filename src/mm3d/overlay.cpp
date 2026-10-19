@@ -1259,12 +1259,21 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
             if(begin_page("General")){general_controls();end_page();}
             if(begin_page("Mods")) {
                 ImGui::SeparatorText("Player appearance");
-                int model=state.settings.twilight_link_model?3:state.settings.dark_link_model?2:state.settings.adult_link_model?1:0;
-                bool changed=AndroidMenuStyle::Combo("Player model",&model,"Original Link\0Adult Link\0Dark Link\0Twilight Princess Link\0");
+                int model=state.settings.pak_link_model?4:state.settings.twilight_link_model?3:state.settings.dark_link_model?2:state.settings.adult_link_model?1:0;
+                bool changed=AndroidMenuStyle::Combo("Player model",&model,"Original Link\0Adult Link\0Dark Link\0Twilight Princess Link\0PAK Importer\0");
                 if(changed) {
+                    state.settings.pak_link_model=model==4;
                     state.settings.twilight_link_model=model==3;
                     state.settings.adult_link_model=model==1;
                     state.settings.dark_link_model=model==2;
+                }
+                if(model==4) {
+                    const auto path=FileUtil::GetUserPath(FileUtil::UserPath::LoadDir)+
+                        "mm3d-models/pak-import/romfs/actors/zelda2_link_child_new.gar.lzs";
+                    help_text(FileUtil::Exists(path)?
+                        "Uses your imported PAK player model with native MM3D equipment and voices. Restart the game after changing models.":
+                        "No PAK model is installed. Return to startup Settings > Mods > PAK Importer to import a file.");
+                    help_text("PAK files are imported before gameplay. Reset to the startup screen to replace the imported model.");
                 }
                 if(model==3) {
                     changed|=AndroidMenuStyle::Checkbox("Master Sword",&state.settings.twilight_link_master_sword);

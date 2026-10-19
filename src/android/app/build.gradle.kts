@@ -414,7 +414,7 @@ chaquopy {
     }
     sourceSets.getByName("main") {
         srcDir("../../../tools/mm3d")
-        include("tp_import/**")
+        include("tp_import/**", "zobj_import/**")
         exclude("**/__pycache__/**", "**/*.pyc")
     }
 }

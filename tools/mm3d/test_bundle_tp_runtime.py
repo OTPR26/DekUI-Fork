@@ -18,6 +18,8 @@ def fixture_runtime(repo):
     scripts.mkdir(parents=True, exist_ok=True)
     shutil.copytree(source / 'tp_import', scripts / 'tp_import', dirs_exist_ok=True)
     shutil.copy2(source / 'generate_tp_mod.py', scripts / 'generate_tp_mod.py')
+    shutil.copytree(source / 'zobj_import', scripts / 'zobj_import', dirs_exist_ok=True)
+    shutil.copy2(source / 'import_pak.py', scripts / 'import_pak.py')
 
 
 class ConverterBundleTests(unittest.TestCase):
@@ -46,4 +48,7 @@ class ConverterBundleTests(unittest.TestCase):
             copy_tp_runtime(repo, output)
             self.assertTrue((output / 'runtime/tp/libnod.so').is_file())
             self.assertTrue((output / 'tools/mm3d/tp_import/generate.py').is_file())
+            self.assertTrue((output / 'tools/mm3d/zobj_import/install.py').is_file())
+            self.assertTrue((output / 'tools/mm3d/zobj_import/vendor/LICENSE').is_file())
+            self.assertTrue((output / 'tools/mm3d/import_pak.py').is_file())
             self.assertFalse((output / 'private.rom').exists())
