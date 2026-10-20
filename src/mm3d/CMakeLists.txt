@@ -135,7 +135,9 @@ add_executable(mm3d_pictograph_tests pictograph_tests.cpp)
 target_include_directories(mm3d_pictograph_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 add_test(NAME mm3d_pictograph COMMAND mm3d_pictograph_tests)
 
-add_executable(mm3d_dialogue_recipe_tests ../../tools/mm3d/dialogue_recipe_check.cpp)
+add_executable(mm3d_dialogue_recipe_tests
+    ../../tools/mm3d/dialogue_recipe_check.cpp
+    ../../tools/mm3d/dialogue_recipe_shared_check.cpp)
 set_target_properties(mm3d_dialogue_recipe_tests PROPERTIES WIN32_EXECUTABLE FALSE)
 target_include_directories(mm3d_dialogue_recipe_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 if(MSVC)

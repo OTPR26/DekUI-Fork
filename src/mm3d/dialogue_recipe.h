@@ -22,18 +22,25 @@ struct Recipe {
 };
 // Originals exist only in process memory, never in a shipped table or cache file.
 // A bound prevents malformed input from retaining unbounded game memory.
-inline thread_local std::unordered_map<std::uint64_t,std::string> originals;
-inline thread_local std::size_t retained_bytes=0;
+struct OriginalStore {
+    std::unordered_map<std::uint64_t,std::string> texts;
+    std::size_t retained_bytes=0;
+};
+inline OriginalStore& Originals() {
+    static thread_local OriginalStore store;
+    return store;
+}
 inline std::optional<std::string> Resolve(const Recipe& recipe,std::string_view current) {
     if(!recipe.source_size||recipe.source_size>4096||recipe.length>4096)return std::nullopt;
+    auto& store=Originals();
     if(current.size()==recipe.source_size&&Hash(current)==recipe.source_hash&&
-       !originals.contains(recipe.source_hash)) {
-        if(retained_bytes+current.size()>4*1024*1024)return std::nullopt;
-        originals.emplace(recipe.source_hash,current);
-        retained_bytes+=current.size();
+       !store.texts.contains(recipe.source_hash)) {
+        if(store.retained_bytes+current.size()>4*1024*1024)return std::nullopt;
+        store.texts.emplace(recipe.source_hash,current);
+        store.retained_bytes+=current.size();
     }
-    const auto found=originals.find(recipe.source_hash);
-    if(found==originals.end()||found->second.size()!=recipe.source_size)return std::nullopt;
+    const auto found=store.texts.find(recipe.source_hash);
+    if(found==store.texts.end()||found->second.size()!=recipe.source_size)return std::nullopt;
     const auto& source=found->second;
     if(recipe.commands.empty()) {
         if(recipe.length!=source.size()||recipe.hash!=recipe.source_hash)return std::nullopt;

@@ -3,6 +3,7 @@
 #include <cassert>
 #include <unordered_map>
 using namespace MM3D::DialogueText;
+bool DialogueCacheShared();
 struct Memory {
     std::unordered_map<std::uint32_t,std::uint32_t> words;
     auto Read(std::uint32_t at) {
@@ -19,6 +20,7 @@ int main() {
     assert(!Resolve(changed,edited)); // No guessed original or saved bundled fallback.
     assert(!Resolve(changed,"invalid"));
     assert(Resolve(changed,native)==edited);
+    assert(DialogueCacheShared());
     assert(Resolve(original,edited)==native); // Live toggle restores user-supplied bytes.
     assert(Resolve(changed,edited)==edited); // Idempotent on the modified message.
     auto bad=changed;bad.hash^=1;assert(!Resolve(bad,native));
