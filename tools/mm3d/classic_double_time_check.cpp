@@ -12,7 +12,7 @@ struct Memory {
 };
 constexpr U32 self=0x9000000,base=0x9100000,window=0x9200000,play=0x9300000;
 unsigned language=2;
-std::string_view original_text=OriginalText;
+std::string original_text;
 void Resource(Memory& m) {
     const U32 length=original_text.size(), total=(38+length+3)&~3u;
     m.Write(self+4,base);m.Write(self+8,base+16);m.Write(self+12,total);m.Write(self+16,20);
@@ -22,6 +22,7 @@ void Resource(Memory& m) {
     for(unsigned i=0;i<length;++i)Byte(m,base+38+i,static_cast<unsigned char>(original_text[i]));
 }
 int main(int argc,char** argv) {
+    assert(argc==5); // Patched executable and the user's English/French/Spanish GMSG files.
     // Every minute-code, including midnight and exact 6 AM/6 PM boundaries.
     for(unsigned day=1;day<=3;++day)for(unsigned time=0;time<=65535;++time) {
         auto d=Next(day,time);bool night=time<0x4000||time>=0xc000;
@@ -30,8 +31,18 @@ int main(int argc,char** argv) {
     }
     assert(!Next(0,0));assert(!Next(4,0));assert(!Next(1,65536));
     for(unsigned lang:{2u,4u,8u}) {
-    language=lang;original_text=OriginalText;
-    for(const auto& d:MM3D::ClassicLocalizedText::Dialogues)if(d.language==lang)original_text=d.song;
+    language=lang;auto source=OriginalText;
+    for(const auto& d:MM3D::ClassicLocalizedText::Dialogues)if(d.language==lang)source=d.song;
+    std::ifstream input(argv[lang==2?2:lang==4?3:4],std::ios::binary);assert(input);
+    std::string archive((std::istreambuf_iterator<char>(input)),{});
+    const auto word=[&](unsigned at){assert(at+4<=archive.size());U32 value=0;
+        for(unsigned n=0;n<4;++n)value|=U32(static_cast<unsigned char>(archive[at+n]))<<(8*n);return value;};
+    original_text.clear();
+    for(unsigned i=0;i<word(8);++i)if((word(16+i*20)&65535)==0x1b8a) {
+        original_text=archive.substr(word(28+i*20),word(32+i*20));break;
+    }
+    original_text.resize(source.source_size,'\0');
+    assert(MM3D::DialogueText::Hash(original_text)==source.source_hash);
     Memory m;Resource(m);const auto original=m.words;
     for(int i=0;i<5;++i){assert(Text(m,self,i));assert(Text(m,self,i));assert(Text(m,self,-1));assert(m.words==original);}
     m.Write(base+40,0xdeadbeef);auto corrupt=m.words;assert(!Text(m,self,0));assert(m.words==corrupt);

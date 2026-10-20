@@ -29,6 +29,7 @@ def main():
         for symbol in ('nod_disc_open', 'nod_read', 'nod_seek', 'nod_free'):
             getattr(reader, symbol)
         assert numpy.array([1, 2, 3]).sum() == 6
+        assert numpy.allclose(numpy.linalg.inv(numpy.eye(4)), numpy.eye(4))
         print('TP converter modules and native disc reader loaded successfully.')
         return
     if not args.root or not args.mm_rom or not args.tp_rom:

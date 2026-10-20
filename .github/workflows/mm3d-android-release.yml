@@ -162,6 +162,8 @@ jobs:
               required = {"lib/arm64-v8a/libnod.so", "assets/chaquopy/app.imy"}
               if not required.issubset(archive.namelist()):
                   raise SystemExit("APK is missing Twilight Princess importer dependencies")
+              if any(name.endswith('/libVkLayer_khronos_validation.so') for name in archive.namelist()):
+                  raise SystemExit("Optimized APK contains the development Vulkan validation layer")
           cert = subprocess.check_output([str(sdk/'apksigner'), 'verify', '--print-certs', str(apk)], text=True)
           expected = '73e734704569a6f17f126bf09c243c24442f3e68c2ab20256b31cb44c6631615'
           if not re.search(r'Signer #1 certificate SHA-256 digest: '+expected, cert):

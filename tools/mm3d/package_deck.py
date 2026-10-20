@@ -12,7 +12,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ('graphical_setup.py','setup_game_folder.py','probe_rom.py','build_release_assets.py',
            'release_setup.py','restore_action_flips.py','stop_map_slides.py',
-           'classic_owl_text.py','classic_localized_text.py','single_screen_text.py',
+           'classic_owl_text.py','classic_localized_text.py','single_screen_text.py','dialogue_recipe.py',
            'double_prices.py','upgrade_game_resources.py','layout_migration.py','package_setup_check.py','desktop_hud.py')
 
 

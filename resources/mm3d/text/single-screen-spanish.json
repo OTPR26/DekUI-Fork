@@ -3,103 +3,143 @@
   "edits": [
     {
       "id": "003e",
-      "start": "Toca el icono",
-      "text": "SELECT abre el inventario.\nUsa {L}/{R} para elegir Mapa."
+      "text": "SELECT abre el inventario.\nUsa {L}/{R} para elegir Mapa.",
+      "token_index": 11,
+      "token_hash": "0d9a4bbb0f9d1fbb",
+      "prefix_length": 0
     },
     {
       "id": "003e",
-      "start": "Toca",
-      "text": "{Color:11}Mueve el cursor con {Dpad}.\nOprime {B} para volver."
+      "text": "{Color:11}Mueve el cursor con {Dpad}.\nOprime {B} para volver.",
+      "token_index": 22,
+      "token_hash": "5a64ccfb3a07fd6c",
+      "prefix_length": 0
     },
     {
       "id": "003e",
-      "start": "Puedes cambiar",
-      "text": "Elige una planta en\nla lista de plantas."
+      "text": "Elige una planta en\nla lista de plantas.",
+      "token_index": 33,
+      "token_hash": "5a298605fe0bd7b7",
+      "prefix_length": 0
     },
     {
       "id": "0043",
-      "start": "Toca ",
-      "text": "Oprime ZL para mirar.\nOprime {A} para tomar\nuna luminografía."
+      "text": "Oprime ZL para mirar.\nOprime {A} para tomar\nuna luminografía.",
+      "token_index": 9,
+      "token_hash": "a1459ae39b936824",
+      "prefix_length": 0
     },
     {
       "id": "0078",
-      "start": "Toca ",
-      "text": "SELECT abre el inventario.\nUsa {L}/{R} para elegir\nla pestaña Máscaras."
+      "text": "SELECT abre el inventario.\nUsa {L}/{R} para elegir\nla pestaña Máscaras.",
+      "token_index": 19,
+      "token_hash": "a1459ae39b936824",
+      "prefix_length": 0
     },
     {
       "id": "0078",
-      "start": "Para ponerte",
-      "text": "Oprime Abajo en la cruz\npara ponerte la máscara.\nOprímelo de nuevo para\nvolver a la normalidad."
+      "text": "Oprime Abajo en la cruz\npara ponerte la máscara.\nOprímelo de nuevo para\nvolver a la normalidad.",
+      "token_index": 31,
+      "token_hash": "448237edbb8c51bb",
+      "prefix_length": 0
     },
     {
       "id": "00ff",
-      "start": "Selecciona un objeto",
-      "text": "Elige un objeto con {A}.\nOprime {B} para cancelar.{Color:11}"
+      "text": "Elige un objeto con {A}.\nOprime {B} para cancelar.{Color:11}",
+      "token_index": 1,
+      "token_hash": "231ea239db2f5fa4",
+      "prefix_length": 0
     },
     {
       "id": "026b",
-      "start": "Toca ",
-      "text": "SELECT abre el inventario.\nUsa {L}/{R} para elegir\nla pestaña Inventario."
+      "text": "SELECT abre el inventario.\nUsa {L}/{R} para elegir\nla pestaña Inventario.",
+      "token_index": 8,
+      "token_hash": "a1459ae39b936824",
+      "prefix_length": 0
     },
     {
       "id": "026b",
-      "start": "Selecciona un objeto",
-      "text": "Elige un objeto con {Stick}\ny asígnalo a {X} o {Y}."
+      "text": "Elige un objeto con {Stick}\ny asígnalo a {X} o {Y}.",
+      "token_index": 20,
+      "token_hash": "243919c97b32b19b",
+      "prefix_length": 0
     },
     {
       "id": "026b",
-      "start": "También puedes",
-      "text": "Para las casillas I y II,\nmantén ZR y oprime {X} o {Y}\npara asignar un objeto."
+      "text": "Para las casillas I y II,\nmantén ZR y oprime {X} o {Y}\npara asignar un objeto.",
+      "token_index": 31,
+      "token_hash": "64bedd54f3b15b20",
+      "prefix_length": 0
     },
     {
       "id": "026b",
-      "start": "Una vez que hayas",
-      "text": "Usa el mismo botón o\ncombinación para utilizar\nel objeto. ¡Es fácil!"
+      "text": "Usa el mismo botón o\ncombinación para utilizar\nel objeto. ¡Es fácil!",
+      "token_index": 42,
+      "token_hash": "de831c432bd1c8a8",
+      "prefix_length": 0
     },
     {
       "id": "0270",
-      "start": "Toca ",
-      "text": "SELECT: inventario.\n{L}/{R}: Equipo."
+      "text": "SELECT: inventario.\n{L}/{R}: Equipo.",
+      "token_index": 14,
+      "token_hash": "a1459ae39b936824",
+      "prefix_length": 0
     },
     {
       "id": "033f",
-      "start": "En la ",
-      "text": "En la {Color:1}lista de eventos{Color:11} verás\nlos eventos que has añadido\nal cuaderno."
+      "text": "En la {Color:1}lista de eventos{Color:11} verás\nlos eventos que has añadido\nal cuaderno.",
+      "token_index": 30,
+      "token_hash": "76ec89637260f50f",
+      "prefix_length": 0
     },
     {
       "id": "033f",
-      "start": "En la pantalla táctil",
-      "text": "Elige un evento para\nconsultar sus detalles."
+      "text": "Elige un evento para\nconsultar sus detalles.",
+      "token_index": 42,
+      "token_hash": "4dfc5fd2a91ee652",
+      "prefix_length": 0
     },
     {
       "id": "0e9b",
-      "start": "Se han guardado",
-      "text": "Se han guardado los datos.{Color:11}"
+      "text": "Se han guardado los datos.{Color:11}",
+      "token_index": 1,
+      "token_hash": "d66a8bd59a493a7c",
+      "prefix_length": 0
     },
     {
       "id": "1bae",
-      "start": "tiempo. Los ",
-      "text": "tiempo. Los rubíes que llevas\ny algunos objetos {Color:1}se perderán{Color:11}."
+      "text": "tiempo. Los rubíes que llevas\ny algunos objetos {Color:1}se perderán{Color:11}.",
+      "token_index": 4,
+      "token_hash": "12921a6ed9da5629",
+      "prefix_length": 0
     },
     {
       "id": "1d18",
-      "start": "Toque",
-      "text": "{Color:11}El minimapa está abajo\na la derecha. ZR + SELECT\nlo muestra o lo oculta."
+      "text": "{Color:11}El minimapa está abajo\na la derecha. ZR + SELECT\nlo muestra o lo oculta.",
+      "token_index": 7,
+      "token_hash": "190099e3def53b51",
+      "prefix_length": 0
     },
     {
       "id": "1d18",
-      "start": "Y si toca ",
-      "text": "SELECT abre el inventario.\n{L}/{R}: pestaña Mapa."
+      "text": "SELECT abre el inventario.\n{L}/{R}: pestaña Mapa.",
+      "token_index": 16,
+      "token_hash": "40407111a98ab6f3",
+      "prefix_length": 0
     },
     {
       "id": "2056",
-      "start": "Si quieres",
-      "text": "Para volver a tu última partida\nguardada, cierra y reinicia\nel juego y carga tu archivo."
+      "text": "Para volver a tu última partida\nguardada, cierra y reinicia\nel juego y carga tu archivo.",
+      "token_index": 0,
+      "token_hash": "cfb4545b4fb51f56",
+      "prefix_length": 0
     },
     {
       "id": "575b",
-      "start": "Toca la pantalla",
-      "text": "Escribe tu nombre."
+      "text": "Escribe tu nombre.",
+      "token_index": 0,
+      "token_hash": "d4b310617fc14599",
+      "prefix_length": 0
     }
   ]
 }

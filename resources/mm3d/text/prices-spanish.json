@@ -1,122 +1,290 @@
 {
   "rewrites": {
-    "3528": {
-      "¿Cuánto quieres ": "Coste: {factor} veces tu ",
-      "apostar": "apuesta",
-      "?": ".",
-      "Escoge la cantidad con ": "Elige con "
-    },
-    "0656": {
-      "Saco de bombas grande:": "Saco grande:"
-    },
-    "066f": {
-      "Entonces, ¿quieres comprar un": "¿Quieres comprar un",
-      "barril de pólvora ": "barril de pólvora",
-      "por ": " a "
-    },
-    "0773": {
-      "Bueno... Para ti son solo ": "Para ti son "
-    }
+    "3528": [
+      {
+        "source_hash": "74bc5982c5a24461",
+        "length": 16,
+        "text": "Coste: {factor} veces tu "
+      },
+      {
+        "source_hash": "a91d0b2d50dda475",
+        "length": 7,
+        "text": "apuesta"
+      },
+      {
+        "source_hash": "af63b24c8601a52e",
+        "length": 1,
+        "text": "."
+      },
+      {
+        "source_hash": "ff3f2544cd362dc4",
+        "length": 23,
+        "text": "Elige con "
+      }
+    ],
+    "0656": [
+      {
+        "source_hash": "7a385fec3041809b",
+        "length": 22,
+        "text": "Saco grande:"
+      }
+    ],
+    "066f": [
+      {
+        "source_hash": "0f273748a5df381e",
+        "length": 29,
+        "text": "¿Quieres comprar un"
+      },
+      {
+        "source_hash": "77826fc39a571448",
+        "length": 18,
+        "text": "barril de pólvora"
+      },
+      {
+        "source_hash": "8c2caf0da892f4e2",
+        "length": 4,
+        "text": " a "
+      }
+    ],
+    "0773": [
+      {
+        "source_hash": "2fccff15ea14003a",
+        "length": 26,
+        "text": "Para ti son "
+      }
+    ]
   },
   "shorten": {
-    "0654": {
-      "Este saco para transportar": "Un saco para transportar"
-    },
-    "0678": {
-      "Esta puede ser tu última": "Puede ser tu última"
-    },
-    "0679": {
-      "te vendo uno por ": "lo vendo por "
-    },
-    "067a": {
-      "te vendo uno por ": "lo vendo por "
-    },
-    "06b6": {
-      "su salud! Podrá llevarla en": "su salud! Llévela en"
-    },
-    "06d3": {
-      "Creo que te ayuda o algo así.": "Creo que te ayuda."
-    },
-    "0843": {
-      "¡Está preparada para curarlo todo!": "¡Preparada para curarlo todo!"
-    },
-    "085b": {
-      "Descuento para grupos": "Descuento a grupos"
-    },
-    "085d": {
-      "¿Solo un billete? Entonces el precio": "¿Un billete? El precio"
-    },
-    "0880": {
-      "agotada. Lo siento.": "agotada. Perdón."
-    },
-    "0bc9": {
-      "Es un poco cara, pero merece ": "Es cara, pero merece "
-    },
-    "0bcf": {
-      "Cuando estés bajo de salud,": "Si estás bajo de salud,"
-    },
-    "12df": {
-      "Bébela para restablecer tu salud": "Bébela para recuperar salud"
-    },
-    "29f4": {
-      "A este precio, debe de ser robada.": "A este precio, será robada."
-    },
-    "59d8": {
-      "¿Quieres pescar un rato?": "¿Quieres pescar?"
-    },
-    "59da": {
-      "Muy bien, entonces son ": "Entonces son "
-    },
-    "0655": {
-      "No, gracias": "No"
-    },
-    "0657": {
-      "No, gracias": "No"
-    },
-    "06b7": {
-      "No, gracias": "No"
-    },
-    "06d4": {
-      "No, gracias": "No"
-    },
-    "0844": {
-      "No, gracias": "No"
-    },
-    "0bca": {
-      "No, gracias": "No"
-    },
-    "0bd0": {
-      "No, gracias": "No"
-    },
-    "12e0": {
-      "No, gracias": "No"
-    },
-    "29f5": {
-      "No, gracias": "No"
-    },
-    "3466": {
-      "No, gracias": "No"
-    },
-    "3490": {
-      "No, gracias": "No"
-    },
-    "0652": {
-      "son muy prácticas, lustrosas y": "son prácticas, lustrosas y"
-    },
-    "0653": {
-      "No, gracias": "No"
-    },
-    "0bc7": {
-      "Vuelan bien, pero necesitarás": "Vuelan bien, pero necesitas"
-    },
-    "0bc8": {
-      "No, gracias": "No"
-    },
-    "1612": {
-      "¡Le venderé una ": "¡Le vendo una "
-    },
-    "1617": {
-      "Leee venderé una ": "Leee vendo una "
-    }
+    "0654": [
+      {
+        "source_hash": "ba99e914d2674110",
+        "length": 26,
+        "text": "Un saco para transportar"
+      }
+    ],
+    "0678": [
+      {
+        "source_hash": "dfca347aeb0a384a",
+        "length": 24,
+        "text": "Puede ser tu última"
+      }
+    ],
+    "0679": [
+      {
+        "source_hash": "3403ca05e7c2fedd",
+        "length": 17,
+        "text": "lo vendo por "
+      }
+    ],
+    "067a": [
+      {
+        "source_hash": "3403ca05e7c2fedd",
+        "length": 17,
+        "text": "lo vendo por "
+      }
+    ],
+    "06b6": [
+      {
+        "source_hash": "fbc62a83f8c31d94",
+        "length": 27,
+        "text": "su salud! Llévela en"
+      }
+    ],
+    "06d3": [
+      {
+        "source_hash": "25e8343d63277d68",
+        "length": 29,
+        "text": "Creo que te ayuda."
+      }
+    ],
+    "0843": [
+      {
+        "source_hash": "e9348981df3f7c65",
+        "length": 34,
+        "text": "¡Preparada para curarlo todo!"
+      }
+    ],
+    "085b": [
+      {
+        "source_hash": "ee07f145d242d535",
+        "length": 21,
+        "text": "Descuento a grupos"
+      }
+    ],
+    "085d": [
+      {
+        "source_hash": "ce503e18dba1362c",
+        "length": 36,
+        "text": "¿Un billete? El precio"
+      }
+    ],
+    "0880": [
+      {
+        "source_hash": "da56ad99fe36186d",
+        "length": 19,
+        "text": "agotada. Perdón."
+      }
+    ],
+    "0bc9": [
+      {
+        "source_hash": "948caf2072b5dfb5",
+        "length": 29,
+        "text": "Es cara, pero merece "
+      }
+    ],
+    "0bcf": [
+      {
+        "source_hash": "4b57d0f9b6945e54",
+        "length": 27,
+        "text": "Si estás bajo de salud,"
+      }
+    ],
+    "12df": [
+      {
+        "source_hash": "5c85db9dcf233a03",
+        "length": 32,
+        "text": "Bébela para recuperar salud"
+      }
+    ],
+    "29f4": [
+      {
+        "source_hash": "f392a7d2485af3c7",
+        "length": 34,
+        "text": "A este precio, será robada."
+      }
+    ],
+    "59d8": [
+      {
+        "source_hash": "5992a37879d48c94",
+        "length": 24,
+        "text": "¿Quieres pescar?"
+      }
+    ],
+    "59da": [
+      {
+        "source_hash": "7e103d6f55d82fe3",
+        "length": 23,
+        "text": "Entonces son "
+      }
+    ],
+    "0655": [
+      {
+        "source_hash": "7c46b3b43f49fc0e",
+        "length": 11,
+        "text": "No"
+      }
+    ],
+    "0657": [
+      {
+        "source_hash": "7c46b3b43f49fc0e",
+        "length": 11,
+        "text": "No"
+      }
+    ],
+    "06b7": [
+      {
+        "source_hash": "7c46b3b43f49fc0e",
+        "length": 11,
+        "text": "No"
+      }
+    ],
+    "06d4": [
+      {
+        "source_hash": "7c46b3b43f49fc0e",
+        "length": 11,
+        "text": "No"
+      }
+    ],
+    "0844": [
+      {
+        "source_hash": "7c46b3b43f49fc0e",
+        "length": 11,
+        "text": "No"
+      }
+    ],
+    "0bca": [
+      {
+        "source_hash": "7c46b3b43f49fc0e",
+        "length": 11,
+        "text": "No"
+      }
+    ],
+    "0bd0": [
+      {
+        "source_hash": "7c46b3b43f49fc0e",
+        "length": 11,
+        "text": "No"
+      }
+    ],
+    "12e0": [
+      {
+        "source_hash": "7c46b3b43f49fc0e",
+        "length": 11,
+        "text": "No"
+      }
+    ],
+    "29f5": [
+      {
+        "source_hash": "7c46b3b43f49fc0e",
+        "length": 11,
+        "text": "No"
+      }
+    ],
+    "3466": [
+      {
+        "source_hash": "7c46b3b43f49fc0e",
+        "length": 11,
+        "text": "No"
+      }
+    ],
+    "3490": [
+      {
+        "source_hash": "7c46b3b43f49fc0e",
+        "length": 11,
+        "text": "No"
+      }
+    ],
+    "0652": [
+      {
+        "source_hash": "016b42c3be13ea6a",
+        "length": 30,
+        "text": "son prácticas, lustrosas y"
+      }
+    ],
+    "0653": [
+      {
+        "source_hash": "7c46b3b43f49fc0e",
+        "length": 11,
+        "text": "No"
+      }
+    ],
+    "0bc7": [
+      {
+        "source_hash": "ca59a642122aa661",
+        "length": 29,
+        "text": "Vuelan bien, pero necesitas"
+      }
+    ],
+    "0bc8": [
+      {
+        "source_hash": "7c46b3b43f49fc0e",
+        "length": 11,
+        "text": "No"
+      }
+    ],
+    "1612": [
+      {
+        "source_hash": "4673489869533c21",
+        "length": 16,
+        "text": "¡Le vendo una "
+      }
+    ],
+    "1617": [
+      {
+        "source_hash": "25a4603068689436",
+        "length": 17,
+        "text": "Leee vendo una "
+      }
+    ]
   }
 }

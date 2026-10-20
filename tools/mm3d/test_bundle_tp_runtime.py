@@ -1,5 +1,6 @@
 """Package completeness checks for the isolated TP converter."""
 from pathlib import Path
+import os
 import shutil
 import tempfile
 import unittest
@@ -23,6 +24,48 @@ def fixture_runtime(repo):
 
 
 class ConverterBundleTests(unittest.TestCase):
+    @unittest.skipIf(os.name == 'nt', 'Unix loader aliases')
+    def test_preserves_loader_alias_and_removes_only_test_suites(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo = Path(folder) / 'repo'
+            fixture_runtime(repo)
+            stage = repo / 'build-tp-runtime/payload/runtime'
+            library = stage/'tp-python/python/lib/libpython3.13.so.1.0'
+            library.parent.mkdir(parents=True)
+            library.write_bytes(b'runtime')
+            alias = library.with_name('libpython3.13.so')
+            alias.symlink_to(library.name)
+            library.with_name('absolute-alias.so').symlink_to(library)
+            for name in ('tp-modules/numpy/_core/tests/test_example.py',
+                         'tp-python/python/lib/python3.13/test/test_example.py',
+                         'tp-modules/numpy/testing/__init__.py',
+                         'tp-modules/numpy/LICENSE.txt'):
+                path = stage/name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('fixture')
+            output = Path(folder)/'out'
+            copy_tp_runtime(repo, output)
+            copied = output/'runtime/tp-python/python/lib/libpython3.13.so'
+            self.assertTrue(copied.is_symlink())
+            self.assertEqual(copied.read_bytes(), b'runtime')
+            absolute = copied.with_name('absolute-alias.so')
+            self.assertFalse(absolute.readlink().is_absolute())
+            self.assertEqual(absolute.read_bytes(), b'runtime')
+            self.assertFalse((output/'runtime/tp-modules/numpy/_core/tests').exists())
+            self.assertFalse((output/'runtime/tp-python/python/lib/python3.13/test').exists())
+            self.assertTrue((output/'runtime/tp-modules/numpy/testing/__init__.py').is_file())
+            self.assertTrue((output/'runtime/tp-modules/numpy/LICENSE.txt').is_file())
+
+    @unittest.skipIf(os.name == 'nt', 'Unix loader aliases')
+    def test_rejects_external_loader_alias(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo = Path(folder)/'repo'
+            fixture_runtime(repo)
+            source = repo/'build-tp-runtime/payload/runtime/tp'
+            (source/'outside.so').symlink_to(Path(folder)/'private.so')
+            with self.assertRaisesRegex(ValueError, 'escapes'):
+                copy_tp_runtime(repo, Path(folder)/'out')
+
     def test_missing_native_extension_is_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
             repo = Path(folder) / 'repo'

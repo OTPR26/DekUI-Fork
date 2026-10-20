@@ -91,8 +91,12 @@ template<class M> void Message(M& m,U32 self,U32 id,unsigned factor) {
         auto metadata=m.Read(entry+4),offset=m.Read(entry+12),length=m.Read(entry+16);
         if(!metadata||!offset||!length||*length!=edit->original.size()||edit->text.size()>*length||
            (*offset&1)||*offset<16+*count*20||*offset>*size||*length>*size-*offset)return;
-        const auto text=active?edit->text:edit->original;
         const U32 wanted=active?edit->updated:edit->metadata,start=*base+*offset,end=start+*length;
+        const auto current=DialogueText::Read(m,start,*length);
+        if(!current)return;
+        const auto resolved=DialogueText::Resolve(active?edit->text:edit->original,*current);
+        if(!resolved)return;
+        const std::string_view text=*resolved;
         std::uint64_t hash=0xcbf29ce484222325ULL;
         struct Write{U32 at,value;};std::vector<Write> writes;
         for(U32 at=start&~3u;at<end;at+=4) {

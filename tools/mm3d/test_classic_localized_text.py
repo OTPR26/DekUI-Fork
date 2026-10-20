@@ -18,7 +18,8 @@ class ClassicLocalizedTextTests(unittest.TestCase):
                 self.assertEqual(tokens.count((0x2f, 2)), 1)
                 self.assertEqual(tokens.count((0x31, 1)), 4)
                 for page in spec['pages'][:4]:
-                    self.assertEqual(len(page.splitlines()), 4)
+                    self.assertGreater(len(page.splitlines()), 0)
+                    self.assertLessEqual(len(page.splitlines()), 4)
                 # Conservative copy limit, not a substitute for font/render testing.
                 for page in spec['pages'] + spec['return']:
                     self.assertLessEqual(len(page.splitlines()), 4)

@@ -49,6 +49,14 @@ class WindowsPackageTest(unittest.TestCase):
             with patch.object(package_windows, 'ROOT', repo), patch.object(windows_python, 'SHA256', digest):
                 package_windows.package(bundle, output, python_archive)
                 with self.assertRaises(ValueError): package_windows.package(bundle, output, python_archive)
+                with patch.object(package_windows.subprocess, 'run') as strip:
+                    package_windows.package(bundle, root/'stripped.zip', python_archive,
+                                            strip_tool=Path('fixture-strip'))
+                command = strip.call_args.args[0]
+                self.assertEqual(command[:2], ['fixture-strip', '--strip-unneeded'])
+                self.assertEqual(Path(command[2]).name, 'Majora-ReMasked.exe')
+                self.assertNotEqual(Path(command[2]), bundle/'azahar.exe')
+                self.assertEqual((bundle/'azahar.exe').read_bytes(), b'test')
             with zipfile.ZipFile(output) as archive:
                 names = set(archive.namelist())
                 archive.extractall(root/'unpacked')

@@ -21,6 +21,6 @@ cp -R /ucrt64/share/licenses/. build-windows/bundle/licenses/
 python tools/mm3d/windows_python.py build-windows/python-embed.zip
 release_version=$(python tools/mm3d/release_version.py)
 package_path="artifacts/Majora-ReMasked-${release_version}-Windows-x64.zip"
-python tools/mm3d/package_windows.py build-windows/bundle "$package_path" --python-archive build-windows/python-embed.zip
+python tools/mm3d/package_windows.py build-windows/bundle "$package_path" --python-archive build-windows/python-embed.zip --strip-tool "$(command -v strip)"
 python tools/mm3d/windows/smoke_setup.py "$package_path"
 ccache -s

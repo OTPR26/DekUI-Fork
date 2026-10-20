@@ -3,103 +3,143 @@
   "edits": [
     {
       "id": "003e",
-      "start": "Touchez ",
-      "text": "Appuyez sur SELECT pour ouvrir\nl'inventaire. Avec {L}/{R},\nchoisissez l'onglet Carte."
+      "text": "Appuyez sur SELECT pour ouvrir\nl'inventaire. Avec {L}/{R},\nchoisissez l'onglet Carte.",
+      "token_index": 9,
+      "token_hash": "67a37708c15a7f45",
+      "prefix_length": 0
     },
     {
       "id": "003e",
-      "start": "Touchez",
-      "text": "{Color:11}Choisissez un étage dans\nla liste des étages."
+      "text": "{Color:11}Choisissez un étage dans\nla liste des étages.",
+      "token_index": 22,
+      "token_hash": "645dc42809dc4f07",
+      "prefix_length": 0
     },
     {
       "id": "003e",
-      "start": "Vous pouvez déplacer",
-      "text": "Déplacez le curseur avec {Dpad}.\nAppuyez sur {B} pour revenir."
+      "text": "Déplacez le curseur avec {Dpad}.\nAppuyez sur {B} pour revenir.",
+      "token_index": 29,
+      "token_hash": "bb4c0ff096857bde",
+      "prefix_length": 0
     },
     {
       "id": "0043",
-      "start": "Touchez ",
-      "text": "Appuyez sur ZL pour viser.\nAppuyez sur {A} pour prendre\nune photo."
+      "text": "Appuyez sur ZL pour viser.\nAppuyez sur {A} pour prendre\nune photo.",
+      "token_index": 9,
+      "token_hash": "67a37708c15a7f45",
+      "prefix_length": 0
     },
     {
       "id": "0078",
-      "start": "Touchez  ",
-      "text": "SELECT ouvre l'inventaire.\nAvec {L}/{R}, choisissez\nl'onglet Masques."
+      "text": "SELECT ouvre l'inventaire.\nAvec {L}/{R}, choisissez\nl'onglet Masques.",
+      "token_index": 20,
+      "token_hash": "7542a8e08cc6789f",
+      "prefix_length": 0
     },
     {
       "id": "0078",
-      "start": "Touchez l'icône",
-      "text": "Appuyez sur Bas sur la croix\ndirectionnelle pour porter\nce masque."
+      "text": "Appuyez sur Bas sur la croix\ndirectionnelle pour porter\nce masque.",
+      "token_index": 32,
+      "token_hash": "4e65c7d6133d4c57",
+      "prefix_length": 0
     },
     {
       "id": "0078",
-      "start": "Si vous l'avez assigné",
-      "text": "Appuyez de nouveau sur Bas\npour reprendre votre\napparence normale."
+      "text": "Appuyez de nouveau sur Bas\npour reprendre votre\napparence normale.",
+      "token_index": 40,
+      "token_hash": "99161c9d055ddb8b",
+      "prefix_length": 0
     },
     {
       "id": "00ff",
-      "start": "Choisissez un objet",
-      "text": "Choisissez un objet avec {A}.\nAppuyez sur {B} pour annuler.{Color:11}"
+      "text": "Choisissez un objet avec {A}.\nAppuyez sur {B} pour annuler.{Color:11}",
+      "token_index": 1,
+      "token_hash": "747c1a9a03cb7af3",
+      "prefix_length": 0
     },
     {
       "id": "026b",
-      "start": "Touche ",
-      "text": "SELECT ouvre ton inventaire.\nAvec {L}/{R}, choisis\nl'onglet Inventaire."
+      "text": "SELECT ouvre ton inventaire.\nAvec {L}/{R}, choisis\nl'onglet Inventaire.",
+      "token_index": 7,
+      "token_hash": "645d6e2809dbbce5",
+      "prefix_length": 0
     },
     {
       "id": "026b",
-      "start": "Sélectionne un objet",
-      "text": "Choisis un objet avec {Stick}.\nAssigne-le à {X} ou {Y}."
+      "text": "Choisis un objet avec {Stick}.\nAssigne-le à {X} ou {Y}.",
+      "token_index": 19,
+      "token_hash": "3d8758c24b101c79",
+      "prefix_length": 0
     },
     {
       "id": "026b",
-      "start": "Si tu préfères",
-      "text": "Pour les cases I et II,\nmaintiens ZR et appuie sur\n{X} ou {Y} pour assigner un objet."
+      "text": "Pour les cases I et II,\nmaintiens ZR et appuie sur\n{X} ou {Y} pour assigner un objet.",
+      "token_index": 31,
+      "token_hash": "860599e3c8bae83d",
+      "prefix_length": 0
     },
     {
       "id": "026b",
-      "start": "Quand tes objets",
-      "text": "Utilise le même bouton ou\nla même combinaison pour\nutiliser l'objet. Facile!"
+      "text": "Utilise le même bouton ou\nla même combinaison pour\nutiliser l'objet. Facile!",
+      "token_index": 42,
+      "token_hash": "5104b0bb600da9f3",
+      "prefix_length": 0
     },
     {
       "id": "0270",
-      "start": "Touche ",
-      "text": "SELECT: inventaire.\n{L}/{R}: Équipement."
+      "text": "SELECT: inventaire.\n{L}/{R}: Équipement.",
+      "token_index": 17,
+      "token_hash": "645d6e2809dbbce5",
+      "prefix_length": 0
     },
     {
       "id": "033f",
-      "start": "Dans l'",
-      "text": "Dans l'{Color:1}historique{Color:11}, choisissez\nun événement pour consulter\nses détails."
+      "text": "Dans l'{Color:1}historique{Color:11}, choisissez\nun événement pour consulter\nses détails.",
+      "token_index": 39,
+      "token_hash": "947682e970e4ec5e",
+      "prefix_length": 0
     },
     {
       "id": "0e9b",
-      "start": "Sauvegarde effectuée.",
-      "text": "Sauvegarde effectuée.{Color:11}"
+      "text": "Sauvegarde effectuée.{Color:11}",
+      "token_index": 1,
+      "token_hash": "1250608d7cb5a869",
+      "prefix_length": 0
     },
     {
       "id": "1bae",
-      "start": "Tous les objets",
-      "text": "Vos rubis{Color:11} et certains objets\nseront {Color:1}perdus{Color:11}."
+      "text": "Vos rubis{Color:11} et certains objets\nseront {Color:1}perdus{Color:11}.",
+      "token_index": 4,
+      "token_hash": "ffd5e1c75e163957",
+      "prefix_length": 0
     },
     {
       "id": "1d18",
-      "start": "Tu peux ",
-      "text": "La mini-carte est en bas\nà droite. ZR + SELECT permet\nde l'afficher ou de la masquer."
+      "text": "La mini-carte est en bas\nà droite. ZR + SELECT permet\nde l'afficher ou de la masquer.",
+      "token_index": 6,
+      "token_hash": "b2fa95d894d92d48",
+      "prefix_length": 0
     },
     {
       "id": "1d18",
-      "start": "Si tu touches ",
-      "text": "SELECT ouvre l'inventaire.\n{L}/{R}: onglet Carte."
+      "text": "SELECT ouvre l'inventaire.\n{L}/{R}: onglet Carte.",
+      "token_index": 14,
+      "token_hash": "09802b418174d4bd",
+      "prefix_length": 0
     },
     {
       "id": "2056",
-      "start": "Si vous voulez",
-      "text": "Pour reprendre votre dernière\nsauvegarde, quittez et relancez\nle jeu, puis chargez le fichier."
+      "text": "Pour reprendre votre dernière\nsauvegarde, quittez et relancez\nle jeu, puis chargez le fichier.",
+      "token_index": 0,
+      "token_hash": "0ca91c0c4d47294e",
+      "prefix_length": 0
     },
     {
       "id": "575b",
-      "start": "Touchez l'écran",
-      "text": "Entrez un nom."
+      "text": "Entrez un nom.",
+      "token_index": 0,
+      "token_hash": "0ff37319c525f504",
+      "prefix_length": 0
     }
   ]
 }

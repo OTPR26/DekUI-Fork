@@ -14,22 +14,11 @@ CAPACITY = 1024
 def dialogue():
     # 27/28: instant text on/off; 31/2: wait then next page; 2f: choices.
     pages = [
-        "You can {Color:1}save{Color:11} your {Color:1}progress{Color:11} and\n"
-        "{Color:1}quit{Color:11} here. When you reselect your file,\n"
-        "a glowing icon will appear by your file\nname.",
-        "This indicates that the next time you\nreopen your file, you'll resume playing\n"
-        "at this {Color:1}very place{Color:11} and {Color:1}time{Color:11} with your\n"
-        "{Color:1}current status{Color:11}.",
-        "{Color:1}Warning:{Color:11} If you reopen this\n"
-        "file, then reset without saving at\n"
-        "an owl statue, you'll lose the\n"
-        "progress you've saved here...",
-        "The next time you open the file,\n"
-        "you'll restart at Day One with the\n"
-        "status you had when you last saved\n"
-        "using The Song of Time.",
-        "{Color:1}Save{Color:11} your {Color:1}progress{Color:11} up to this point\n"
-        "and {Color:1}quit{Color:11} playing?",
+        "Create a temporary save here and\nleave the game.",
+        "Loading this save restores your\nlocation, time and inventory.",
+        "{Color:1}Keep saving as you play.{Color:11}\nA temporary save is consumed\nwhen you resume your adventure.",
+        "Without another save, reloading\nreturns to your last permanent\nSong of Time save.",
+        "{Color:1}Save and leave the game?{Color:11}",
     ]
     tokens = []
     for page in pages[:-1]:
@@ -41,10 +30,7 @@ def dialogue():
 def prepare(data):
     original = text.messages(data)
     raw = original[PROMPT]
-    expected = text.encode([(0x3a,0),(0x3a,1),'Save',(0x3a,0),' your progress ',
-                            (0x3a,11),'up to this point?',(1,),(0x3a,2),(0x2f,2),
-                            'Yes',(1,),'No',(0x3a,11),(0,)])
-    if raw != expected:
+    if text.fnv(raw) != 0x0bc4fc20522543ef:
         raise ValueError('Unsupported owl prompt; archive left untouched')
     tokens = dialogue()
     replacement = text.encode(tokens)

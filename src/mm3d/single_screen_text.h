@@ -77,8 +77,13 @@ template<class M> bool Apply(M& m,U32 self,U32 id) {
         auto offset=m.Read(entry+12),length=m.Read(entry+16);
         if(!offset||!length||*length!=replacement->size||replacement->text.size()>*length||
            (*offset&1)||*offset<16+*count*20||*offset>*size||*length>*size-*offset)return false;
-        const auto text=return_notice?return_text:(selected?selected->text:replacement->original);
         const U32 start=*base+*offset,end=start+*length;
+        const auto current=DialogueText::Read(m,start,*length);
+        if(!current)return false;
+        const auto resolved=DialogueText::Resolve(
+            return_notice?return_text:(selected?selected->text:replacement->original),*current);
+        if(!resolved)return false;
+        const std::string_view text=*resolved;
         std::uint64_t hash=0xcbf29ce484222325ULL;
         struct Write {U32 at,value;};std::vector<Write> writes;
         // Read and validate every destination word before writing anything.

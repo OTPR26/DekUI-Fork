@@ -86,7 +86,11 @@ template<class M> bool Text(M& m,U32 self,int question) {
         if(!offset||!length||*length!=original.size()||m.Read(entry+4)!=0x3fffffff||
            (*offset&1)||*offset<16+*count*20||*offset>*size||*length>*size-*offset)return false;
         const U32 start=*base+*offset,end=start+*length;
-        const auto desired=question<0?original:(*questions)[question];
+        const auto before=DialogueText::Read(m,start,*length);
+        if(!before)return false;
+        const auto resolved=DialogueText::Resolve(question<0?original:(*questions)[question],*before);
+        if(!resolved)return false;
+        const std::string_view desired=*resolved;
         std::vector<char> current(*length);
         struct Write{U32 at,value;};std::vector<Write> writes;
         for(U32 at=start&~3u;at<end;at+=4) {
@@ -98,8 +102,9 @@ template<class M> bool Text(M& m,U32 self,int question) {
             writes.push_back({at,value});
         }
         const std::string_view old(current.data(),current.size());
-        bool known=old==original;
-        for(auto text:*questions)known|=old==text;
+        const auto hash=DialogueText::Hash(old);
+        bool known=hash==original.hash;
+        for(const auto& text:*questions)known|=hash==text.hash;
         if(!known)return false;
         for(auto w:writes)m.Write(w.at,w.value);
         return true;

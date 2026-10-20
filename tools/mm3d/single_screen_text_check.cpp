@@ -34,6 +34,9 @@ struct Memory {
 std::vector<unsigned char> Load(const char* name) {
     std::ifstream f(name,std::ios::binary);assert(f);return {(std::istreambuf_iterator<char>(f)),{}};
 }
+std::string Value(const MM3D::DialogueText::Recipe& recipe) {
+    auto value=MM3D::DialogueText::Resolve(recipe,{});assert(value);return *value;
+}
 int main(int argc,char** argv) {
     assert(argc==3||argc==5);const auto original=Load(argv[1]);
     const auto check=[](const auto& replacements,const auto& original) {
@@ -43,7 +46,7 @@ int main(int argc,char** argv) {
         Apply(m,Memory::Self,r.id);assert(m.writes>0);
         for(U32 i=0;i<original.size();++i) {
             unsigned char expected=original[i];
-            if(i>=offset&&i<offset+size)expected=i-offset<r.text.size()?r.text[i-offset]:0;
+            if(i>=offset&&i<offset+size)expected=i-offset<r.text.size()?Value(r.text)[i-offset]:0;
             assert(m.data[i]==expected);
         }
         auto once=m.data;m.writes=0;Apply(m,Memory::Self,r.id);assert(m.data==once&&m.writes==0);
@@ -84,7 +87,7 @@ int main(int argc,char** argv) {
             Apply(m,Memory::Self,r.id);
             for(U32 i=0;i<original.size();++i) {
                 auto value=original[i];
-                if(i>=offset&&i<offset+size)value=i-offset<expected.size()?expected[i-offset]:0;
+                if(i>=offset&&i<offset+size)value=i-offset<expected.size()?Value(expected)[i-offset]:0;
                 assert(m.data[i]==value);
             }
             m.writes=0;Apply(m,Memory::Self,r.id);assert(m.writes==0);

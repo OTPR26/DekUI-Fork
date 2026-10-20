@@ -1,5 +1,6 @@
 """Copy only staged converter dependencies and source modules into desktop packages."""
 from pathlib import Path
+import os
 import shutil
 
 
@@ -16,7 +17,30 @@ def copy_tp_runtime(repo, payload):
     for name in ('tp','tp-modules','tp-python'):
         source = staged/name
         if source.exists():
-            shutil.copytree(source,destination/name,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
+            # Keep loader aliases as links instead of duplicating shared libraries.
+            # Only links contained within this runtime subtree may be packaged.
+            for path in source.rglob('*'):
+                if path.is_symlink() and not path.resolve().is_relative_to(source.resolve()):
+                    raise ValueError('Converter runtime link escapes its directory')
+            shutil.copytree(source,destination/name,symlinks=True,
+                            ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
+            for path in source.rglob('*'):
+                if path.is_symlink():
+                    copied = destination/name/path.relative_to(source)
+                    if not copied.is_symlink():
+                        continue
+                    target = destination/name/path.resolve().relative_to(source.resolve())
+                    copied.unlink()
+                    copied.symlink_to(os.path.relpath(target,copied.parent),
+                                      target_is_directory=path.is_dir())
+    # These are upstream test suites, not converter dependencies. Keep native
+    # extensions, NumPy's runtime helpers and all dependency license files.
+    for folder in (destination/'tp-modules/numpy').rglob('tests'):
+        if folder.is_dir() and not folder.is_symlink():
+            shutil.rmtree(folder)
+    tests = destination/'tp-python/python/lib/python3.13/test'
+    if tests.is_dir():
+        shutil.rmtree(tests)
     scripts = payload/'tools/mm3d'
     shutil.copytree(repo/'tools/mm3d/tp_import',scripts/'tp_import',
                     ignore=shutil.ignore_patterns('__pycache__','*.pyc'))

@@ -18,7 +18,7 @@ int main(int argc,char** argv) {
                 for(const auto& v:edits)if(v.id==e.id)want=&v;
                 assert(want);auto expected=bytes;
                 if(factor!=1) {
-                    for(U32 i=0;i<length;++i)expected[offset+i]=i<want->text.size()?want->text[i]:0;
+                    for(U32 i=0;i<length;++i)expected[offset+i]=i<want->text.size()?Value(want->text)[i]:0;
                     for(unsigned i=0;i<4;++i)expected[entry-Memory::Base+4+i]=want->updated>>(8*i);
                 }
                 MM3D::Prices::Message(m,Memory::Self,e.id,factor);assert(m.data==expected);
@@ -40,7 +40,7 @@ int main(int argc,char** argv) {
         MM3D::Prices::Message(m,Memory::Self,e.id,1);assert(m.data==original&&m.writes==0);
         MM3D::Prices::Message(m,Memory::Self,e.id,factor);assert(m.writes>0);
         auto expected=original;
-        for(U32 i=0;i<length;++i)expected[offset+i]=i<e.text.size()?e.text[i]:0;
+        for(U32 i=0;i<length;++i)expected[offset+i]=i<e.text.size()?Value(e.text)[i]:0;
         for(unsigned i=0;i<4;++i)expected[entry-Memory::Base+4+i]=e.updated>>(8*i);
         assert(m.data==expected);
         m.writes=0;MM3D::Prices::Message(m,Memory::Self,e.id,factor);assert(m.writes==0&&m.data==expected);
@@ -106,7 +106,7 @@ int main(int argc,char** argv) {
     assert(cost(0x29da,0,3)==500);
     assert(cost(0x1600,0,3)==500&&cost(0x1606,0,3)==1023); // repeat uses hard-coded charge, no metadata
     for(const auto& e:TripleMessages)if(e.id==0x1606||e.id==0x1600||e.id==0x2afa||e.id==0x2b0b)
-        assert(e.text.find("500 Rupees")!=std::string_view::npos);
+        assert(Value(e.text).find("500 Rupees")!=std::string_view::npos);
     assert(cost(0x06bb,0,3)==300&&cost(0x06d8,0,3)==300);
     assert(cost(0x0477,0,3)==12);
     // Already edited resources can transition between both modes and native.

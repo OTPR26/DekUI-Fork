@@ -1,93 +1,217 @@
 {
   "rewrites": {
-    "3528": {
-      "Combien veux-tu ": "Coût: {factor} fois ta ",
-      "gager": "mise",
-      "?": ".",
-      "Choisis une mise avec ": "Choisis avec "
-    },
-    "067a": {
-      ", j'en vends pour ": ", je vends à "
-    },
-    "59d8": {
-      "poisson? C'est ": "poisson? "
-    }
+    "3528": [
+      {
+        "source_hash": "101fe6fc6a2973bc",
+        "length": 16,
+        "text": "Coût: {factor} fois ta "
+      },
+      {
+        "source_hash": "ef7187bd02b38c11",
+        "length": 5,
+        "text": "mise"
+      },
+      {
+        "source_hash": "af63b24c8601a52e",
+        "length": 1,
+        "text": "."
+      },
+      {
+        "source_hash": "a4193e33d0df6424",
+        "length": 22,
+        "text": "Choisis avec "
+      }
+    ],
+    "067a": [
+      {
+        "source_hash": "59efaa7224de8f7b",
+        "length": 18,
+        "text": ", je vends à "
+      }
+    ],
+    "59d8": [
+      {
+        "source_hash": "dc1dbc41953fc1ed",
+        "length": 15,
+        "text": "poisson? "
+      }
+    ]
   },
   "shorten": {
-    "06af": {
-      "Je prends, c'est sûr ": "Je prends"
-    },
-    "06b6": {
-      "Elle peut vous sauver la vie! ": "Elle peut vous sauver!"
-    },
-    "06b7": {
-      "Je prends, c'est sûr": "Je prends"
-    },
-    "06cb": {
-      "C'est ça, le prix est dessus...": "Le prix est dessus..."
-    },
-    "06cc": {
-      "Oui, ça m'intéresse": "Oui, je prends"
-    },
-    "06d3": {
-      "J'pense que, euh... ça t'aide. Et ": "Euh... ça t'aide. Et "
-    },
-    "06d4": {
-      "Je la prends": "Je prends"
-    },
-    "0773": {
-      "Hé... Pour toi, c'est ": "Pour toi, c'est "
-    },
-    "0843": {
-      "Je viens de mettre au point cet": "Je viens de créer cet"
-    },
-    "0844": {
-      "Je la prends": "Je prends"
-    },
-    "0880": {
-      "En fait, je n'arrive pas à trouver": "Je n'arrive pas à trouver"
-    },
-    "0bc9": {
-      "Un peu cher, mais ça vaut la peine!": "Cher, mais ça vaut la peine!"
-    },
-    "0bca": {
-      "J'achète tout de suite": "J'achète"
-    },
-    "0bcf": {
-      "Si jamais tu manques d'énergie ": "Si tu manques d'énergie "
-    },
-    "0bd0": {
-      "Potion rouge :": "Potion rouge:"
-    },
-    "12db": {
-      "C'est le bouclier qu'utilisent les ": "Le bouclier qu'utilisent les "
-    },
-    "12dc": {
-      "J'achète bien sûr": "J'achète"
-    },
-    "12df": {
-      "Bois-la quand ton énergie vitale ": "Bois-la quand ton énergie "
-    },
-    "12e0": {
-      "Je la prends": "Je prends"
-    },
-    "29f4": {
-      "À ce prix, c'est pas du vol...": "C'est pas du vol..."
-    },
-    "29f5": {
-      "Pas du tout": "Non merci"
-    },
-    "3490": {
-      "Non merci": "Non"
-    },
-    "0477": {
-      "... Au fait, à cette heure, il y a": "... À cette heure, il y a"
-    },
-    "0652": {
-      "Ces bombes en forme de souris": "Ces bombes-souris"
-    },
-    "0653": {
-      "Je les prends": "Je prends"
-    }
+    "06af": [
+      {
+        "source_hash": "3d4b9cd187f56b93",
+        "length": 21,
+        "text": "Je prends"
+      }
+    ],
+    "06b6": [
+      {
+        "source_hash": "de3dc694b73e1130",
+        "length": 30,
+        "text": "Elle peut vous sauver!"
+      }
+    ],
+    "06b7": [
+      {
+        "source_hash": "9b0b362206c93e81",
+        "length": 20,
+        "text": "Je prends"
+      }
+    ],
+    "06cb": [
+      {
+        "source_hash": "abe2bdc489af3c47",
+        "length": 31,
+        "text": "Le prix est dessus..."
+      }
+    ],
+    "06cc": [
+      {
+        "source_hash": "dbc60dbceeb3751a",
+        "length": 19,
+        "text": "Oui, je prends"
+      }
+    ],
+    "06d3": [
+      {
+        "source_hash": "24bb392defbd16f8",
+        "length": 34,
+        "text": "Euh... ça t'aide. Et "
+      }
+    ],
+    "06d4": [
+      {
+        "source_hash": "d96fcd1cf8775ec5",
+        "length": 12,
+        "text": "Je prends"
+      }
+    ],
+    "0773": [
+      {
+        "source_hash": "7796284c42b42511",
+        "length": 22,
+        "text": "Pour toi, c'est "
+      }
+    ],
+    "0843": [
+      {
+        "source_hash": "f038edefb154f9eb",
+        "length": 31,
+        "text": "Je viens de créer cet"
+      }
+    ],
+    "0844": [
+      {
+        "source_hash": "d96fcd1cf8775ec5",
+        "length": 12,
+        "text": "Je prends"
+      }
+    ],
+    "0880": [
+      {
+        "source_hash": "9db9fdc2f24c2e5b",
+        "length": 34,
+        "text": "Je n'arrive pas à trouver"
+      }
+    ],
+    "0bc9": [
+      {
+        "source_hash": "946fdf7d3868e066",
+        "length": 35,
+        "text": "Cher, mais ça vaut la peine!"
+      }
+    ],
+    "0bca": [
+      {
+        "source_hash": "d16d51fd2c059225",
+        "length": 22,
+        "text": "J'achète"
+      }
+    ],
+    "0bcf": [
+      {
+        "source_hash": "1010f426fa05cd9e",
+        "length": 31,
+        "text": "Si tu manques d'énergie "
+      }
+    ],
+    "0bd0": [
+      {
+        "source_hash": "54d54d5bd6a9a04a",
+        "length": 14,
+        "text": "Potion rouge:"
+      }
+    ],
+    "12db": [
+      {
+        "source_hash": "7bc966bb610859db",
+        "length": 35,
+        "text": "Le bouclier qu'utilisent les "
+      }
+    ],
+    "12dc": [
+      {
+        "source_hash": "d46a950325a8da07",
+        "length": 17,
+        "text": "J'achète"
+      }
+    ],
+    "12df": [
+      {
+        "source_hash": "f2598e25ecbb9ac3",
+        "length": 33,
+        "text": "Bois-la quand ton énergie "
+      }
+    ],
+    "12e0": [
+      {
+        "source_hash": "d96fcd1cf8775ec5",
+        "length": 12,
+        "text": "Je prends"
+      }
+    ],
+    "29f4": [
+      {
+        "source_hash": "8543f25ee2d62665",
+        "length": 30,
+        "text": "C'est pas du vol..."
+      }
+    ],
+    "29f5": [
+      {
+        "source_hash": "4aeeb55c07f9d31e",
+        "length": 11,
+        "text": "Non merci"
+      }
+    ],
+    "3490": [
+      {
+        "source_hash": "5e77b142ba239c78",
+        "length": 9,
+        "text": "Non"
+      }
+    ],
+    "0477": [
+      {
+        "source_hash": "d881cc607534ac21",
+        "length": 34,
+        "text": "... À cette heure, il y a"
+      }
+    ],
+    "0652": [
+      {
+        "source_hash": "073db14324803a08",
+        "length": 29,
+        "text": "Ces bombes-souris"
+      }
+    ],
+    "0653": [
+      {
+        "source_hash": "b924acda88af6268",
+        "length": 13,
+        "text": "Je prends"
+      }
+    ]
   }
 }

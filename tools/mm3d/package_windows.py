@@ -7,12 +7,13 @@ import argparse
 from layout_migration import policy as verify_layout_policy
 from pathlib import Path
 import shutil
+import subprocess
 import tempfile
 import zipfile
 from package_deck import ROOT, SCRIPTS
 
 
-def package(bundle, output, python_archive, architecture='x64'):
+def package(bundle, output, python_archive, architecture='x64', strip_tool=None):
     verify_layout_policy(ROOT / 'resources/mm3d')
     if output.exists():
         raise ValueError('Refusing to overwrite package')
@@ -23,6 +24,9 @@ def package(bundle, output, python_archive, architecture='x64'):
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / 'dekui'; root.mkdir()
         shutil.copy2(bundle / 'azahar.exe', root / 'Majora-ReMasked.exe')
+        if strip_tool:
+            subprocess.run([str(strip_tool), '--strip-unneeded',
+                            str(root / 'Majora-ReMasked.exe')], check=True)
         install_python(python_archive, root / 'runtime/python', architecture)
         # The CI bundle is clean; only deployment files are accepted here.
         for p in bundle.rglob('*'):
@@ -69,5 +73,6 @@ if __name__ == '__main__':
     parser.add_argument('output', type=Path)
     parser.add_argument("--python-archive", type=Path, required=True)
     parser.add_argument('--architecture', choices=('x64', 'arm64'), default='x64')
+    parser.add_argument('--strip-tool', type=Path)
     args = parser.parse_args()
-    package(args.bundle, args.output, args.python_archive, args.architecture)
+    package(args.bundle, args.output, args.python_archive, args.architecture, args.strip_tool)

@@ -283,99 +283,227 @@
   ],
   "notes": "Prices only; quiz answers, bank transfers, sale proceeds, rewards and wallet capacities unchanged. Metadata fields are 10-bit values with 1023 sentinel.",
   "shorten": {
-    "0654": {
-      "This bag for carrying bombs is made": "This bomb bag is made"
-    },
-    "0656": {
-      "We just got it in stock...": "Just got it in stock..."
-    },
-    "066f": {
-      "So, won't ya buy a ": "Won't ya buy a "
-    },
-    "0678": {
-      "so won't ya buy a ": "won't ya buy a "
-    },
-    "0679": {
-      "I'll sell you one for ": "I'll sell one for "
-    },
-    "067a": {
-      "I'll sell you one for ": "I'll sell one for "
-    },
-    "085b": {
-      "...Umm...": "Umm..."
-    },
-    "085d": {
-      "Just you? Let's see then...one adult...": "Just you? Let's see...one adult..."
-    },
-    "0bc9": {
-      "worth it. It's very helpful if": "worth it. It's helpful if"
-    },
-    "0bcf": {
-      "When you're low on energy,": "When you're low on energy"
-    },
-    "12df": {
-      "Drink this when your energy is low": "Drink this when energy is low"
-    },
-    "29f4": {
-      "Heh-heh...": "Heh..."
-    },
-    "59d8": {
-      "Hey. So. Feel like goin' fishin'?": "Hey. Feel like goin' fishin'?"
-    },
-    "59da": {
-      "Hey. Cool. That'll be ": "Cool. That'll be "
-    },
-    "0655": {
-      "I'll buy it": "Buy it"
-    },
-    "0657": {
-      "I'll buy it": "Buy it"
-    },
-    "0bca": {
-      "I'll buy it": "Buy it"
-    },
-    "0bd0": {
-      "I'll buy it": "Buy it"
-    },
-    "12e0": {
-      "I'll buy it": "Buy it"
-    },
-    "29f5": {
-      "I'll buy it": "Buy it"
-    },
-    "3466": {
-      "I'll buy it": "Buy it"
-    },
-    "3490": {
-      "I'll buy it": "Buy it"
-    },
-    "0477": {
-      "...You know, at this time of day": "...At this time of day"
-    },
-    "0652": {
-      "These mouse-shaped bombs are": "These mouse-like bombs are"
-    },
-    "0653": {
-      "I'll buy them": "Buy them"
-    },
-    "0bc5": {
-      "But we have only a few left.": "But only a few are left."
-    },
-    "0bc6": {
-      "I'll buy them": "Buy them"
-    },
-    "1612": {
-      "I'll sell you a ": "I'll sell a "
-    },
-    "1617": {
-      "I'll s-sell you one ": "I'll s-sell one "
-    }
+    "0654": [
+      {
+        "source_hash": "4e2926d9b87754d1",
+        "length": 35,
+        "text": "This bomb bag is made"
+      }
+    ],
+    "0656": [
+      {
+        "source_hash": "8432e77b4e509bed",
+        "length": 26,
+        "text": "Just got it in stock..."
+      }
+    ],
+    "066f": [
+      {
+        "source_hash": "392f15f85d10ca09",
+        "length": 19,
+        "text": "Won't ya buy a "
+      }
+    ],
+    "0678": [
+      {
+        "source_hash": "e359b9f2090ccb63",
+        "length": 18,
+        "text": "won't ya buy a "
+      }
+    ],
+    "0679": [
+      {
+        "source_hash": "8e60de7c46ada305",
+        "length": 22,
+        "text": "I'll sell one for "
+      }
+    ],
+    "067a": [
+      {
+        "source_hash": "8e60de7c46ada305",
+        "length": 22,
+        "text": "I'll sell one for "
+      }
+    ],
+    "085b": [
+      {
+        "source_hash": "70db29a5d1c2aa80",
+        "length": 9,
+        "text": "Umm..."
+      }
+    ],
+    "085d": [
+      {
+        "source_hash": "d59ea8aa6cf4ca08",
+        "length": 39,
+        "text": "Just you? Let's see...one adult..."
+      }
+    ],
+    "0bc9": [
+      {
+        "source_hash": "f835ca29f79f1ae8",
+        "length": 30,
+        "text": "worth it. It's helpful if"
+      }
+    ],
+    "0bcf": [
+      {
+        "source_hash": "7560fbcd1b2e7381",
+        "length": 26,
+        "text": "When you're low on energy"
+      }
+    ],
+    "12df": [
+      {
+        "source_hash": "bbbd1b0946b71c7a",
+        "length": 34,
+        "text": "Drink this when energy is low"
+      }
+    ],
+    "29f4": [
+      {
+        "source_hash": "05f396ebff0eceb8",
+        "length": 10,
+        "text": "Heh..."
+      }
+    ],
+    "59d8": [
+      {
+        "source_hash": "edbb75bcf776f6b3",
+        "length": 33,
+        "text": "Hey. Feel like goin' fishin'?"
+      }
+    ],
+    "59da": [
+      {
+        "source_hash": "a84c7fa4dcbc0311",
+        "length": 22,
+        "text": "Cool. That'll be "
+      }
+    ],
+    "0655": [
+      {
+        "source_hash": "99d2ce3074bcd796",
+        "length": 11,
+        "text": "Buy it"
+      }
+    ],
+    "0657": [
+      {
+        "source_hash": "99d2ce3074bcd796",
+        "length": 11,
+        "text": "Buy it"
+      }
+    ],
+    "0bca": [
+      {
+        "source_hash": "99d2ce3074bcd796",
+        "length": 11,
+        "text": "Buy it"
+      }
+    ],
+    "0bd0": [
+      {
+        "source_hash": "99d2ce3074bcd796",
+        "length": 11,
+        "text": "Buy it"
+      }
+    ],
+    "12e0": [
+      {
+        "source_hash": "99d2ce3074bcd796",
+        "length": 11,
+        "text": "Buy it"
+      }
+    ],
+    "29f5": [
+      {
+        "source_hash": "99d2ce3074bcd796",
+        "length": 11,
+        "text": "Buy it"
+      }
+    ],
+    "3466": [
+      {
+        "source_hash": "99d2ce3074bcd796",
+        "length": 11,
+        "text": "Buy it"
+      }
+    ],
+    "3490": [
+      {
+        "source_hash": "99d2ce3074bcd796",
+        "length": 11,
+        "text": "Buy it"
+      }
+    ],
+    "0477": [
+      {
+        "source_hash": "6a81bf0d30c2437e",
+        "length": 32,
+        "text": "...At this time of day"
+      }
+    ],
+    "0652": [
+      {
+        "source_hash": "c115aff6ad4dca02",
+        "length": 28,
+        "text": "These mouse-like bombs are"
+      }
+    ],
+    "0653": [
+      {
+        "source_hash": "b7e162b3aad79519",
+        "length": 13,
+        "text": "Buy them"
+      }
+    ],
+    "0bc5": [
+      {
+        "source_hash": "0c88721e8fc5ed60",
+        "length": 28,
+        "text": "But only a few are left."
+      }
+    ],
+    "0bc6": [
+      {
+        "source_hash": "b7e162b3aad79519",
+        "length": 13,
+        "text": "Buy them"
+      }
+    ],
+    "1612": [
+      {
+        "source_hash": "be94831cf3c71afd",
+        "length": 16,
+        "text": "I'll sell a "
+      }
+    ],
+    "1617": [
+      {
+        "source_hash": "6c253abb1e6707b4",
+        "length": 20,
+        "text": "I'll s-sell one "
+      }
+    ]
   },
   "rewrites": {
-    "3528": {
-      "How much will you ": "Entry costs twice your ",
-      "?": ".",
-      "Choose an amount with ": "Choose with "
-    }
+    "3528": [
+      {
+        "source_hash": "0296dba278b864d7",
+        "length": 18,
+        "text": "Entry costs twice your "
+      },
+      {
+        "source_hash": "af63b24c8601a52e",
+        "length": 1,
+        "text": "."
+      },
+      {
+        "source_hash": "f61762664c1581e9",
+        "length": 22,
+        "text": "Choose with "
+      }
+    ]
   }
 }

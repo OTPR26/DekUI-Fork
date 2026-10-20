@@ -297,6 +297,14 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.2")
 }
 
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        if (variant.buildType == "release" || variant.buildType == "performance") {
+            variant.packaging.jniLibs.excludes.add("**/libVkLayer_khronos_validation.so")
+        }
+    }
+}
+
 // Download Vulkan Validation Layers from the KhronosGroup GitHub.
 val downloadVulkanValidationLayers = tasks.register<Download>("downloadVulkanValidationLayers") {
     src(

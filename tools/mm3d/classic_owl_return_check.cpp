@@ -60,7 +60,7 @@ int main(int argc,char** argv) {
         auto returned=ClassicOwlReturnText;
         for(const auto& d:MM3D::ClassicLocalizedText::Dialogues)if(m.Read(Memory::Base+12)==d.language)returned=d.returned;
         for(unsigned i=0;i<*m.Read(m.Entry(0xc01)+16);++i)
-            assert(m.data[offset+i]==(i<returned.size()?static_cast<unsigned char>(returned[i]):0));
+            assert(m.data[offset+i]==(i<returned.size()?static_cast<unsigned char>(Value(returned)[i]):0));
         assert(m.Read(m.Entry(0xc01)+8)==0x00ff0001);
         // Native initializer installs conversation state before attention updates.
         m.words[player+0xe14]=0x22d06c;

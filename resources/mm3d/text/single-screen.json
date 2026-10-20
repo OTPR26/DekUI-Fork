@@ -3,1382 +3,1415 @@
   "edits": [
     {
       "id": "003e",
-      "start": "Tap ",
-      "occurrence": 0,
-      "text": "Press SELECT to open your inventory.\nUse {L}/{R} to choose the Map tab."
+      "text": "Press SELECT to open your inventory.\nUse {L}/{R} to choose the Map tab.",
+      "token_index": 9,
+      "token_hash": "03f1edfb091d28c6",
+      "prefix_length": 0
     },
     {
       "id": "003e",
-      "start": "When zoomed in, ",
-      "text": "Use {Dpad} to move the cursor.\nChoose a floor from the floor list.\nPress {B} to return."
+      "text": "Use {Dpad} to move the cursor.\nChoose a floor from the floor list.\nPress {B} to return.",
+      "token_index": 19,
+      "token_hash": "debc65eab7e5b378",
+      "prefix_length": 0
     },
     {
       "id": "0043",
-      "start": "Tap ",
-      "text": "Press ZL to look through it.\nPress {A} to snap a picture."
+      "text": "Press ZL to look through it.\nPress {A} to snap a picture.",
+      "token_index": 9,
+      "token_hash": "03f1edfb091d28c6",
+      "prefix_length": 0
     },
     {
       "id": "0078",
-      "start": "Tap ",
-      "text": "Press SELECT to open your inventory.\nUse {L}/{R} to choose the Masks tab."
+      "text": "Press SELECT to open your inventory.\nUse {L}/{R} to choose the Masks tab.",
+      "token_index": 20,
+      "token_hash": "03f1edfb091d28c6",
+      "prefix_length": 0
     },
     {
       "id": "0078",
-      "start": "Tap the corresponding icon",
-      "text": "Press D-pad Down to wear this mask.\nPress it again to return to normal."
+      "text": "Press D-pad Down to wear this mask.\nPress it again to return to normal.",
+      "token_index": 30,
+      "token_hash": "12c497d910c5357c",
+      "prefix_length": 0
     },
     {
       "id": "00ff",
-      "start": "Select an item",
-      "text": "Select an item and press {A}.\nPress {B} to cancel.{Color:11}"
+      "text": "Select an item and press {A}.\nPress {B} to cancel.{Color:11}",
+      "token_index": 1,
+      "token_hash": "ab53141ec431cc7c",
+      "prefix_length": 0
     },
     {
       "id": "026b",
-      "start": "Tap ",
-      "text": "Press SELECT to open your inventory.\nUse {L}/{R} to choose the Items tab."
+      "text": "Press SELECT to open your inventory.\nUse {L}/{R} to choose the Items tab.",
+      "token_index": 7,
+      "token_hash": "03f1edfb091d28c6",
+      "prefix_length": 0
     },
     {
       "id": "026b",
-      "start": "Select an item using ",
-      "text": "Use {Stick} to select an item.\nPress {X} or {Y} to assign it."
+      "text": "Use {Stick} to select an item.\nPress {X} or {Y} to assign it.",
+      "token_index": 17,
+      "token_hash": "ce23a67bfc21df71",
+      "prefix_length": 0
     },
     {
       "id": "026b",
-      "start": "You can also ",
-      "text": "For slots I and II, hold ZR\nand press {X} or {Y} to assign an item."
+      "text": "For slots I and II, hold ZR\nand press {X} or {Y} to assign an item.",
+      "token_index": 29,
+      "token_hash": "2fa9b726460d3c93",
+      "prefix_length": 0
     },
     {
       "id": "026b",
-      "start": "Once you've assigned an item",
-      "text": "Use the same button or button\ncombination to use the item.\nIt's easy!"
+      "text": "Use the same button or button\ncombination to use the item.\nIt's easy!",
+      "token_index": 39,
+      "token_hash": "5031344d68d3daf4",
+      "prefix_length": 0
     },
     {
       "id": "0270",
-      "start": "Tap ",
-      "text": "Press SELECT to open your inventory.\nUse {L}/{R} to choose Gear and view\nwhat you've collected."
+      "text": "Press SELECT to open your inventory.\nUse {L}/{R} to choose Gear and view\nwhat you've collected.",
+      "token_index": 15,
+      "token_hash": "03f1edfb091d28c6",
+      "prefix_length": 0
     },
     {
       "id": "033f",
-      "start": "In ",
-      "text": "In {Color:1}Event Notes{Color:11}, choose an event\nto read its details."
+      "text": "In {Color:1}Event Notes{Color:11}, choose an event\nto read its details.",
+      "token_index": 30,
+      "token_hash": "41a8f319c98d89da",
+      "prefix_length": 0
     },
     {
       "id": "0e9b",
-      "start": "Progress saved.",
-      "text": "Progress saved.{Color:11}"
+      "text": "Progress saved.{Color:11}",
+      "token_index": 1,
+      "token_hash": "a77d374187ad4efd",
+      "prefix_length": 0
     },
     {
       "id": "1bae",
-      "start": "Items highlighted",
-      "text": "Carried rupees{Color:11} and some items\nwill be {Color:1}lost{Color:11}."
+      "text": "Carried rupees{Color:11} and some items\nwill be {Color:1}lost{Color:11}.",
+      "token_index": 5,
+      "token_hash": "709c9e907202856e",
+      "prefix_length": 0
     },
     {
       "id": "1d18",
-      "start": "Tap",
-      "occurrence": 0,
-      "text": "You can view the minimap{Color:11} in the\nbottom right corner. Press ZR +\nSELECT to toggle it on or off."
+      "text": "You can view the minimap{Color:11} in the\nbottom right corner. Press ZR +\nSELECT to toggle it on or off.",
+      "token_index": 7,
+      "token_hash": "6ce0e019e201d502",
+      "prefix_length": 0
     },
     {
       "id": "1d18",
-      "start": "Tap ",
-      "occurrence": 0,
-      "text": "SELECT opens your inventory.\n{L}/{R}: Map tab."
+      "text": "SELECT opens your inventory.\n{L}/{R}: Map tab.",
+      "token_index": 17,
+      "token_hash": "03f1edfb091d28c6",
+      "prefix_length": 0
     },
     {
       "id": "2056",
-      "start": "If you would like to restart your",
-      "text": "To return to your last save,\nquit and restart the game,\nthen load your save file."
+      "text": "To return to your last save,\nquit and restart the game,\nthen load your save file.",
+      "token_index": 0,
+      "token_hash": "22a71bf48e4a8eb6",
+      "prefix_length": 0
     },
     {
       "id": "575b",
-      "start": "Tap to enter a name.",
-      "text": "Enter a name."
+      "text": "Enter a name.",
+      "token_index": 0,
+      "token_hash": "beac4cbafd71d0a5",
+      "prefix_length": 0
     }
   ],
   "neutral_runs": [
     {
       "id": "0014",
       "run": 2,
-      "original": "Set them to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} on the\n{Color:3}Select{Color:11} {Color:3}Item Screen{Color:11}.",
-      "text": "Equip from the {Color:3}Items tab{Color:11}."
+      "text": "Equip from the {Color:3}Items tab{Color:11}.",
+      "source_hash": "9366b8539f40692a"
     },
     {
       "id": "0014",
       "run": 3,
-      "original": "{Color:11}Press the corresponding button to\nlight one. Press again to place it on\nthe ground. Press while running to\nthrow. BOOM. It's oddly satisfying!",
-      "text": "{Color:11}Use a bomb to light it, then use it\nagain to place it. Use it while\nrunning to throw. BOOM.\nIt's oddly satisfying!"
+      "text": "{Color:11}Use a bomb to light it, then use it\nagain to place it. Use it while\nrunning to throw. BOOM.\nIt's oddly satisfying!",
+      "source_hash": "25292bf6e592de31"
     },
     {
       "id": "0015",
       "run": 2,
-      "original": "Set them to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} on the\n{Color:3}Select{Color:11} {Color:3}Item Screen{Color:11}.",
-      "text": "Equip from the {Color:3}Items tab{Color:11}."
+      "text": "Equip from the {Color:3}Items tab{Color:11}.",
+      "source_hash": "9366b8539f40692a"
     },
     {
       "id": "0015",
       "run": 3,
-      "original": "{Color:11}Press the corresponding button to\nlight one. Press again to place it on\nthe ground. Press while running to\nthrow. BOOM. It's oddly satisfying!",
-      "text": "{Color:11}Use a bomb to light it, then use it\nagain to place it. Use it while\nrunning to throw. BOOM.\nIt's oddly satisfying!"
+      "text": "{Color:11}Use a bomb to light it, then use it\nagain to place it. Use it while\nrunning to throw. BOOM.\nIt's oddly satisfying!",
+      "source_hash": "25292bf6e592de31"
     },
     {
       "id": "0016",
       "run": 2,
-      "original": "Set them to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} on the\n{Color:3}Select{Color:11} {Color:3}Item Screen{Color:11}.",
-      "text": "Equip from the {Color:3}Items tab{Color:11}."
+      "text": "Equip from the {Color:3}Items tab{Color:11}.",
+      "source_hash": "9366b8539f40692a"
     },
     {
       "id": "0016",
       "run": 3,
-      "original": "{Color:11}Press the corresponding button to\nlight one. Press again to place it on\nthe ground. Press while running to\nthrow. BOOM. It's oddly satisfying!",
-      "text": "{Color:11}Use a bomb to light it, then use it\nagain to place it. Use it while\nrunning to throw. BOOM.\nIt's oddly satisfying!"
+      "text": "{Color:11}Use a bomb to light it, then use it\nagain to place it. Use it while\nrunning to throw. BOOM.\nIt's oddly satisfying!",
+      "source_hash": "25292bf6e592de31"
     },
     {
       "id": "0017",
       "run": 2,
-      "original": "Set them to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} on the\n{Color:3}Select{Color:11} {Color:3}Item Screen{Color:11}.",
-      "text": "Equip from the {Color:3}Items tab{Color:11}."
+      "text": "Equip from the {Color:3}Items tab{Color:11}.",
+      "source_hash": "9366b8539f40692a"
     },
     {
       "id": "0017",
       "run": 3,
-      "original": "{Color:11}Press the corresponding button to\nlight one. Press again to place it on\nthe ground. Press while running to\nthrow. BOOM. It's oddly satisfying!",
-      "text": "{Color:11}Use a bomb to light it, then use it\nagain to place it. Use it while\nrunning to throw. BOOM.\nIt's oddly satisfying!"
+      "text": "{Color:11}Use a bomb to light it, then use it\nagain to place it. Use it while\nrunning to throw. BOOM.\nIt's oddly satisfying!",
+      "source_hash": "25292bf6e592de31"
     },
     {
       "id": "0018",
       "run": 2,
-      "original": "Set them to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} on the\n{Color:3}Select{Color:11} {Color:3}Item Screen{Color:11}.",
-      "text": "Equip from the {Color:3}Items tab{Color:11}."
+      "text": "Equip from the {Color:3}Items tab{Color:11}.",
+      "source_hash": "9366b8539f40692a"
     },
     {
       "id": "0018",
       "run": 3,
-      "original": "{Color:11}Press the corresponding button to\nlight one. Press again to place it on\nthe ground. Press while running to\nthrow. BOOM. It's oddly satisfying!",
-      "text": "{Color:11}Use a bomb to light it, then use it\nagain to place it. Use it while\nrunning to throw. BOOM.\nIt's oddly satisfying!"
+      "text": "{Color:11}Use a bomb to light it, then use it\nagain to place it. Use it while\nrunning to throw. BOOM.\nIt's oddly satisfying!",
+      "source_hash": "25292bf6e592de31"
     },
     {
       "id": "0019",
       "run": 2,
-      "original": "Set it to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} on the\n{Color:3}Select Item Screen{Color:11}.",
-      "text": "Equip from the {Color:3}Items tab{Color:11}."
+      "text": "Equip from the {Color:3}Items tab{Color:11}.",
+      "source_hash": "6cfa9ec924dd99f6"
     },
     {
       "id": "0019",
       "run": 3,
-      "original": "{Color:11}Deku Sticks {Color:1}burn{Color:11} well. Press the\ncorresponding button to pull one\nout. Press again to swing. Stand\nstill and press {Icon:1} to put it away.",
-      "text": "{Color:11}Deku Sticks {Color:1}burn{Color:11} well. Equip one\nto take it out, then use it to swing.\nStand still to put it away."
+      "text": "{Color:11}Deku Sticks {Color:1}burn{Color:11} well. Equip one\nto take it out, then use it to swing.\nStand still to put it away.",
+      "source_hash": "5d7200f306aec75a"
     },
     {
       "id": "001a",
       "run": 2,
-      "original": "Set them to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} on the\n{Color:3}Select Item Screen{Color:11}.",
-      "text": "Equip from the {Color:3}Items tab{Color:11}."
+      "text": "Equip from the {Color:3}Items tab{Color:11}.",
+      "source_hash": "622a4ff0737abc69"
     },
     {
       "id": "001a",
       "run": 3,
-      "original": "{Color:11}Press the corresponding button\nto arm one of these mousy,\nwall-climbing bombs.",
-      "text": "{Color:11}Use one to release a mousy,\nwall-climbing bomb."
+      "text": "{Color:11}Use one to release a mousy,\nwall-climbing bomb.",
+      "source_hash": "b868cd685c89a55a"
     },
     {
       "id": "0022",
       "run": 2,
-      "original": "Set it to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} on the\n{Color:3}Select Item Screen{Color:11}.",
-      "text": "Equip from the {Color:3}Items tab{Color:11}."
+      "text": "Equip from the {Color:3}Items tab{Color:11}.",
+      "source_hash": "6cfa9ec924dd99f6"
     },
     {
       "id": "0022",
       "run": 3,
-      "original": "{Color:11}Press the corresponding button to\nequip. Press again to draw the bow.\nRelease to shoot. You can also use\n{Icon:5} to automatically aim at a target.",
-      "text": "{Color:11}Ready the bow, draw, and release\nto shoot. Lock on to aim at a target."
+      "text": "{Color:11}Ready the bow, draw, and release\nto shoot. Lock on to aim at a target.",
+      "source_hash": "c4918ff27ea9e1ad"
     },
     {
       "id": "0025",
       "run": 2,
-      "original": "Set it to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} to power\nup your arrows with magic!",
-      "text": "Equip these arrows to power\nup your shots with magic!"
+      "text": "Equip these arrows to power\nup your shots with magic!",
+      "source_hash": "95246c488a1eb7da"
     },
     {
       "id": "0026",
       "run": 2,
-      "original": "Set it to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} to power\nup your arrows with magic!",
-      "text": "Equip these arrows to power\nup your shots with magic!"
+      "text": "Equip these arrows to power\nup your shots with magic!",
+      "source_hash": "95246c488a1eb7da"
     },
     {
       "id": "0027",
       "run": 2,
-      "original": "Set it to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} to power\nup your arrows with magic.  ",
-      "text": "Equip these arrows to power\nup your shots with magic!"
+      "text": "Equip these arrows to power\nup your shots with magic!",
+      "source_hash": "fc0afb548c39fffb"
     },
     {
       "id": "0028",
       "run": 2,
-      "original": "Set it to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} on the\n{Color:3}Select Item Screen{Color:11}.",
-      "text": "Equip from the {Color:3}Items tab{Color:11}."
+      "text": "Equip from the {Color:3}Items tab{Color:11}.",
+      "source_hash": "6cfa9ec924dd99f6"
     },
     {
       "id": "0028",
       "run": 3,
-      "original": "{Color:11}Press the corresponding button to\nthrow it. Upon impact, it will burst\nin a blinding flash, freezing nearby\nenemies in their tracks!",
-      "text": "{Color:11}Throw it to create a blinding flash,\nfreezing nearby enemies in\ntheir tracks!"
+      "text": "{Color:11}Throw it to create a blinding flash,\nfreezing nearby enemies in\ntheir tracks!",
+      "source_hash": "ee60dc9b60284a88"
     },
     {
       "id": "0029",
       "run": 2,
-      "original": "Set it to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} on the\n{Color:3}Select Item Screen{Color:11}.",
-      "text": "Equip from the {Color:3}Items tab{Color:11}."
+      "text": "Equip from the {Color:3}Items tab{Color:11}.",
+      "source_hash": "6cfa9ec924dd99f6"
     },
     {
       "id": "0029",
       "run": 3,
-      "original": "{Color:11}Press the corresponding button to\nthrow it. Upon impact, it will burst\nin a blinding flash, freezing nearby\nenemies in their tracks!",
-      "text": "{Color:11}Throw it to create a blinding flash,\nfreezing nearby enemies in\ntheir tracks!"
+      "text": "{Color:11}Throw it to create a blinding flash,\nfreezing nearby enemies in\ntheir tracks!",
+      "source_hash": "ee60dc9b60284a88"
     },
     {
       "id": "002a",
       "run": 2,
-      "original": "Set it to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} on the\n{Color:3}Select Item Screen{Color:11}.",
-      "text": "Equip from the {Color:3}Items tab{Color:11}."
+      "text": "Equip from the {Color:3}Items tab{Color:11}.",
+      "source_hash": "6cfa9ec924dd99f6"
     },
     {
       "id": "002a",
       "run": 3,
-      "original": "{Color:11}Press the corresponding button to\nthrow it. Upon impact, it will burst\nin a blinding flash, freezing nearby\nenemies in their tracks!",
-      "text": "{Color:11}Throw it to create a blinding flash,\nfreezing nearby enemies in\ntheir tracks!"
+      "text": "{Color:11}Throw it to create a blinding flash,\nfreezing nearby enemies in\ntheir tracks!",
+      "source_hash": "ee60dc9b60284a88"
     },
     {
       "id": "002e",
       "run": 2,
-      "original": "Set them to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} on the\n{Color:3}Select Item Screen{Color:11}.",
-      "text": "Equip from the {Color:3}Items tab{Color:11}."
+      "text": "Equip from the {Color:3}Items tab{Color:11}.",
+      "source_hash": "622a4ff0737abc69"
     },
     {
       "id": "002e",
       "run": 3,
-      "original": "{Color:11}Press the corresponding button\nto arm one of these mousy,\nwall-climbing bombs.",
-      "text": "{Color:11}Use one to release a mousy,\nwall-climbing bomb."
+      "text": "{Color:11}Use one to release a mousy,\nwall-climbing bomb.",
+      "source_hash": "b868cd685c89a55a"
     },
     {
       "id": "0032",
       "run": 2,
-      "original": "Press {Icon:6} to assume a\ndefensive position.",
-      "text": "Raise your shield to assume\na defensive position."
+      "text": "Raise your shield to assume\na defensive position.",
+      "source_hash": "e3f92a417dde5ee9"
     },
     {
       "id": "0032",
       "run": 3,
-      "original": "{Color:11}If you press {Icon:6} while\n{Color:1}L-{Color:11}{Color:1}Targeting{Color:11}, you can move\nwhile defending yourself.",
-      "text": "{Color:11}Lock on to a target to move\nwhile defending yourself."
+      "text": "{Color:11}Lock on to a target to move\nwhile defending yourself.",
+      "source_hash": "bf498f2b69fa793b"
     },
     {
       "id": "0033",
       "run": 2,
-      "original": "Press {Icon:6} to assume a\ndefensive position.",
-      "text": "Raise your shield to assume\na defensive position."
+      "text": "Raise your shield to assume\na defensive position.",
+      "source_hash": "e3f92a417dde5ee9"
     },
     {
       "id": "0033",
       "run": 3,
-      "original": "{Color:11}If you press {Icon:6} while {Color:1}L-{Color:11}{Color:1}Targeting{Color:11},\nyou can move while defending\nyourself. This special shield can\nalso reflect certain kinds of light.",
-      "text": "{Color:11}Lock on to move while defending\nyourself. This special shield can\nalso reflect certain kinds of light."
+      "text": "{Color:11}Lock on to move while defending\nyourself. This special shield can\nalso reflect certain kinds of light.",
+      "source_hash": "8bb4a11f5f7c79af"
     },
     {
       "id": "0034",
       "run": 2,
-      "original": "Only Gorons are permitted to\nhandle such a powerful explosive.\nUse with {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27}.",
-      "text": "Only Gorons are permitted to\nhandle such a powerful explosive.\nEquip from the {Color:3}Items tab{Color:11}."
+      "text": "Only Gorons are permitted to\nhandle such a powerful explosive.\nEquip from the {Color:3}Items tab{Color:11}.",
+      "source_hash": "de1d288301d5da4b"
     },
     {
       "id": "0035",
       "run": 2,
-      "original": "Find a patch of {Color:1}soft soil{Color:11}, then use\n{Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} to plant them.",
-      "text": "Find a patch of {Color:1}soft soil{Color:11}, then\nplant the beans there."
+      "text": "Find a patch of {Color:1}soft soil{Color:11}, then\nplant the beans there.",
+      "source_hash": "c319ad958d63af5b"
     },
     {
       "id": "0036",
       "run": 2,
-      "original": "Set it to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} on the\n{Color:3}Select Item Screen{Color:11}.",
-      "text": "Equip from the {Color:3}Items tab{Color:11}."
+      "text": "Equip from the {Color:3}Items tab{Color:11}.",
+      "source_hash": "6cfa9ec924dd99f6"
     },
     {
       "id": "0036",
       "run": 3,
-      "original": "{Color:11}Press the corresponding button\nto arm one of these mousy,\nwall-climbing bombs.",
-      "text": "{Color:11}Use one to release a mousy,\nwall-climbing bomb."
+      "text": "{Color:11}Use one to release a mousy,\nwall-climbing bomb.",
+      "source_hash": "b868cd685c89a55a"
     },
     {
       "id": "003a",
       "run": 2,
-      "original": "Set them to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} on the\n{Color:3}Select Item Screen{Color:11}.",
-      "text": "Equip from the {Color:3}Items tab{Color:11}."
+      "text": "Equip from the {Color:3}Items tab{Color:11}.",
+      "source_hash": "622a4ff0737abc69"
     },
     {
       "id": "003a",
       "run": 3,
-      "original": "{Color:11}Press the corresponding button\nto arm one of these mousy,\nwall-climbing bombs.",
-      "text": "{Color:11}Use one to release a mousy,\nwall-climbing bomb."
+      "text": "{Color:11}Use one to release a mousy,\nwall-climbing bomb.",
+      "source_hash": "b868cd685c89a55a"
     },
     {
       "id": "003b",
       "run": 2,
-      "original": "Set it to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} to use it.",
-      "text": "Equip from the {Color:3}Items tab{Color:11}."
+      "text": "Equip from the {Color:3}Items tab{Color:11}.",
+      "source_hash": "b39fd2cff358b1f3"
     },
     {
       "id": "003e",
       "run": 2,
-      "original": "Press SELECT to open your inventory.\nUse {Icon:5}/{Icon:6} to choose the Map tab.",
-      "text": "Open your inventory and\nchoose the {Color:3}Map tab{Color:11}."
+      "text": "Open your inventory and\nchoose the {Color:3}Map tab{Color:11}.",
+      "source_hash": "26924a2fad176353"
     },
     {
       "id": "003e",
       "run": 3,
-      "original": "{Color:11}Use {Icon:10} to move the cursor.\nChoose a floor from the floor list.\nPress {Icon:2} to return.",
-      "text": "{Color:11}Choose a floor from the floor list.\nGo back to return to the game."
+      "text": "{Color:11}Choose a floor from the floor list.\nGo back to return to the game.",
+      "source_hash": "1597c529cf03ab3a"
     },
     {
       "id": "0041",
       "run": 3,
-      "original": "{Color:11}Press and hold the corresponding\nbutton{Color:4} {Color:11}to arm it, then use {Icon:17} to aim.\nRelease to shoot.",
-      "text": "{Color:11}Ready the hook, aim, and\nrelease to shoot."
+      "text": "{Color:11}Ready the hook, aim, and\nrelease to shoot.",
+      "source_hash": "6f7a3267900a6ad3"
     },
     {
       "id": "0042",
       "run": 2,
-      "original": "Gaze through it to see mysteries\nthat are invisible to the naked eye.\nSet it to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} to use it.",
-      "text": "Gaze through it to see mysteries\nthat are invisible to the naked eye.\nEquip from the {Color:3}Items tab{Color:11}."
+      "text": "Gaze through it to see mysteries\nthat are invisible to the naked eye.\nEquip from the {Color:3}Items tab{Color:11}.",
+      "source_hash": "f4dc032f5e91e96d"
     },
     {
       "id": "0042",
       "run": 3,
-      "original": "{Color:11}Seeing the truth drains {Color:2}magic\npower{Color:11}, so press the button again\nto stop looking and using up magic.",
-      "text": "{Color:11}Seeing the truth drains {Color:2}magic\npower{Color:11}. Put it away to stop\nlooking and using up magic."
+      "text": "{Color:11}Seeing the truth drains {Color:2}magic\npower{Color:11}. Put it away to stop\nlooking and using up magic.",
+      "source_hash": "b9664b3648c34321"
     },
     {
       "id": "0043",
       "run": 2,
-      "original": "Press ZL to look through it.\nPress {Icon:1} to snap a picture.",
-      "text": "Look through it, then snap\na picture."
+      "text": "Look through it, then snap\na picture.",
+      "source_hash": "f7075d1bc60fd89b"
     },
     {
       "id": "004c",
       "run": 3,
-      "original": "{Color:11}Take it out with {Icon:31}, and use\n{Icon:1}, {Icon:3}, {Icon:4}, {Icon:5} and {Icon:6} to play it.\nPress {Icon:2} to stop.",
-      "text": "{Color:11}Take it out to play a tune.\nPut it away to stop playing."
+      "text": "{Color:11}Take it out to play a tune.\nPut it away to stop playing.",
+      "source_hash": "42728a44f459d897"
     },
     {
       "id": "0050",
       "run": 3,
-      "original": "\nPress {Color:1}START{Color:11} to read it.",
-      "text": "\nRead your {Color:1}notebook{Color:11}."
+      "text": "\nRead your {Color:1}notebook{Color:11}.",
+      "source_hash": "848ec2edd6a06ab5"
     },
     {
       "id": "0059",
       "run": 3,
-      "original": "{Color:11}Set it to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} on the\n{Color:3}Select Item Screen{Color:0}, then press the\ncorresponding button to use it.{Color:3}{Color:11}",
-      "text": "{Color:11}Equip it from the {Color:3}Items tab{Color:11},\nthen use it to drink the potion."
+      "text": "{Color:11}Equip it from the {Color:3}Items tab{Color:11},\nthen use it to drink the potion.",
+      "source_hash": "2459aeca156392df"
     },
     {
       "id": "005a",
       "run": 2,
-      "original": "Save items in it, and use them with\n{Icon:3}, {Icon:4}, {Icon:24} or {Icon:27}.",
-      "text": "Save items in it, then equip\nthe bottle to use them."
+      "text": "Save items in it, then equip\nthe bottle to use them.",
+      "source_hash": "7601e744788ec459"
     },
     {
       "id": "005b",
       "run": 3,
-      "original": "{Color:11}Set it to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} on the\n{Color:3}Select Item {Color:0}{Color:3}Screen{Color:0}.{Color:3}{Color:11}",
-      "text": "{Color:11}Equip from the {Color:3}Items tab{Color:11}."
+      "text": "{Color:11}Equip from the {Color:3}Items tab{Color:11}.",
+      "source_hash": "8cb111c01312f503"
     },
     {
       "id": "005c",
       "run": 3,
-      "original": "{Color:11}Set it to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} on the\n{Color:3}Select Item {Color:0}{Color:3}Screen{Color:0}.{Color:3}{Color:11}",
-      "text": "{Color:11}Equip from the {Color:3}Items tab{Color:11}."
+      "text": "{Color:11}Equip from the {Color:3}Items tab{Color:11}.",
+      "source_hash": "8cb111c01312f503"
     },
     {
       "id": "005d",
       "run": 3,
-      "original": "{Color:11}Set it to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} on the\n{Color:3}Select Item {Color:0}{Color:3}Screen{Color:0}.{Color:3}{Color:11}",
-      "text": "{Color:11}Equip from the {Color:3}Items tab{Color:11}."
+      "text": "{Color:11}Equip from the {Color:3}Items tab{Color:11}.",
+      "source_hash": "8cb111c01312f503"
     },
     {
       "id": "005e",
       "run": 3,
-      "original": "{Color:11}Set it to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} to keep it\nby your side.",
-      "text": "{Color:11}Equip the bottle to keep it\nby your side."
+      "text": "{Color:11}Equip the bottle to keep it\nby your side.",
+      "source_hash": "4b0f74b81ed675b7"
     },
     {
       "id": "005f",
       "run": 1,
-      "original": "{Color:11}It's a tight fit, but she says she'll\nbe fine if you hurry. Use {Icon:3}, {Icon:4}, {Icon:24}\nor {Icon:27} to let her out.",
-      "text": "{Color:11}It's a tight fit, but she says she'll\nbe fine if you hurry. Use the bottle\nto let her out."
+      "text": "{Color:11}It's a tight fit, but she says she'll\nbe fine if you hurry. Use the bottle\nto let her out.",
+      "source_hash": "26b462e77e5f17cb"
     },
     {
       "id": "0060",
       "run": 3,
-      "original": "{Color:11}Set it to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} to drink.",
-      "text": "{Color:11}Equip the bottle to drink."
+      "text": "{Color:11}Equip the bottle to drink.",
+      "source_hash": "b81afd5b1c724fec"
     },
     {
       "id": "0062",
       "run": 2,
-      "original": "It's a deliciously fresh catch.\nUse it with {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27}.",
-      "text": "It's a deliciously fresh catch.\nUse the bottle to release it."
+      "text": "It's a deliciously fresh catch.\nUse the bottle to release it.",
+      "source_hash": "e3ef6873b9c99a23"
     },
     {
       "id": "0063",
       "run": 2,
-      "original": "Use {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} to release it.\nBugs like to burrow in small holes.",
-      "text": "Use the bottle to release it.\nBugs like to burrow in small holes."
+      "text": "Use the bottle to release it.\nBugs like to burrow in small holes.",
+      "source_hash": "dcbb3f0eb585ddff"
     },
     {
       "id": "0067",
       "run": 2,
-      "original": "Use {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} to pour it on\nwhatever may need it.",
-      "text": "Pour it on whatever\nmay need it."
+      "text": "Pour it on whatever\nmay need it.",
+      "source_hash": "65b4290e3133c616"
     },
     {
       "id": "0068",
       "run": 2,
-      "original": "Use it with {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27}\nbefore it cools.",
-      "text": "Use it before it cools."
+      "text": "Use it before it cools.",
+      "source_hash": "d423939166402ab0"
     },
     {
       "id": "0078",
       "run": 2,
-      "original": "{Color:11}Press SELECT to open your inventory.\nUse {Icon:5}/{Icon:6} to choose the Masks tab.",
-      "text": "{Color:11}Open your inventory and\nchoose the {Color:3}Masks tab{Color:11}."
+      "text": "{Color:11}Open your inventory and\nchoose the {Color:3}Masks tab{Color:11}.",
+      "source_hash": "18268c3682479653"
     },
     {
       "id": "0078",
       "run": 3,
-      "original": "{Color:11}Press D-pad Down to wear this mask.\nPress it again to return to normal.",
-      "text": "{Color:11}Choose this mask to wear it.\nTake it off to return to normal."
+      "text": "{Color:11}Choose this mask to wear it.\nTake it off to return to normal.",
+      "source_hash": "fdc811db75fdfc24"
     },
     {
       "id": "007d",
       "run": 3,
-      "original": "{Color:11}Set it to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} if you're\never in a good place to try it on!",
-      "text": "{Color:11}Equip it if you're ever in\na good place to try it on!"
+      "text": "{Color:11}Equip it if you're ever in\na good place to try it on!",
+      "source_hash": "c63ae84fde625384"
     },
     {
       "id": "0084",
       "run": 3,
-      "original": "{Color:11}Wear it with {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27}.\nIt might just suit you...",
-      "text": "{Color:11}Put it on to wear it.\nIt might just suit you..."
+      "text": "{Color:11}Put it on to wear it.\nIt might just suit you...",
+      "source_hash": "8f8e9c614f8de183"
     },
     {
       "id": "008d",
       "run": 2,
-      "original": "Wear it and have a {Color:1}blast{Color:11} with {Icon:2},\nbut you'll lose life energy in\nthe process.",
-      "text": "Wear it and have a {Color:1}blast{Color:11},\nbut you'll lose life energy in\nthe process."
+      "text": "Wear it and have a {Color:1}blast{Color:11},\nbut you'll lose life energy in\nthe process.",
+      "source_hash": "c791f2a416215e3c"
     },
     {
       "id": "00c8",
       "run": 2,
-      "original": "In your current form, press and\nhold {Icon:2} to blow a {Color:1}big bubble{Color:0}.\nRelease to shoot it{Color:1}{Color:11}.",
-      "text": "In your current form, charge up\na {Color:1}big bubble{Color:11}, then release\nto shoot it."
+      "text": "In your current form, charge up\na {Color:1}big bubble{Color:11}, then release\nto shoot it.",
+      "source_hash": "638914a539536b28"
     },
     {
       "id": "00c8",
       "run": 3,
-      "original": "{Color:11}Aim with {Icon:17}. Target with {Icon:5}.\nYour {Color:0}magic power {Color:11}decreases\nwhen you shoot. Replenish it\nwith {Color:1}Magic Jars {Color:11}and{Color:1} Potions{Color:11}.",
-      "text": "{Color:11}Aim freely or lock on to a target.\nYour {Color:0}magic power{Color:11} decreases\nwhen you shoot. Replenish it\nwith {Color:1}Magic Jars{Color:11} and {Color:1}Potions{Color:11}."
+      "text": "{Color:11}Aim freely or lock on to a target.\nYour {Color:0}magic power{Color:11} decreases\nwhen you shoot. Replenish it\nwith {Color:1}Magic Jars{Color:11} and {Color:1}Potions{Color:11}.",
+      "source_hash": "ffd01918d296b3ae"
     },
     {
       "id": "00c9",
       "run": 2,
-      "original": "Press {Icon:2} while flying to drop a\n{Color:1}Deku Bomb{Color:11}!",
-      "text": "Drop a {Color:1}Deku Bomb{Color:11}\nwhile flying!"
+      "text": "Drop a {Color:1}Deku Bomb{Color:11}\nwhile flying!",
+      "source_hash": "9c44454543fc1aab"
     },
     {
       "id": "00ca",
       "run": 2,
-      "original": "Press and hold {Icon:2} to power your\nweapon with magic...",
-      "text": "Charge your sword to power\nyour weapon with magic..."
+      "text": "Charge your sword to power\nyour weapon with magic...",
+      "source_hash": "7ace36bdda83e787"
     },
     {
       "id": "00ca",
       "run": 3,
-      "original": "{Color:11}When you release {Icon:2}, your sword\nwill unleash a whirlwind of energy\nas you spin around.",
-      "text": "{Color:11}Release the charged attack to\nunleash a whirlwind of energy\nas you spin around."
+      "text": "{Color:11}Release the charged attack to\nunleash a whirlwind of energy\nas you spin around.",
+      "source_hash": "336fa1a049bfeee9"
     },
     {
       "id": "00ca",
       "run": 4,
-      "original": "{Color:11}To stir up energy quickly without\nhaving to charge your weapon,\nrotate {Icon:17} once and press {Icon:2}.",
-      "text": "{Color:11}For a quick spin without charging,\nturn in a full circle, then attack."
+      "text": "{Color:11}For a quick spin without charging,\nturn in a full circle, then attack.",
+      "source_hash": "7be4e8b1f480cc65"
     },
     {
       "id": "00ff",
       "run": 0,
-      "original": "{Color:2}Select an item and press {Icon:1}.\nPress {Icon:2} to cancel.{Color:11}",
-      "text": "{Color:2}Choose an item to select it.\nGo back to cancel.{Color:11}"
+      "text": "{Color:2}Choose an item to select it.\nGo back to cancel.{Color:11}",
+      "source_hash": "a1617411bfcc55e4"
     },
     {
       "id": "0200",
       "run": 0,
-      "original": "{Color:5}Hey! If I call you, press {Color:5}{Icon:12} {Color:5}right away!{Color:11}",
-      "text": "{Color:5}Hey! If I call you, listen right away!{Color:11}"
+      "text": "{Color:5}Hey! If I call you, listen right away!{Color:11}",
+      "source_hash": "40417aca1a71c650"
     },
     {
       "id": "0201",
       "run": 0,
-      "original": "{Color:5}All right, listen up! If you press and\nhold {Color:5}{Icon:1}{Color:5} as a Deku Scrub while\nstanding on a {Color:11}{Color:1}Deku Flower{Color:11}{Color:5}, you can\n{Color:11}{Color:1}dive {Color:11}{Color:5}into it.{Color:5}",
-      "text": "{Color:5}All right, listen up! As a Deku Scrub,\nstand on a {Color:1}Deku Flower{Color:5} and\n{Color:1}dive{Color:5} into it. Hold your position\nuntil the flower is ready.{Color:5}"
+      "text": "{Color:5}All right, listen up! As a Deku Scrub,\nstand on a {Color:1}Deku Flower{Color:5} and\n{Color:1}dive{Color:5} into it. Hold your position\nuntil the flower is ready.{Color:5}",
+      "source_hash": "21bb95a4cf69645a"
     },
     {
       "id": "0201",
       "run": 2,
-      "original": "{Color:5}If you wait a bit before releasing {Icon:1},\nyou'll {Color:11}{Color:1}launch {Color:11}{Color:5}out of the flower.\nPress {Color:5}{Icon:1}{Color:5} while flying to {Color:11}{Color:1}descend{Color:11}{Color:5}.{Color:11}",
-      "text": "{Color:5}Wait a bit, then release to\n{Color:1}launch{Color:5} out of the flower.\nStop flying to {Color:1}descend{Color:5}.{Color:11}"
+      "text": "{Color:5}Wait a bit, then release to\n{Color:1}launch{Color:5} out of the flower.\nStop flying to {Color:1}descend{Color:5}.{Color:11}",
+      "source_hash": "ba83562309dffeae"
     },
     {
       "id": "0201",
       "run": 3,
-      "original": "{Color:11}{Color:5}Remember that you can press {Color:5}{Icon:6}\n{Color:5}to change your {Color:1}view{Color:5} while flying.\nFigure out what works best for you!{Color:11}{Color:5}",
-      "text": "{Color:11}{Color:5}Remember that you can change your\n{Color:1}view{Color:5} while flying. Figure out\nwhat works best for you!{Color:11}{Color:5}"
+      "text": "{Color:11}{Color:5}Remember that you can change your\n{Color:1}view{Color:5} while flying. Figure out\nwhat works best for you!{Color:11}{Color:5}",
+      "source_hash": "c3863a2204ecb398"
     },
     {
       "id": "0203",
       "run": 1,
-      "original": "{Color:11}{Color:5}One more thing: Press {Icon:1} when\nyou're on the ground to perform a\n{Color:11}{Color:1}spin attack{Color:11}{Color:5}!{Color:11}",
-      "text": "{Color:11}{Color:5}One more thing: When you're on\nthe ground, you can perform a\n{Color:1}spin attack{Color:5}!{Color:11}"
+      "text": "{Color:11}{Color:5}One more thing: When you're on\nthe ground, you can perform a\n{Color:1}spin attack{Color:5}!{Color:11}",
+      "source_hash": "18d37f8c8bf1eec5"
     },
     {
       "id": "0206",
       "run": 0,
-      "original": "{Color:5}This looks pretty light.\nWell, don't just stand there!\nPress and hold {Icon:1} to grab it and\nuse {Icon:17} to move it!{Color:11}",
-      "text": "{Color:5}This looks pretty light.\nWell, don't just stand there!\nGrab it and push or pull\nto move it!{Color:11}"
+      "text": "{Color:5}This looks pretty light.\nWell, don't just stand there!\nGrab it and push or pull\nto move it!{Color:11}",
+      "source_hash": "786b1eb1760fbf0d"
     },
     {
       "id": "0226",
       "run": 0,
-      "original": "{Color:5}Hey, you! C'mon!\nPress {Color:5}{Icon:5}{Color:5} and talk to me!{Color:11}",
-      "text": "{Color:5}Hey, you! C'mon!\nTarget me and talk to me!{Color:11}"
+      "text": "{Color:5}Hey, you! C'mon!\nTarget me and talk to me!{Color:11}",
+      "source_hash": "59fc4d2c204bcd5f"
     },
     {
       "id": "0227",
       "run": 2,
-      "original": "{Color:5}When I fly over to people or objects,\nuse {Color:5}{Icon:5}{Color:5} to look at them so you can\ninteract with them.{Color:5}",
-      "text": "{Color:5}When I fly over to people or objects,\ntarget them so you can\ninteract with them.{Color:5}"
+      "text": "{Color:5}When I fly over to people or objects,\ntarget them so you can\ninteract with them.{Color:5}",
+      "source_hash": "020ad325d47d53f1"
     },
     {
       "id": "0227",
       "run": 4,
-      "original": "{Color:5}Use {Color:11}{Color:1}L-Targeting{Color:11}{Color:5} to talk to people\neven if they're far away.{Color:5}",
-      "text": "{Color:5}Use {Color:1}targeting{Color:5} to talk to people\neven if they're far away.{Color:5}"
+      "text": "{Color:5}Use {Color:1}targeting{Color:5} to talk to people\neven if they're far away.{Color:5}",
+      "source_hash": "284eb8f44d706fe9"
     },
     {
       "id": "0227",
       "run": 6,
-      "original": "{Color:5}Or, if there's no one to target, you\ncan use {Color:5}{Icon:5}{Color:5} to look {Color:11}{Color:1}straight ahead{Color:11}{Color:5}.",
-      "text": "{Color:5}Or, if there's no one to target,\nuse targeting to look {Color:1}straight ahead{Color:5}."
+      "text": "{Color:5}Or, if there's no one to target,\nuse targeting to look {Color:1}straight ahead{Color:5}.",
+      "source_hash": "6044bdaea043e7d1"
     },
     {
       "id": "026b",
       "run": 1,
-      "original": "{Color:5}Press SELECT to open your inventory.\nUse {Icon:5}/{Icon:6} to choose the Items tab.",
-      "text": "{Color:5}Open your inventory and\nchoose the {Color:1}Items tab{Color:5}."
+      "text": "{Color:5}Open your inventory and\nchoose the {Color:1}Items tab{Color:5}.",
+      "source_hash": "eb15317b69d01a2f"
     },
     {
       "id": "026b",
       "run": 2,
-      "original": "{Color:5}Use {Icon:17} to select an item.\nPress {Icon:3} or {Icon:4} to assign it.",
-      "text": "{Color:5}Select an item, then assign it\nto an item slot."
+      "text": "{Color:5}Select an item, then assign it\nto an item slot.",
+      "source_hash": "2e137982d8ccd388"
     },
     {
       "id": "026b",
       "run": 3,
-      "original": "{Color:5}For slots I and II, hold ZR\nand press {Icon:3} or {Icon:4} to assign an item.",
-      "text": "{Color:5}Slots I and II give you room\nfor two more items."
+      "text": "{Color:5}Slots I and II give you room\nfor two more items.",
+      "source_hash": "508906cf9edbe3aa"
     },
     {
       "id": "026b",
       "run": 4,
-      "original": "{Color:5}Use the same button or button\ncombination to use the item.\nIt's easy!",
-      "text": "{Color:5}Use the equipped item\nwhenever you need it.\nIt's easy!"
+      "text": "{Color:5}Use the equipped item\nwhenever you need it.\nIt's easy!",
+      "source_hash": "7360acd23eb0a2d7"
     },
     {
       "id": "0270",
       "run": 1,
-      "original": "{Color:5}Press SELECT to open your inventory.\nUse {Icon:5}/{Icon:6} to choose Gear and view\nwhat you've collected.",
-      "text": "{Color:5}Open your inventory and choose\n{Color:1}Gear{Color:5} to view what you've collected."
+      "text": "{Color:5}Open your inventory and choose\n{Color:1}Gear{Color:5} to view what you've collected.",
+      "source_hash": "702e21f1e9711bac"
     },
     {
       "id": "027a",
       "run": 0,
-      "original": "{Color:5}Hey! Don't forget, when you've\nlaunched out of a Deku Flower and\nare in the air, press {Icon:6} to adjust the\nview and {Color:1}see what's beneath you{Color:5}.",
-      "text": "{Color:5}Hey! Don't forget, when you've\nlaunched out of a Deku Flower,\nadjust the view to {Color:1}see what's\nbeneath you{Color:5}."
+      "text": "{Color:5}Hey! Don't forget, when you've\nlaunched out of a Deku Flower,\nadjust the view to {Color:1}see what's\nbeneath you{Color:5}.",
+      "source_hash": "32c1f3bb7c90b5d1"
     },
     {
       "id": "033e",
       "run": 0,
-      "original": "{Color:1}How to Befriend a Horse:\n{Color:11}Stand next to your horse and\npress {Icon:1} to mount it.",
-      "text": "{Color:1}How to Befriend a Horse:\n{Color:11}Stand next to your horse\nto mount it."
+      "text": "{Color:1}How to Befriend a Horse:\n{Color:11}Stand next to your horse\nto mount it.",
+      "source_hash": "4615426b82ce13ed"
     },
     {
       "id": "033e",
       "run": 1,
-      "original": "{Color:11}Slide {Icon:17} forward to gallop. Press {Icon:1}\nwhile galloping to speed up.",
-      "text": "{Color:11}Move forward to gallop.\nUrge your horse on to speed up."
+      "text": "{Color:11}Move forward to gallop.\nUrge your horse on to speed up.",
+      "source_hash": "d1dfdee6f7375145"
     },
     {
       "id": "033e",
       "run": 3,
-      "original": "{Color:11}To dismount, bring your horse\nto a stop and press {Icon:1}.\n                                Future head of the\n                                Romani family         ",
-      "text": "{Color:11}To dismount, bring your horse\nto a stop, then climb down.\n                                Future head of the\n                                Romani family         "
+      "text": "{Color:11}To dismount, bring your horse\nto a stop, then climb down.\n                                Future head of the\n                                Romani family         ",
+      "source_hash": "a6fd7f2d014aab97"
     },
     {
       "id": "033f",
       "run": 2,
-      "original": "{Color:11}Press {Color:1}START {Color:11}to look at any info\nyou've gathered so far.",
-      "text": "{Color:11}Open your {Color:1}notebook{Color:11} to look at\nany info you've gathered so far."
+      "text": "{Color:11}Open your {Color:1}notebook{Color:11} to look at\nany info you've gathered so far.",
+      "source_hash": "6e8e94a0f8cde6e3"
     },
     {
       "id": "0344",
       "run": 1,
-      "original": "{Color:11}{Color:1}Move{Color:11} with {Icon:17}.\n{Color:1}Swing your sword {Color:11}with {Icon:2}.\nIf there's a small platform,\nmove toward it with {Icon:17} to {Color:1}climb{Color:11} up.",
-      "text": "{Color:11}Practice moving and {Color:1}swinging\nyour sword{Color:11}. If there is a small\nplatform, move toward it\nto {Color:1}climb{Color:11} up."
+      "text": "{Color:11}Practice moving and {Color:1}swinging\nyour sword{Color:11}. If there is a small\nplatform, move toward it\nto {Color:1}climb{Color:11} up.",
+      "source_hash": "77ad737111dacaf3"
     },
     {
       "id": "0344",
       "run": 2,
-      "original": "{Color:11}When higher up, keep {Icon:17} tilted\ntoward the edge to {Color:1}jump{Color:11}. If you fall\ndown, you'll have to start over.",
-      "text": "{Color:11}When higher up, keep moving\ntoward the edge to {Color:1}jump{Color:11}. If you fall\ndown, you'll have to start over."
+      "text": "{Color:11}When higher up, keep moving\ntoward the edge to {Color:1}jump{Color:11}. If you fall\ndown, you'll have to start over.",
+      "source_hash": "096ac49f138583cb"
     },
     {
       "id": "0346",
       "run": 1,
-      "original": "{Color:11}When you catch sight of a fish,\ncast your lure with {Icon:2}! To fish\ncloser, break the line with {Icon:1}.",
-      "text": "{Color:11}When you catch sight of a fish,\ncast your lure! To fish closer,\nbreak the line and cast again."
+      "text": "{Color:11}When you catch sight of a fish,\ncast your lure! To fish closer,\nbreak the line and cast again.",
+      "source_hash": "8f0d47910d21f670"
     },
     {
       "id": "0346",
       "run": 2,
-      "original": "{Color:11}Move the lure with {Icon:17} and {Icon:2}.\nReel in with {Icon:1}, and reel in even\nfaster with {Icon:6} and {Icon:1}.",
-      "text": "{Color:11}Move the lure to attract fish.\nReel in slowly, or reel in\nfaster when needed."
+      "text": "{Color:11}Move the lure to attract fish.\nReel in slowly, or reel in\nfaster when needed.",
+      "source_hash": "71947f227b6bdf05"
     },
     {
       "id": "0346",
       "run": 3,
-      "original": "{Color:11}When a fish bites, hook it with {Icon:1}\nand {Icon:17}, then reel it in with {Icon:1}!",
-      "text": "{Color:11}When a fish bites, pull back\nto hook it, then reel it in!"
+      "text": "{Color:11}When a fish bites, pull back\nto hook it, then reel it in!",
+      "source_hash": "2b67c76f765eacac"
     },
     {
       "id": "03fd",
       "run": 3,
-      "original": "{Color:11}You can use as many arrows as\nyou'd like. Press {Icon:2} to shoot them.",
-      "text": "{Color:11}You can shoot as many arrows\nas you'd like."
+      "text": "{Color:11}You can shoot as many arrows\nas you'd like.",
+      "source_hash": "eede3fb8a0f7c7e0"
     },
     {
       "id": "0450",
       "run": 1,
-      "original": " Rupee(s)\nSet the amount with {Icon:17}\nand press {Icon:1} to decide.",
-      "text": " Rupee(s)\nChoose an amount,\nthen confirm your choice."
+      "text": " Rupee(s)\nChoose an amount,\nthen confirm your choice.",
+      "source_hash": "f327539c20608d37"
     },
     {
       "id": "046e",
       "run": 1,
-      "original": " Rupee(s)\nSet the amount with {Icon:17}\nand press {Icon:1} to decide.",
-      "text": " Rupee(s)\nChoose an amount,\nthen confirm your choice."
+      "text": " Rupee(s)\nChoose an amount,\nthen confirm your choice.",
+      "source_hash": "f327539c20608d37"
     },
     {
       "id": "05e6",
       "run": 0,
-      "original": "{Icon:3}: Zoom out\n",
-      "text": "Zoom out\n"
+      "text": "Zoom out\n",
+      "source_hash": "c285a4f719ede074"
     },
     {
       "id": "05e6",
       "run": 1,
-      "original": "{Icon:1}: Zoom in\n",
-      "text": "Zoom in\n"
+      "text": "Zoom in\n",
+      "source_hash": "958810742ae3080f"
     },
     {
       "id": "05e6",
       "run": 2,
-      "original": "{Icon:17}: Move\n",
-      "text": "Move view\n"
+      "text": "Move view\n",
+      "source_hash": "61d8203e7e3584b9"
     },
     {
       "id": "05e6",
       "run": 3,
-      "original": "{Icon:2}: Quit",
-      "text": "Finish viewing"
+      "text": "Finish viewing",
+      "source_hash": "f54df8a81b13da6b"
     },
     {
       "id": "05f1",
       "run": 1,
-      "original": "{Color:11}You can zoom in with {Icon:1}.\nTry looking near the {Color:1}Clock Tower{Color:11}.",
-      "text": "{Color:11}Zoom in for a closer look.\nTry looking near the {Color:1}Clock Tower{Color:11}."
+      "text": "{Color:11}Zoom in for a closer look.\nTry looking near the {Color:1}Clock Tower{Color:11}.",
+      "source_hash": "8ae124ab36be62d2"
     },
     {
       "id": "05f9",
       "run": 0,
-      "original": "Are you using the telescope\ncorrectly? Use {Icon:17} and {Icon:1} to take a\ncloser look at the Clock Tower.",
-      "text": "Are you using the telescope\ncorrectly? Move the view and zoom\nin to look at the Clock Tower."
+      "text": "Are you using the telescope\ncorrectly? Move the view and zoom\nin to look at the Clock Tower.",
+      "source_hash": "9f3f1829603cf725"
     },
     {
       "id": "0640",
       "run": 0,
-      "original": "View items with {Icon:17}.\n \n{Color:2}",
-      "text": "Browse the items.\n \n{Color:2}"
+      "text": "Browse the items.\n \n{Color:2}",
+      "source_hash": "a2eba82f7de8c692"
     },
     {
       "id": "0729",
       "run": 1,
-      "original": "\n{Color:11}Enter the numbers with {Icon:17}.\nPress {Icon:1} to decide.",
-      "text": "\n{Color:11}Enter the numbers,\nthen confirm your choice."
+      "text": "\n{Color:11}Enter the numbers,\nthen confirm your choice.",
+      "source_hash": "d3a6df1cb5f67d5a"
     },
     {
       "id": "0737",
       "run": 0,
-      "original": "1. Press {Color:1}START{Color:11} to check your\n",
-      "text": "1. Open your {Color:1}notebook{Color:11} and check\n"
+      "text": "1. Open your {Color:1}notebook{Color:11} and check\n",
+      "source_hash": "31b1f19f5990344a"
     },
     {
       "id": "0737",
       "run": 1,
-      "original": "   notebook for details about {Color:1}events\n",
-      "text": "   the details about {Color:1}events\n"
+      "text": "   the details about {Color:1}events\n",
+      "source_hash": "67726e137e22f91f"
     },
     {
       "id": "083e",
       "run": 0,
-      "original": "Use {Icon:17} to browse.\n \n{Color:2}",
-      "text": "Browse the goods.\n \n{Color:2}"
+      "text": "Browse the goods.\n \n{Color:2}",
+      "source_hash": "2228bd6797714205"
     },
     {
       "id": "09e3",
       "run": 0,
-      "original": "Welcome to the boat cruise.\nTake out your Pictograph Box\nwith {Icon:32}, then press {Icon:1} to shoot.",
-      "text": "Welcome to the boat cruise.\nTake out your Pictograph Box\nand snap a picture."
+      "text": "Welcome to the boat cruise.\nTake out your Pictograph Box\nand snap a picture.",
+      "source_hash": "b8e48082b65411aa"
     },
     {
       "id": "0a2b",
       "run": 2,
-      "original": "{Color:11}If ya don't aim proper with {Icon:17},\nya won't hit any of 'em!",
-      "text": "{Color:11}If ya don't aim proper,\nya won't hit any of 'em!"
+      "text": "{Color:11}If ya don't aim proper,\nya won't hit any of 'em!",
+      "source_hash": "1125d724e05ee9cc"
     },
     {
       "id": "0a2c",
       "run": 0,
-      "original": "I keepz tellin' ya--if ya don't aim\nproper with {Icon:17}, ya won't hit 'em!\nAh ya ready, mate?",
-      "text": "I keepz tellin' ya--if ya don't aim\nproper, ya won't hit 'em!\nAh ya ready, mate?"
+      "text": "I keepz tellin' ya--if ya don't aim\nproper, ya won't hit 'em!\nAh ya ready, mate?",
+      "source_hash": "7e1fbe824f115181"
     },
     {
       "id": "0bc0",
       "run": 0,
-      "original": "Push {Icon:17} left or right to view\nmy goods.\n{Color:2}",
-      "text": "Browse the goods\nto the left or right.\n{Color:2}"
+      "text": "Browse the goods\nto the left or right.\n{Color:2}",
+      "source_hash": "c91326897f27bf1f"
     },
     {
       "id": "0cf5",
       "run": 2,
-      "original": "{Color:11}Goron heroes use {Icon:1} and {Icon:17} so that\nthey may curl up and roll wherever\nit is that they may need to go.",
-      "text": "{Color:11}Goron heroes curl up and roll\nwherever it is that they\nmay need to go."
+      "text": "{Color:11}Goron heroes curl up and roll\nwherever it is that they\nmay need to go.",
+      "source_hash": "bda1906a1e329e51"
     },
     {
       "id": "0cf7",
       "run": 0,
-      "original": "The powerful punch that Goron\nheroes unleash by pressing {Icon:2}\nis feared by all.",
-      "text": "The powerful punch that Goron\nheroes unleash is feared by all."
+      "text": "The powerful punch that Goron\nheroes unleash is feared by all.",
+      "source_hash": "973684598f6d2f12"
     },
     {
       "id": "0cf7",
       "run": 1,
-      "original": "{Color:11}By {Color:1}repeatedly pressing{Color:11} {Icon:2}, Goron\nheroes will deal out a {Color:1}barrage\n{Color:11}of punches.",
-      "text": "{Color:11}By {Color:1}attacking repeatedly{Color:11}, Goron\nheroes will deal out a {Color:1}barrage\nof punches{Color:11}."
+      "text": "{Color:11}By {Color:1}attacking repeatedly{Color:11}, Goron\nheroes will deal out a {Color:1}barrage\nof punches{Color:11}.",
+      "source_hash": "b6d94488745d237f"
     },
     {
       "id": "0cf8",
       "run": 0,
-      "original": "After using {Icon:1} to curl up, a Goron\ncan {Color:1}jump{Color:11} with {Icon:2} and land with a\n{Color:1}quaking impact {Color:11}so mighty it can\nflatten enemies.",
-      "text": "After curling up, a Goron can\n{Color:1}jump{Color:11} and land with a {Color:1}quaking\nimpact{Color:11} so mighty it can\nflatten enemies."
+      "text": "After curling up, a Goron can\n{Color:1}jump{Color:11} and land with a {Color:1}quaking\nimpact{Color:11} so mighty it can\nflatten enemies.",
+      "source_hash": "823f8a2ca7be1d96"
     },
     {
       "id": "101a",
       "run": 0,
-      "original": "Sharp fins are the mark of the Zora.\nWe {Color:1}swim{Color:11}, speeding through the seas\nwith {Icon:1} and {Icon:17}.",
-      "text": "Sharp fins are the mark of the Zora.\nWe {Color:1}swim{Color:11}, speeding through\nthe seas."
+      "text": "Sharp fins are the mark of the Zora.\nWe {Color:1}swim{Color:11}, speeding through\nthe seas.",
+      "source_hash": "66a565dd88ab4a73"
     },
     {
       "id": "101a",
       "run": 1,
-      "original": "{Color:11}Pressing {Icon:6} while swimming uses\nmagic power to create a {Color:1}barrier{Color:11},\nwhich deflects enemies!\n(Spoken) {Icon:6} and {Icon:2} while standing.",
-      "text": "{Color:11}While swimming, use magic power\nto create a {Color:1}barrier{Color:11} that deflects\nenemies! You can also create one\nwhile standing and defending."
+      "text": "{Color:11}While swimming, use magic power\nto create a {Color:1}barrier{Color:11} that deflects\nenemies! You can also create one\nwhile standing and defending.",
+      "source_hash": "3c8f893d2e994775"
     },
     {
       "id": "101a",
       "run": 2,
-      "original": "{Color:11}We can even dive by pressing {Icon:2}!\nOh-oh... We the Zora.",
-      "text": "{Color:11}We can even dive underwater!\nOh-oh... We the Zora."
+      "text": "{Color:11}We can even dive underwater!\nOh-oh... We the Zora.",
+      "source_hash": "1e088bb288ab2bc8"
     },
     {
       "id": "101b",
       "run": 0,
-      "original": "For my punch of anger, hit {Icon:2}.\nPress {Icon:2} repeatedly for a flurry\nof attacks! Yeah, yeah.",
-      "text": "Unleash my punch of anger.\nAttack repeatedly for a flurry\nof blows! Yeah, yeah."
+      "text": "Unleash my punch of anger.\nAttack repeatedly for a flurry\nof blows! Yeah, yeah.",
+      "source_hash": "d532e9481a5847d2"
     },
     {
       "id": "101b",
       "run": 1,
-      "original": "{Color:11}For my deadly move, press and\nhold {Icon:2}. Now release! It's the\nfinal blow. My double cutters!",
-      "text": "{Color:11}For my deadly move, charge an\nattack, then release! It is the\nfinal blow. My double cutters!"
+      "text": "{Color:11}For my deadly move, charge an\nattack, then release! It is the\nfinal blow. My double cutters!",
+      "source_hash": "a1da622b306f7ebd"
     },
     {
       "id": "12d6",
       "run": 0,
-      "original": "View products by moving {Icon:17}\nleft or right.\n{Color:2}",
-      "text": "Browse the goods\nto the left or right.\n{Color:2}"
+      "text": "Browse the goods\nto the left or right.\n{Color:2}",
+      "source_hash": "43038a4c02e2efd5"
     },
     {
       "id": "1700",
       "run": 0,
-      "original": "{Color:5}Ocarina of Time{Color:11}\nThis musical instrument is filled\nwith memories of Princess Zelda.\nPlay it with {Icon:1}, {Icon:3}, {Icon:4}, {Icon:5} and {Icon:6}.",
-      "text": "{Color:5}Ocarina of Time{Color:11}\nThis musical instrument is filled\nwith memories of Princess Zelda.\nTake it out to play a tune."
+      "text": "{Color:5}Ocarina of Time{Color:11}\nThis musical instrument is filled\nwith memories of Princess Zelda.\nTake it out to play a tune.",
+      "source_hash": "d184271a4b8a9481"
     },
     {
       "id": "1701",
       "run": 1,
-      "original": "{Color:11}{Color:1}Hero's Bow\n{Color:11}Press {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} to shoot\nan arrow. Aim with {Icon:17}.",
-      "text": "{Color:11}{Color:1}Hero's Bow\n{Color:11}Ready the bow and aim,\nthen release to shoot an arrow."
+      "text": "{Color:11}{Color:1}Hero's Bow\n{Color:11}Ready the bow and aim,\nthen release to shoot an arrow.",
+      "source_hash": "a2c7d8283aa28d55"
     },
     {
       "id": "1706",
       "run": 0,
-      "original": "{Color:1}Bomb\n{Color:11}Light and place it with {Icon:3}, {Icon:4}, {Icon:24} or\n{Icon:27}. Press while running to throw it!",
-      "text": "{Color:1}Bomb\n{Color:11}Light it, then place it on the ground.\nUse it while running to throw it!"
+      "text": "{Color:1}Bomb\n{Color:11}Light it, then place it on the ground.\nUse it while running to throw it!",
+      "source_hash": "138f61864773ca7a"
     },
     {
       "id": "1708",
       "run": 0,
-      "original": "{Color:1}Deku Stick\n{Color:11}Swing it around, or use it to light\nflammable things on fire. Stand still\nand press {Icon:1} to put it away.",
-      "text": "{Color:1}Deku Stick\n{Color:11}Swing it around, or use it to light\nflammable things on fire.\nStand still to put it away."
+      "text": "{Color:1}Deku Stick\n{Color:11}Swing it around, or use it to light\nflammable things on fire.\nStand still to put it away.",
+      "source_hash": "8c3db9baa4ae67b9"
     },
     {
       "id": "1709",
       "run": 0,
-      "original": "{Color:1}Deku Nut{Color:11}\nOn impact, its flash blinds enemies,\nstopping them in their tracks.\nSet to {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} and throw it.",
-      "text": "{Color:1}Deku Nut{Color:11}\nOn impact, its flash blinds enemies,\nstopping them in their tracks.\nEquip one and throw it."
+      "text": "{Color:1}Deku Nut{Color:11}\nOn impact, its flash blinds enemies,\nstopping them in their tracks.\nEquip one and throw it.",
+      "source_hash": "5d413b289b30fc8c"
     },
     {
       "id": "170d",
       "run": 0,
-      "original": "{Color:1}Pictograph Box\n{Color:11}Use it with {Icon:32} and snap pictographs\nwith {Icon:1}. You can keep only one\nshot at a time.",
-      "text": "{Color:1}Pictograph Box\n{Color:11}Look through it and snap a picture.\nYou can keep only one\nshot at a time."
+      "text": "{Color:1}Pictograph Box\n{Color:11}Look through it and snap a picture.\nYou can keep only one\nshot at a time.",
+      "source_hash": "a4554ea73db289dc"
     },
     {
       "id": "170e",
       "run": 0,
-      "original": "{Color:1}Lens of Truth\n{Color:11}Use magic to see what the naked\neye cannot. Press its button again\nto stop gazing and using up magic.",
-      "text": "{Color:1}Lens of Truth\n{Color:11}Use magic to see what the naked\neye cannot. Put it away to stop\ngazing and using up magic."
+      "text": "{Color:1}Lens of Truth\n{Color:11}Use magic to see what the naked\neye cannot. Put it away to stop\ngazing and using up magic.",
+      "source_hash": "5c2fc28d1e6c2797"
     },
     {
       "id": "170f",
       "run": 0,
-      "original": "{Color:1}Hookshot\n{Color:11}Aim with {Icon:17}. Use {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} to\nfire the hook and grapple objects.",
-      "text": "{Color:1}Hookshot\n{Color:11}Ready the hook and aim.\nRelease to grapple objects."
+      "text": "{Color:1}Hookshot\n{Color:11}Ready the hook and aim.\nRelease to grapple objects.",
+      "source_hash": "c9a86fdb07756614"
     },
     {
       "id": "1710",
       "run": 0,
-      "original": "{Color:1}Great Fairy's Sword\n{Color:11}The most powerful sword has\nblack roses etched in its blade.\nBrandish it with {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27}.",
-      "text": "{Color:1}Great Fairy's Sword\n{Color:11}The most powerful sword has\nblack roses etched in its blade.\nEquip it to wield it."
+      "text": "{Color:1}Great Fairy's Sword\n{Color:11}The most powerful sword has\nblack roses etched in its blade.\nEquip it to wield it.",
+      "source_hash": "fc17998d0b719c0a"
     },
     {
       "id": "1712",
       "run": 0,
-      "original": "{Color:1}Empty Bottle\n{Color:11}A handy bottle for carrying various\nitems. Use it with {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27}.",
-      "text": "{Color:1}Empty Bottle\n{Color:11}A handy bottle for carrying various\nitems. Equip it to use its contents."
+      "text": "{Color:1}Empty Bottle\n{Color:11}A handy bottle for carrying various\nitems. Equip it to use its contents.",
+      "source_hash": "97eb88a457df990c"
     },
     {
       "id": "1713",
       "run": 0,
-      "original": "{Color:1}Red Potion\n{Color:11}Fully replenish your life energy\nby using it with {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27}.",
-      "text": "{Color:1}Red Potion\n{Color:11}Drink it to fully replenish\nyour life energy."
+      "text": "{Color:1}Red Potion\n{Color:11}Drink it to fully replenish\nyour life energy.",
+      "source_hash": "bb8c14264ad06e9c"
     },
     {
       "id": "1714",
       "run": 0,
-      "original": "{Color:1}{Color:2}Green Potion{Color:1}\n{Color:11}Fully replenish your magic power\nby using it with {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27}.",
-      "text": "{Color:2}Green Potion\n{Color:11}Drink it to fully replenish\nyour magic power."
+      "text": "{Color:2}Green Potion\n{Color:11}Drink it to fully replenish\nyour magic power.",
+      "source_hash": "d60414015987c1a5"
     },
     {
       "id": "1715",
       "run": 0,
-      "original": "{Color:1}{Color:3}Blue Potion{Color:1}\n{Color:11}Fully replenish both your life\nenergy and your magic power\nby using it with {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27}.",
-      "text": "{Color:3}Blue Potion\n{Color:11}Drink it to fully replenish\nboth your life energy\nand your magic power."
+      "text": "{Color:3}Blue Potion\n{Color:11}Drink it to fully replenish\nboth your life energy\nand your magic power.",
+      "source_hash": "f4bb8cb02b743a6c"
     },
     {
       "id": "1716",
       "run": 0,
-      "original": "{Color:1}Fairy{Color:11}\nA little friend to restore life if you\nrun out of hearts. Or, use with {Icon:3},\n{Icon:4}, {Icon:24} or {Icon:27} to refill hearts anytime.",
-      "text": "{Color:1}Fairy{Color:11}\nA little friend to restore life if you\nrun out of hearts. Release it to\nrefill your hearts anytime."
+      "text": "{Color:1}Fairy{Color:11}\nA little friend to restore life if you\nrun out of hearts. Release it to\nrefill your hearts anytime.",
+      "source_hash": "d3cf42051a6723f2"
     },
     {
       "id": "1717",
       "run": 0,
-      "original": "{Color:1}Deku Princess\n{Color:11}It's a tight fit, but she's a trouper.\nRelease her with {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27}.",
-      "text": "{Color:1}Deku Princess\n{Color:11}It's a tight fit, but she's a trouper.\nUse the bottle to release her."
+      "text": "{Color:1}Deku Princess\n{Color:11}It's a tight fit, but she's a trouper.\nUse the bottle to release her.",
+      "source_hash": "eddfc9490e4d52e5"
     },
     {
       "id": "1718",
       "run": 0,
-      "original": "{Color:1}Milk{Color:11}\nOne gulp recovers five hearts, and\neach bottle contains two helpings.\nDrink it with {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27}.",
-      "text": "{Color:1}Milk{Color:11}\nOne gulp recovers five hearts, and\neach bottle contains two helpings.\nEquip the bottle to drink it."
+      "text": "{Color:1}Milk{Color:11}\nOne gulp recovers five hearts, and\neach bottle contains two helpings.\nEquip the bottle to drink it.",
+      "source_hash": "bc47a98405db580a"
     },
     {
       "id": "1719",
       "run": 0,
-      "original": "{Color:1}Milk (1/2)\n{Color:11}Drink it with {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27}\nto recover five hearts.",
-      "text": "{Color:1}Milk (1/2)\n{Color:11}Drink it to recover five hearts."
+      "text": "{Color:1}Milk (1/2)\n{Color:11}Drink it to recover five hearts.",
+      "source_hash": "4ac4ab053a02a726"
     },
     {
       "id": "171a",
       "run": 0,
-      "original": "{Color:1}Fish\n{Color:11}It's freshly caught and still jumping.\nUse it with {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27}.",
-      "text": "{Color:1}Fish\n{Color:11}It's freshly caught and still jumping.\nUse the bottle to release it."
+      "text": "{Color:1}Fish\n{Color:11}It's freshly caught and still jumping.\nUse the bottle to release it.",
+      "source_hash": "a87029865c66683c"
     },
     {
       "id": "171b",
       "run": 0,
-      "original": "{Color:1}Bug\n{Color:11}It likes to crawl into small holes.\nRelease it with {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27}.",
-      "text": "{Color:1}Bug\n{Color:11}It likes to crawl into small holes.\nUse the bottle to release it."
+      "text": "{Color:1}Bug\n{Color:11}It likes to crawl into small holes.\nUse the bottle to release it.",
+      "source_hash": "87cfc0d34a586e3e"
     },
     {
       "id": "171d",
       "run": 0,
-      "original": "{Color:1}Poe\n{Color:11}If you drink it with {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27},\nyou may recover hearts...or you\nmay lose some.",
-      "text": "{Color:1}Poe\n{Color:11}If you drink it, you may recover\nhearts...or you may lose some."
+      "text": "{Color:1}Poe\n{Color:11}If you drink it, you may recover\nhearts...or you may lose some.",
+      "source_hash": "ebb0b8ad29771101"
     },
     {
       "id": "171f",
       "run": 0,
-      "original": "{Color:1}{Color:3}Spring Water{Color:1}\n{Color:11}Pour it on things that need\nwatering! Use it with {Icon:3}, {Icon:4},\n{Icon:24} or {Icon:27}.",
-      "text": "{Color:3}Spring Water\n{Color:11}Pour it on things that\nneed watering!"
+      "text": "{Color:3}Spring Water\n{Color:11}Pour it on things that\nneed watering!",
+      "source_hash": "bfe9390280b8b559"
     },
     {
       "id": "1720",
       "run": 0,
-      "original": "{Color:1}Hot Spring Water\n{Color:11}Watch out, it's piping hot!\nUse it with {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27}\nbefore it cools.",
-      "text": "{Color:1}Hot Spring Water\n{Color:11}Watch out, it's piping hot!\nUse it before it cools."
+      "text": "{Color:1}Hot Spring Water\n{Color:11}Watch out, it's piping hot!\nUse it before it cools.",
+      "source_hash": "312ee5f938ce15e9"
     },
     {
       "id": "1721",
       "run": 0,
-      "original": "{Color:1}Zora Egg\n{Color:11}It doesn't look very healthy.\nUse it with {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27}.",
-      "text": "{Color:1}Zora Egg\n{Color:11}It doesn't look very healthy.\nUse the bottle to release it."
+      "text": "{Color:1}Zora Egg\n{Color:11}It doesn't look very healthy.\nUse the bottle to release it.",
+      "source_hash": "0916f8e3737aa23d"
     },
     {
       "id": "1724",
       "run": 0,
-      "original": "{Color:1}Seahorse\n{Color:11}It wants to go back home to\nPinnacle Rock. Return it to the\nsea with {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27}.",
-      "text": "{Color:1}Seahorse\n{Color:11}It wants to go back home to\nPinnacle Rock. Return it\nto the sea."
+      "text": "{Color:1}Seahorse\n{Color:11}It wants to go back home to\nPinnacle Rock. Return it\nto the sea.",
+      "source_hash": "cb89d0ad0ae58d70"
     },
     {
       "id": "1725",
       "run": 0,
-      "original": "{Color:1}Chateau Romani\n{Color:11}Premium milk that gives you lasting\nstamina for your magic power.\nDrink it with {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27}.",
-      "text": "{Color:1}Chateau Romani\n{Color:11}Premium milk that gives you lasting\nstamina for your magic power.\nEquip the bottle to drink it."
+      "text": "{Color:1}Chateau Romani\n{Color:11}Premium milk that gives you lasting\nstamina for your magic power.\nEquip the bottle to drink it.",
+      "source_hash": "ef8584a593c18120"
     },
     {
       "id": "1732",
       "run": 0,
-      "original": "{Color:2}Deku Mask{Color:11}\nA mask that embodies the courage\nof a Deku Scrub. Wear it with\n{Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} to assume its form.",
-      "text": "{Color:2}Deku Mask{Color:11}\nA mask that embodies the courage\nof a Deku Scrub. Wear it\nto assume its form."
+      "text": "{Color:2}Deku Mask{Color:11}\nA mask that embodies the courage\nof a Deku Scrub. Wear it\nto assume its form.",
+      "source_hash": "aaca1ae14c740701"
     },
     {
       "id": "1733",
       "run": 0,
-      "original": "{Color:1}Goron Mask{Color:11}\nA mask that embodies the power\nof a certain Goron. Wear it with\n{Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} to assume his form.",
-      "text": "{Color:1}Goron Mask{Color:11}\nA mask that embodies the power\nof a certain Goron. Wear it\nto assume his form."
+      "text": "{Color:1}Goron Mask{Color:11}\nA mask that embodies the power\nof a certain Goron. Wear it\nto assume his form.",
+      "source_hash": "fed70a00f83480d6"
     },
     {
       "id": "1734",
       "run": 0,
-      "original": "{Color:1}{Color:3}Zora Mask{Color:1}\n{Color:11}A mask that embodies the wisdom\nof a certain Zora. Wear it with\n{Icon:3}, {Icon:4}, {Icon:24} or {Icon:27} to assume his form.",
-      "text": "{Color:3}Zora Mask\n{Color:11}A mask that embodies the wisdom\nof a certain Zora. Wear it\nto assume his form."
+      "text": "{Color:3}Zora Mask\n{Color:11}A mask that embodies the wisdom\nof a certain Zora. Wear it\nto assume his form.",
+      "source_hash": "160a700dab60794a"
     },
     {
       "id": "1747",
       "run": 0,
-      "original": "{Color:1}Blast Mask{Color:11}\nPress {Icon:2} while wearing it to have\na blast! Losing half a heart from\nthe explosion is a side effect.",
-      "text": "{Color:1}Blast Mask{Color:11}\nDetonate it when worn\nto have a blast! Losing half a heart\nfrom the explosion is a side effect."
+      "text": "{Color:1}Blast Mask{Color:11}\nDetonate it when worn\nto have a blast! Losing half a heart\nfrom the explosion is a side effect.",
+      "source_hash": "7e5ea1b903768f85"
     },
     {
       "id": "1787",
       "run": 0,
-      "original": "{Color:1}Great Fairy's Sword\n{Color:11}The most powerful sword has\nblack roses etched in its blade.\nBrandish it with {Icon:3}, {Icon:4}, {Icon:24} or {Icon:27}.",
-      "text": "{Color:1}Great Fairy's Sword\n{Color:11}The most powerful sword has\nblack roses etched in its blade.\nEquip it to wield it."
+      "text": "{Color:1}Great Fairy's Sword\n{Color:11}The most powerful sword has\nblack roses etched in its blade.\nEquip it to wield it.",
+      "source_hash": "fc17998d0b719c0a"
     },
     {
       "id": "1788",
       "run": 0,
-      "original": "{Color:5}Hero's Shield{Color:11}\nUse with {Icon:6}. While L-Targeting,\npress {Icon:6} to defend while moving.",
-      "text": "{Color:5}Hero's Shield{Color:11}\nRaise it to defend yourself. Lock on\nto a target to defend while moving."
+      "text": "{Color:5}Hero's Shield{Color:11}\nRaise it to defend yourself. Lock on\nto a target to defend while moving.",
+      "source_hash": "1abb2d2074e45cae"
     },
     {
       "id": "1790",
       "run": 1,
-      "original": "Deku Pipes{Color:11}\nLoud pipes that sprout forth from\nyour Deku Scrub body. Play them\nwith {Icon:1}, {Icon:3}, {Icon:4}, {Icon:5} and {Icon:6}.",
-      "text": "Deku Pipes{Color:11}\nLoud pipes that sprout forth from\nyour Deku Scrub body.\nTake them out to play a tune."
+      "text": "Deku Pipes{Color:11}\nLoud pipes that sprout forth from\nyour Deku Scrub body.\nTake them out to play a tune.",
+      "source_hash": "00ec3024c7138fe0"
     },
     {
       "id": "1791",
       "run": 1,
-      "original": "Goron Drums{Color:11}\nThe traditional instrument of the\nGoron tribe. Play them with {Icon:1}, {Icon:3},\n{Icon:4}, {Icon:5} and {Icon:6}.",
-      "text": "Goron Drums{Color:11}\nThe traditional instrument\nof the Goron tribe.\nTake them out to play a tune."
+      "text": "Goron Drums{Color:11}\nThe traditional instrument\nof the Goron tribe.\nTake them out to play a tune.",
+      "source_hash": "24182b611e1e7f23"
     },
     {
       "id": "1792",
       "run": 1,
-      "original": "Zora Guitar{Color:11}\nA soulful guitar from a Zora band.\nIt's overflowing with good vibes.\nPlay it with {Icon:1}, {Icon:3}, {Icon:4}, {Icon:5} and {Icon:6}.",
-      "text": "Zora Guitar{Color:11}\nA soulful guitar from a Zora band.\nIt's overflowing with good vibes.\nTake it out to play a tune."
+      "text": "Zora Guitar{Color:11}\nA soulful guitar from a Zora band.\nIt's overflowing with good vibes.\nTake it out to play a tune.",
+      "source_hash": "f1c9a588aaf9ed8c"
     },
     {
       "id": "1796",
       "run": 0,
-      "original": "{Color:1}Bombers' Notebook{Color:11}\nKeep up with the Bombers' secret\nactivities! Press {Color:1}START {Color:11}to open it.",
-      "text": "{Color:1}Bombers' Notebook{Color:11}\nKeep up with the Bombers' secret\nactivities! Open it to read more."
+      "text": "{Color:1}Bombers' Notebook{Color:11}\nKeep up with the Bombers' secret\nactivities! Open it to read more.",
+      "source_hash": "6a890cd579079ad4"
     },
     {
       "id": "1912",
       "run": 0,
-      "original": "{Color:5}A {Color:11}Keese{Color:5}. Use L-Targeting when\nit gets close. Even if it flies off,\nI'll follow it for you.{Color:11}",
-      "text": "{Color:5}A {Color:11}Keese{Color:5}. Use targeting when\nit gets close. Even if it flies off,\nI'll follow it for you.{Color:11}"
+      "text": "{Color:5}A {Color:11}Keese{Color:5}. Use targeting when\nit gets close. Even if it flies off,\nI'll follow it for you.{Color:11}",
+      "source_hash": "adf6c0e3df878cc8"
     },
     {
       "id": "191d",
       "run": 0,
-      "original": "{Color:5}Use L-Targeting methods while\ndefending... The \"unthinkable\"?\nWhat could that possibly be in a\nplace as dark as this?{Color:11}",
-      "text": "{Color:5}Use targeting methods while\ndefending... The \"unthinkable\"?\nWhat could that possibly be in a\nplace as dark as this?{Color:11}"
+      "text": "{Color:5}Use targeting methods while\ndefending... The \"unthinkable\"?\nWhat could that possibly be in a\nplace as dark as this?{Color:11}",
+      "source_hash": "24ba08df70cb36ed"
     },
     {
       "id": "1946",
       "run": 0,
-      "original": "{Color:5}That's a {Color:11}Blue Tektite{Color:5}.\nUse L-Targeting to follow it\nas it bounces!{Color:11}",
-      "text": "{Color:5}That's a {Color:11}Blue Tektite{Color:5}.\nUse targeting to follow it\nas it bounces!{Color:11}"
+      "text": "{Color:5}That's a {Color:11}Blue Tektite{Color:5}.\nUse targeting to follow it\nas it bounces!{Color:11}",
+      "source_hash": "39b413f172b80e94"
     },
     {
       "id": "1954",
       "run": 0,
-      "original": "{Color:5}A {Color:11}pirate{Color:5} found you!\nUse L-Targeting and look for\nyour chance. You're caught if\nyou don't win.{Color:11}",
-      "text": "{Color:5}A {Color:11}pirate{Color:5} found you!\nUse targeting and look for\nyour chance. You're caught if\nyou don't win.{Color:11}"
+      "text": "{Color:5}A {Color:11}pirate{Color:5} found you!\nUse targeting and look for\nyour chance. You're caught if\nyou don't win.{Color:11}",
+      "source_hash": "40bad146ed22d04f"
     },
     {
       "id": "1b59",
       "run": 0,
-      "original": "Play with {Icon:1}, {Icon:3}, {Icon:4}, {Icon:5} and {Icon:6}.",
-      "text": "Play a tune."
+      "text": "Play a tune.",
+      "source_hash": "761fae5290bc125e"
     },
     {
       "id": "1b5a",
       "run": 0,
-      "original": "Play with {Icon:1}, {Icon:3}, {Icon:4}, {Icon:5} and {Icon:6}.\nPress {Icon:2} to stop.",
-      "text": "Play a tune.\nPut your instrument away to stop."
+      "text": "Play a tune.\nPut your instrument away to stop.",
+      "source_hash": "a50503cd5d4b7d8d"
     },
     {
       "id": "1ba6",
       "run": 2,
-      "original": "{Color:11}Stand by Epona's side and press {Icon:1}\nto climb on her back. To get off,\nslow to a stop and press {Icon:1}.",
-      "text": "{Color:11}Stand by Epona's side to climb\non her back. To get off, slow\nto a stop, then dismount."
+      "text": "{Color:11}Stand by Epona's side to climb\non her back. To get off, slow\nto a stop, then dismount.",
+      "source_hash": "944a1c1592c0be2b"
     },
     {
       "id": "1ba6",
       "run": 3,
-      "original": "{Color:11}Press {Icon:1} while riding to gently tap\nher with your hand so she knows\nto go faster. With enough speed,\nyou can even jump over fences!",
-      "text": "{Color:11}While riding, gently tap her with\nyour hand so she knows to go\nfaster. With enough speed, you\ncan even jump over fences!"
+      "text": "{Color:11}While riding, gently tap her with\nyour hand so she knows to go\nfaster. With enough speed, you\ncan even jump over fences!",
+      "source_hash": "9888799f038e745a"
     },
     {
       "id": "1bad",
       "run": 0,
-      "original": "Select your destination with {Icon:17},\nthen soar there with {Icon:1}.\nPress {Icon:2} to quit.",
-      "text": "Choose your destination,\nthen confirm to soar there.\nGo back to quit."
+      "text": "Choose your destination,\nthen confirm to soar there.\nGo back to quit.",
+      "source_hash": "026fcd0c3390db81"
     },
     {
       "id": "1bb0",
       "run": 0,
-      "original": "Select a time with {Icon:23},\nthen jump forward with {Icon:1}.\nPress {Icon:2} to cancel.",
-      "text": "Choose a time, then confirm\nto jump forward.\nGo back to cancel."
+      "text": "Choose a time, then confirm\nto jump forward.\nGo back to cancel.",
+      "source_hash": "e73839f4ed68f9c8"
     },
     {
       "id": "1d18",
       "run": 1,
-      "original": "{Color:11}{Color:1}You can view the minimap{Color:11} in the\nbottom right corner. Press ZR +\nSELECT to toggle it on or off.",
-      "text": "{Color:11}You can toggle the {Color:1}minimap{Color:11}\nin the bottom right corner\non or off."
+      "text": "{Color:11}You can toggle the {Color:1}minimap{Color:11}\nin the bottom right corner\non or off.",
+      "source_hash": "1f846c17c3695088"
     },
     {
       "id": "1d18",
       "run": 2,
-      "original": "{Color:11}SELECT opens your inventory.\n{Icon:5}/{Icon:6}: Map tab.",
-      "text": "{Color:11}Open your inventory and\nchoose the {Color:1}Map tab{Color:11}."
+      "text": "{Color:11}Open your inventory and\nchoose the {Color:1}Map tab{Color:11}.",
+      "source_hash": "fc6428cc6286b0a3"
     },
     {
       "id": "1f4f",
       "run": 1,
-      "original": "{Color:5}If I figure something out, press {Icon:12}\nand I'll tell it to you. Hopefully you'll\nmanage to get by without my help\nuntil then!{Color:11}",
-      "text": "{Color:5}If I figure something out, listen\nand I'll tell it to you. Hopefully you'll\nmanage to get by without my help\nuntil then!{Color:11}"
+      "text": "{Color:5}If I figure something out, listen\nand I'll tell it to you. Hopefully you'll\nmanage to get by without my help\nuntil then!{Color:11}",
+      "source_hash": "c63d1df14fcb631e"
     },
     {
       "id": "271a",
       "run": 1,
-      "original": "{Color:11}I'll start with {Color:1}sideways jumps{Color:11}.\nUse {Icon:5} to lock on to that log with\nL-Targeting, then press {Icon:1} while\nsliding {Icon:17} left or right.",
-      "text": "{Color:11}I'll start with {Color:1}sideways jumps{Color:11}.\nLock on to that log, then\njump while moving left or right."
+      "text": "{Color:11}I'll start with {Color:1}sideways jumps{Color:11}.\nLock on to that log, then\njump while moving left or right.",
+      "source_hash": "302080f38b14270b"
     },
     {
       "id": "271b",
       "run": 0,
-      "original": "{Color:1}Jump sideways {Color:11}by pressing {Icon:1} while\nsliding {Icon:17} left or right after you have\nused {Icon:5} to target something.",
-      "text": "{Color:1}Jump sideways{Color:11} by locking on\nto a target, then jumping\nwhile moving left or right."
+      "text": "{Color:1}Jump sideways{Color:11} by locking on\nto a target, then jumping\nwhile moving left or right.",
+      "source_hash": "d85d56c8abe96203"
     },
     {
       "id": "271c",
       "run": 0,
-      "original": "Next is the {Color:1}roll{Color:11}.\nAfter pressing {Icon:5} to L-Target,\npress {Icon:1} while sliding {Icon:17} forward\nto roll.",
-      "text": "Next is the {Color:1}roll{Color:11}.\nLock on to a target, then\nroll while moving forward."
+      "text": "Next is the {Color:1}roll{Color:11}.\nLock on to a target, then\nroll while moving forward.",
+      "source_hash": "80b2d30b0b698d37"
     },
     {
       "id": "271d",
       "run": 0,
-      "original": "After L-Targeting with {Icon:5}, press {Icon:1}\nwhile sliding {Icon:17} forward to move\nand perform a {Color:1}roll{Color:11}.",
-      "text": "Lock on to a target, then move\nforward and perform a {Color:1}roll{Color:11}."
+      "text": "Lock on to a target, then move\nforward and perform a {Color:1}roll{Color:11}.",
+      "source_hash": "3a4d9bdc2bd2375a"
     },
     {
       "id": "271e",
       "run": 0,
-      "original": "Next is the {Color:1}backflip{Color:11}.\nLock on and L-Target the log with {Icon:5},\nthen press {Icon:1} while sliding {Icon:17} down\nto jump.",
-      "text": "Next is the {Color:1}backflip{Color:11}.\nLock on to the log, then\njump while moving backward."
+      "text": "Next is the {Color:1}backflip{Color:11}.\nLock on to the log, then\njump while moving backward.",
+      "source_hash": "d9d774b0647f1dc9"
     },
     {
       "id": "271f",
       "run": 0,
-      "original": "Perform the {Color:1}backflip{Color:11} by pressing {Icon:1}\nwhile sliding {Icon:17} down after you've\nlocked on to your target with {Icon:5}.",
-      "text": "Perform the {Color:1}backflip{Color:11} by locking\non to a target, then jumping\nwhile moving backward."
+      "text": "Perform the {Color:1}backflip{Color:11} by locking\non to a target, then jumping\nwhile moving backward.",
+      "source_hash": "e327bd8a47ef15f7"
     },
     {
       "id": "2720",
       "run": 1,
-      "original": "{Color:11}First is the {Color:1}horizontal cut{Color:11}.\nSimply press {Icon:2}.\nNow then... Begin!",
-      "text": "{Color:11}First is the {Color:1}horizontal cut{Color:11}.\nSwing your sword.\nNow then... Begin!"
+      "text": "{Color:11}First is the {Color:1}horizontal cut{Color:11}.\nSwing your sword.\nNow then... Begin!",
+      "source_hash": "4a973268d0c6d96d"
     },
     {
       "id": "2721",
       "run": 0,
-      "original": "Just press {Icon:2} for a {Color:1}horizontal cut{Color:11}.",
-      "text": "Swing your sword for a {Color:1}horizontal cut{Color:11}."
+      "text": "Swing your sword for a {Color:1}horizontal cut{Color:11}.",
+      "source_hash": "8c6494aa6104a6ea"
     },
     {
       "id": "2722",
       "run": 0,
-      "original": "Next is the {Color:1}vertical cut{Color:11}.\nPress {Icon:2} after L-Targeting with {Icon:5}.\nNow then... Begin!",
-      "text": "Next is the {Color:1}vertical cut{Color:11}.\nLock on, then swing your sword.\nNow then... Begin!"
+      "text": "Next is the {Color:1}vertical cut{Color:11}.\nLock on, then swing your sword.\nNow then... Begin!",
+      "source_hash": "76887789c31b77f1"
     },
     {
       "id": "2723",
       "run": 0,
-      "original": "Press {Icon:2} after L-Targeting with {Icon:5}\nto execute a {Color:1}vertical cut{Color:11}.",
-      "text": "Lock on, then swing your sword\nto execute a {Color:1}vertical cut{Color:11}."
+      "text": "Lock on, then swing your sword\nto execute a {Color:1}vertical cut{Color:11}.",
+      "source_hash": "9071501d9adb5c6f"
     },
     {
       "id": "2724",
       "run": 0,
-      "original": "Next is the {Color:1}thrust{Color:11}.\nAfter pressing {Icon:5} to L-Target,\nslide {Icon:17} forward and press {Icon:2}.",
-      "text": "Next is the {Color:1}thrust{Color:11}.\nLock on, then attack\nwhile moving forward."
+      "text": "Next is the {Color:1}thrust{Color:11}.\nLock on, then attack\nwhile moving forward.",
+      "source_hash": "c2973fd0d8679e2c"
     },
     {
       "id": "2725",
       "run": 0,
-      "original": "After L-Targeting with {Icon:5},\nslide {Icon:17} forward and press {Icon:2}\nto perform a {Color:1}thrust{Color:11}.",
-      "text": "Lock on, then attack\nwhile moving forward\nto perform a {Color:1}thrust{Color:11}."
+      "text": "Lock on, then attack\nwhile moving forward\nto perform a {Color:1}thrust{Color:11}.",
+      "source_hash": "b4eafce1b4c6b645"
     },
     {
       "id": "2726",
       "run": 0,
-      "original": "And finally, the {Color:1}jump attack{Color:11}.\nDraw your sword with {Icon:2}, L-Target\nwith {Icon:5}, and then press {Icon:1} to attack. \nBegin.",
-      "text": "And finally, the {Color:1}jump attack{Color:11}.\nDraw your sword, lock on,\nthen jump to attack.\nBegin."
+      "text": "And finally, the {Color:1}jump attack{Color:11}.\nDraw your sword, lock on,\nthen jump to attack.\nBegin.",
+      "source_hash": "1925b340889d3d5d"
     },
     {
       "id": "2727",
       "run": 0,
-      "original": "Draw your sword with {Icon:2}, L-Target\nwith {Icon:5}, and then press {Icon:1} to perform\nthe {Color:1}jump attack{Color:11}.",
-      "text": "Draw your sword, lock on,\nthen jump to perform\nthe {Color:1}jump attack{Color:11}."
+      "text": "Draw your sword, lock on,\nthen jump to perform\nthe {Color:1}jump attack{Color:11}.",
+      "source_hash": "90aeac7492d861c9"
     },
     {
       "id": "2728",
       "run": 1,
-      "original": "{Color:11}Ah, yes, you can press {Icon:6} to defend\nyourself with your shield.\nDid you know that?",
-      "text": "{Color:11}Ah, yes, you can raise your shield\nto defend yourself.\nDid you know that?"
+      "text": "{Color:11}Ah, yes, you can raise your shield\nto defend yourself.\nDid you know that?",
+      "source_hash": "7975273016fddd46"
     },
     {
       "id": "272a",
       "run": 0,
-      "original": "You must cease L-Targeting and\npress {Icon:1} to put away your sword!",
-      "text": "Stop targeting, then put\naway your sword!"
+      "text": "Stop targeting, then put\naway your sword!",
+      "source_hash": "1989cdef646e5e97"
     },
     {
       "id": "272b",
       "run": 0,
-      "original": "Do not target with {Icon:5}!",
-      "text": "Stop targeting!"
+      "text": "Stop targeting!",
+      "source_hash": "c5b2a21dac0f9f69"
     },
     {
       "id": "2790",
       "run": 0,
-      "original": "Press {Icon:1} to start.\nCount to {Color:1}10 seconds{Color:11}, and the\nprecise moment you think you've\nhit 10 {Color:2}on the dot{Color:11}, press {Icon:1} again.",
-      "text": "Start the timer.\nCount to {Color:1}10 seconds{Color:11}, then stop\nthe timer the precise moment\nyou think you hit 10 {Color:2}on the dot{Color:11}."
+      "text": "Start the timer.\nCount to {Color:1}10 seconds{Color:11}, then stop\nthe timer the precise moment\nyou think you hit 10 {Color:2}on the dot{Color:11}.",
+      "source_hash": "b5e58ba87f0014b5"
     },
     {
       "id": "29d6",
       "run": 0,
-      "original": "Use {Icon:17} to browse.\n \n{Color:2}",
-      "text": "Browse the goods.\n \n{Color:2}"
+      "text": "Browse the goods.\n \n{Color:2}",
+      "source_hash": "2228bd6797714205"
     },
     {
       "id": "2a00",
       "run": 0,
-      "original": "{Icon:17} Move                                           {Icon:2} Quit",
-      "text": "Move view                                           Finish"
+      "text": "Move view                                           Finish",
+      "source_hash": "d9b4535b7ab7f3d9"
     },
     {
       "id": "2b5f",
       "run": 1,
-      "original": "\n{Color:11}Select numbers with {Icon:17}.\nPress {Icon:1} to confirm.",
-      "text": "\n{Color:11}Choose your numbers,\nthen confirm your choice."
+      "text": "\n{Color:11}Choose your numbers,\nthen confirm your choice.",
+      "source_hash": "fd32f14d2e3a2ea9"
     },
     {
       "id": "346e",
       "run": 0,
-      "original": "Do ya think a horse that pathetic\nwould gallop if you pushed {Icon:17}\nforward? And would it run {Color:1}faster\n{Color:11}if you pressed {Icon:1}?",
-      "text": "Do ya think a horse that pathetic\nwould gallop if you urged it\nforward? And would it run {Color:1}faster\n{Color:11}if you spurred it on?"
+      "text": "Do ya think a horse that pathetic\nwould gallop if you urged it\nforward? And would it run {Color:1}faster\n{Color:11}if you spurred it on?",
+      "source_hash": "db40ce559cb7a406"
     },
     {
       "id": "3496",
       "run": 0,
-      "original": "I bet even that horse runs a little\nif you slide {Icon:17} forward.\nAnd it probably runs {Color:1}faster {Color:11}if you\npress {Icon:1} while riding it.",
-      "text": "I bet even that horse runs a little\nif you urge it forward.\nAnd it probably runs {Color:1}faster{Color:11} if you\nspur it on while riding it."
+      "text": "I bet even that horse runs a little\nif you urge it forward.\nAnd it probably runs {Color:1}faster{Color:11} if you\nspur it on while riding it.",
+      "source_hash": "fed75db9a915470c"
     },
     {
       "id": "3528",
       "run": 2,
-      "original": "\nChoose an amount with {Icon:17}.\nPress {Icon:1} to decide.",
-      "text": "\nChoose an amount,\nthen confirm your choice."
+      "text": "\nChoose an amount,\nthen confirm your choice.",
+      "source_hash": "e35e37bcb6dd4c6e"
     },
     {
       "id": "51a2",
       "run": 0,
-      "original": "You learned part of a new song\nfrom Mikau's diary!\nIt starts out: {Icon:5}{Icon:6}{Icon:4}{Icon:5}.\nThen it goes: {Icon:6}{Icon:4}{Icon:3}{Icon:6}.",
-      "text": "You learned part of a new song\nfrom Mikau's diary!\nFirst notes: re fa la re.\nThen: fa la ti fa."
+      "text": "You learned part of a new song\nfrom Mikau's diary!\nFirst notes: re fa la re.\nThen: fa la ti fa.",
+      "source_hash": "f2a4969ad20eaa03"
     },
     {
       "id": "51a3",
       "run": 0,
-      "original": "You completed the new song\nwith Japas!\nIt starts out: {Icon:4}{Icon:4}{Icon:6}{Icon:5}{Icon:5}{Icon:6}{Icon:4}{Icon:5}.\nThen it goes: {Icon:3}{Icon:3}{Icon:4}{Icon:6}{Icon:6}{Icon:4}{Icon:3}{Icon:6}.",
-      "text": "You completed the new song\nwith Japas!\nFirst: la la fa re re fa la re.\nThen: ti ti la fa fa la ti fa."
+      "text": "You completed the new song\nwith Japas!\nFirst: la la fa re re fa la re.\nThen: ti ti la fa fa la ti fa.",
+      "source_hash": "60f6f0e43a89e3f3"
     },
     {
       "id": "5206",
       "run": 0,
-      "original": "Use {Icon:23} to pick a time with Tatl.\nSet the {Color:1}alarm{Color:11} with {Icon:1}. You can only\nset one at a time! Remove the\nalarm from your schedule with {Icon:3}.",
-      "text": "Choose a time with Tatl and set\nthe {Color:1}alarm{Color:11}. You can only set one\nat a time! You can also remove\nthe alarm from your schedule."
+      "text": "Choose a time with Tatl and set\nthe {Color:1}alarm{Color:11}. You can only set one\nat a time! You can also remove\nthe alarm from your schedule.",
+      "source_hash": "2046b56a8f81f281"
     },
     {
       "id": "5741",
       "run": 0,
-      "original": "This game supports the Circle Pad Pro.\nIf you are using one, please press {Icon:53}\non your Circle Pad Pro now.",
-      "text": "This game supports the Circle Pad Pro.\nIf you are using one, please\nactivate it now."
+      "text": "This game supports the Circle Pad Pro.\nIf you are using one, please\nactivate it now.",
+      "source_hash": "b85540738c921c1a"
     },
     {
       "id": "5745",
       "run": 0,
-      "original": "{Color:4}L-TARGETING: HOLD{Color:11}\n",
-      "text": "{Color:4}TARGETING: HOLD{Color:11}\n"
+      "text": "{Color:4}TARGETING: HOLD{Color:11}\n",
+      "source_hash": "743b832dc3355782"
     },
     {
       "id": "5745",
       "run": 1,
-      "original": "Target while holding down {Icon:5}.",
-      "text": "Hold targeting to lock on."
+      "text": "Hold targeting to lock on.",
+      "source_hash": "ede8b884bc916e60"
     },
     {
       "id": "5746",
       "run": 0,
-      "original": "{Color:4}L-TARGETING: SWITCH{Color:11}\n",
-      "text": "{Color:4}TARGETING: SWITCH{Color:11}\n"
+      "text": "{Color:4}TARGETING: SWITCH{Color:11}\n",
+      "source_hash": "b4c86d0732c56f99"
     },
     {
       "id": "5746",
       "run": 1,
-      "original": "Continue targeting even after\nreleasing {Icon:5}.",
-      "text": "Lock on until targeting\nis used again."
+      "text": "Lock on until targeting\nis used again.",
+      "source_hash": "7508ccd1a7413f3d"
     },
     {
       "id": "5749",
       "run": 1,
-      "original": "Slide {Icon:17} in the direction you want\nto look.",
-      "text": "Move the view in the direction\nyou want to look."
+      "text": "Move the view in the direction\nyou want to look.",
+      "source_hash": "47c173a576a3afe5"
     },
     {
       "id": "574a",
       "run": 2,
-      "original": "Use {Icon:20} to look up and {Icon:18} to look down.",
-      "text": "Down looks up; up looks down."
+      "text": "Down looks up; up looks down.",
+      "source_hash": "8cc214b9285568d5"
     },
     {
       "id": "574b",
       "run": 2,
-      "original": "Use {Icon:21} to look right and {Icon:19} to look left.",
-      "text": "Left looks right; right looks left."
+      "text": "Left looks right; right looks left.",
+      "source_hash": "df025c8264cd98ef"
     },
     {
       "id": "574c",
       "run": 1,
-      "original": "Slide {Icon:17} in the opposite direction of\nwhere you want to look.",
-      "text": "Move opposite to the direction\nyou want to look."
+      "text": "Move opposite to the direction\nyou want to look.",
+      "source_hash": "700b9ebd5398b282"
     },
     {
       "id": "574d",
       "run": 1,
-      "original": "Use {Icon:18} to ascend and {Icon:20} to descend.",
-      "text": "Move up to ascend, down to descend."
+      "text": "Move up to ascend, down to descend.",
+      "source_hash": "ad72a6ea530e20ae"
     },
     {
       "id": "574e",
       "run": 1,
-      "original": "Use {Icon:20} to ascend and {Icon:18} to descend.",
-      "text": "Move down to ascend, up to descend."
+      "text": "Move down to ascend, up to descend.",
+      "source_hash": "7a6b43f5f56f464e"
     },
     {
       "id": "5751",
       "run": 1,
-      "original": "Slide the right {Icon:17} in the direction you\nwant to look.",
-      "text": "Move the view in the direction\nyou want to look."
+      "text": "Move the view in the direction\nyou want to look.",
+      "source_hash": "4e663c60a6079346"
     },
     {
       "id": "5752",
       "run": 2,
-      "original": "Slide the right {Icon:20} to look up, and the\nright {Icon:18} to look down.",
-      "text": "Move down to look up,\nand up to look down."
+      "text": "Move down to look up,\nand up to look down.",
+      "source_hash": "02c92e0638c95f25"
     },
     {
       "id": "5753",
       "run": 2,
-      "original": "Slide the right {Icon:21} to look right, and the\nright {Icon:19} to look left.",
-      "text": "Move left to look right,\nand right to look left."
+      "text": "Move left to look right,\nand right to look left.",
+      "source_hash": "5d2d6161856c2021"
     },
     {
       "id": "5754",
       "run": 1,
-      "original": "Slide the right {Icon:17} in the opposite\ndirection of where you want to look.",
-      "text": "Move opposite to the direction\nyou want to look."
+      "text": "Move opposite to the direction\nyou want to look.",
+      "source_hash": "f34ed919e2c38261"
     },
     {
       "id": "5a01",
       "run": 0,
-      "original": "Hehehe!\nDid ya work {Icon:1} and {Icon:17} like a good\nlittle fisherman?",
-      "text": "Hehehe!\nDid ya hook and reel 'em in like\na good little fisherman?"
+      "text": "Hehehe!\nDid ya hook and reel 'em in like\na good little fisherman?",
+      "source_hash": "50001da37fca1e9c"
     }
   ]
 }

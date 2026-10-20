@@ -14,6 +14,8 @@ def check(package):
         with zipfile.ZipFile(package) as archive:
             archive.extractall(tmp)
         root = Path(tmp) / 'dekui'
+        subprocess.run([str(root / 'Majora-ReMasked.exe'), '--version'],
+                       cwd=tmp, check=True, timeout=30)
         python = root / 'runtime/python/python.exe'
         env = os.environ.copy()
         env['PATH'] = str(Path(os.environ['SystemRoot']) / 'System32')

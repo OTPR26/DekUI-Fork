@@ -21,7 +21,7 @@ int main(int argc,char** argv) {
         auto expected=original[i];
         if(i==entry+8-Memory::Base) expected=0; // clear only native instant flag
         if(i>=offset && i<offset+size)
-            expected=i-offset<replacement.text.size()?replacement.text[i-offset]:0;
+            expected=i-offset<replacement.text.size()?Value(replacement.text)[i-offset]:0;
         assert(m.data[i]==expected);
     }
     auto edited=m.data;m.writes=0;Apply(m,Memory::Self,0xc01);
