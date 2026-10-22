@@ -50,6 +50,7 @@ class CitraApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         application = this
+        if (BuildConfig.DEKUI_PRESENTATION) org.citra.citra_emu.utils.LauncherIconSelection.initialize(this)
         documentsTree = DocumentsTree()
         org.citra.citra_emu.utils.DekuiAndroidSetup.initializeStorage(this)
         val storageReady = !BuildConfig.DEKUI_PRESENTATION ||

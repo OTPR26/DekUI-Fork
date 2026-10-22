@@ -1,8 +1,1 @@
-<?xml version="1.0" encoding="utf-8"?>
-<inset xmlns:android="http://schemas.android.com/apk/res/android"
-    android:insetLeft="18%"
-    android:insetTop="18%"
-    android:insetRight="18%"
-    android:insetBottom="18%">
-    <bitmap android:src="@drawable/deku_flower" android:gravity="fill" />
-</inset>
+<inset xmlns:android="http://schemas.android.com/apk/res/android" android:insetLeft="20%" android:insetRight="20%" android:insetTop="30%" android:insetBottom="30%"><bitmap android:src="@drawable/dekui_launcher_masks" android:gravity="fill" /></inset>

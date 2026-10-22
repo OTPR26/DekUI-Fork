@@ -159,6 +159,41 @@ class DekuiSettingsActivity : AppCompatActivity() {
     private fun number(text: String,key: String,default: Float,min: Float,max: Float,step: Float=1f) {
         slider(text,store.read().optDouble(key,default.toDouble()).toFloat(),min,max,step) { update(key to it) }
     }
+    private fun iconSelection() {
+        section("Icon selection")
+        val icons = intArrayOf(R.mipmap.launcher_icon_0, R.mipmap.launcher_icon_1,
+            R.mipmap.launcher_icon_2, R.mipmap.launcher_icon_3, R.mipmap.launcher_icon_4)
+        val selected = LauncherIconSelection.selected(this)
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        icons.forEachIndexed { index, drawable ->
+            row.addView(ImageButton(this).apply {
+                setImageResource(drawable)
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                contentDescription = if (index == 0) "Combined icon" else "Icon $index"
+                isSelected = index == selected
+                isFocusable = true
+                setPadding(px(8f), px(8f), px(8f), px(8f))
+                fun border(focused: Boolean) {
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        setColor(Color.BLACK)
+                        cornerRadius = px(10f).toFloat()
+                        setStroke(px(if (focused || isSelected) 4f else 1f).coerceAtLeast(1),
+                            if (focused) Color.WHITE else if (isSelected) purple else Color.DKGRAY)
+                    }
+                }
+                border(false)
+                setOnFocusChangeListener { _, focused -> border(focused) }
+                setOnClickListener {
+                    if (index != selected) runCatching {
+                        LauncherIconSelection.select(this@DekuiSettingsActivity, index)
+                        render()
+                    }.onFailure { error(it) }
+                }
+            }, LinearLayout.LayoutParams(0, px(165f), 1f).apply { setMargins(px(4f), 0, px(4f), 0) })
+        }
+        content.addView(row)
+        note("Changes the home-screen icon. Your launcher may take a moment to refresh.")
+    }
     private fun render() {
         val root=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setBackgroundColor(0xFF08070D.toInt());setPadding(px(30f),px(22f),px(30f),px(22f)) }
         val header=LinearLayout(this).apply { gravity=Gravity.CENTER_VERTICAL }
@@ -186,6 +221,7 @@ class DekuiSettingsActivity : AppCompatActivity() {
                 }
                 note("Applies when you start the game. Settings menus remain in English.")
                 note("Game data: Internal storage/mm3dport\nHUD settings, controller bindings, saves and mods are stored here.")
+                iconSelection()
                 bool("Show frame rate","show_performance")
                 slider("Menu size",size.toFloat(),0f,40f) { update("android_menu_text_size" to it.toInt());size=it.toInt();render() }
                 addButton("Reset menu size") { update("android_menu_text_size" to 20);size=20;render() }
