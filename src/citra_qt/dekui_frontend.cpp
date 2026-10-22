@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <array>
+#include <algorithm>
 #include <functional>
 #include <stdexcept>
 #include <QApplication>
@@ -22,6 +23,8 @@
 #include <QJsonObject>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QIcon>
+#include <QButtonGroup>
 #include <QListWidget>
 #include <QMessageBox>
 #include <QPainter>
@@ -122,6 +125,44 @@ void SetPreference(const QString& key, const QString& value) {
     Write(PrefsPath(), obj);
     if (key == QStringLiteral("textures"))
         DesktopImport::SyncTextureSource();
+}
+int SelectedIcon() {
+    return std::clamp(Read(PrefsPath()).value(QStringLiteral("launcher_icon")).toString().toInt(), 0, 4);
+}
+QString IconResource(int index) {
+    return QStringLiteral(":/dekui/icon-%1.png").arg(index);
+}
+void ApplyIcon() {
+    const auto resource = IconResource(SelectedIcon());
+    const QIcon icon(resource);
+    QApplication::setWindowIcon(icon);
+    for (auto* widget : QApplication::topLevelWidgets())
+        widget->setWindowIcon(icon);
+#ifdef Q_OS_LINUX
+    // Update the same managed desktop entry; never create another shortcut.
+    const auto iconPath = Root() + QStringLiteral("/user/config/launcher/icon-%1.png").arg(SelectedIcon());
+    QDir().mkpath(QFileInfo(iconPath).absolutePath());
+    if (!QFileInfo::exists(iconPath))
+        QFile::copy(resource, iconPath);
+    const auto applications = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + QStringLiteral("/applications/");
+    for (const auto& name : {QStringLiteral("io.github.tgacquin.dekui.desktop"), QStringLiteral("majora-remasked.desktop")}) {
+        const auto path = applications + name;
+        QFile input(path);
+        if (!input.open(QIODevice::ReadOnly)) continue;
+        const auto previous = QString::fromUtf8(input.readAll());
+        input.close();
+        if (!previous.contains(QStringLiteral("X-ReMasked-Managed=true"))) continue;
+        auto lines = previous.split(QLatin1Char('\n'));
+        for (auto& line : lines)
+            if (line.startsWith(QStringLiteral("Icon="))) line = QStringLiteral("Icon=") + iconPath;
+        const auto updated = lines.join(QLatin1Char('\n'));
+        if (updated != previous) {
+            QSaveFile output(path);
+            if (output.open(QIODevice::WriteOnly) && output.write(updated.toUtf8()) >= 0)
+                output.commit();
+        }
+    }
+#endif
 }
 QPushButton* Button(QVBoxLayout* box, const QString& text, std::function<void()> callback) {
     auto* b = new QPushButton(text);
@@ -755,6 +796,32 @@ class SettingsDialog final : public QDialog {
                    });
             Note(box, running ? QStringLiteral("Restart the game to apply. Settings menus remain in English.")
                               : QStringLiteral("Applies when you start the game. Settings menus remain in English."));
+            Heading(box, QStringLiteral("Icon selection"));
+            auto* icons = new QHBoxLayout;
+            auto* group = new QButtonGroup(this);
+            group->setExclusive(true);
+            for (int index = 0; index < 5; ++index) {
+                auto* option = new QPushButton;
+                option->setCheckable(true);
+                option->setChecked(index == SelectedIcon());
+                option->setIcon(QIcon(IconResource(index)));
+                option->setIconSize(QSize(72, 72));
+                option->setMinimumSize(86, 86);
+                option->setAccessibleName(index == 0 ? QStringLiteral("Combined icon") : QStringLiteral("Icon %1").arg(index));
+                option->setStyleSheet(QStringLiteral("QPushButton{background:black;border:1px solid #49404f;padding:4px;} QPushButton:checked{border:3px solid #b97df2;} QPushButton:focus{border:3px solid white;}"));
+                group->addButton(option, index);
+                icons->addWidget(option);
+            }
+            connect(group, &QButtonGroup::idClicked, this, [](int index) {
+                SetPreference(QStringLiteral("launcher_icon"), QString::number(index));
+                ApplyIcon();
+            });
+            box->addLayout(icons);
+#ifdef Q_OS_MACOS
+            Note(box, QStringLiteral("Changes the Dock and window icon. The app in Finder uses the combined icon."));
+#else
+            Note(box, QStringLiteral("Changes the app icon. Your desktop may take a moment to refresh."));
+#endif
             Bool(QStringLiteral("Show frame rate"), QStringLiteral("show_performance"));
             Note(box, QStringLiteral("MM3D ROM: ") + GameFolder::Rom());
             Button(box, QStringLiteral("Choose MM3D ROM"), [this] {
@@ -1000,6 +1067,7 @@ public:
 bool Startup(QWidget* parent, bool open_mods) {
     QFontDatabase::addApplicationFont(QStringLiteral(":/dekui/font.ttf"));
     DesktopImport::EnsureController();
+    ApplyIcon();
     MenuInput input(qApp);
     return Backdrop(parent, open_mods).exec() == QDialog::Accepted;
 }

@@ -2,4 +2,9 @@
 <file alias="startup.png">../android/app/src/main/res/drawable-nodpi/dekui_launcher_masks.png</file>
 <file alias="flower.png">../android/app/src/main/res/drawable-nodpi/deku_flower.png</file>
 <file alias="font.ttf">../android/app/src/main/res/font/dekui_sans_regular.ttf</file>
+<file alias="icon-0.png">../../resources/mm3d/launcher-icons/icon-0.png</file>
+<file alias="icon-1.png">../../resources/mm3d/launcher-icons/icon-1.png</file>
+<file alias="icon-2.png">../../resources/mm3d/launcher-icons/icon-2.png</file>
+<file alias="icon-3.png">../../resources/mm3d/launcher-icons/icon-3.png</file>
+<file alias="icon-4.png">../../resources/mm3d/launcher-icons/icon-4.png</file>
 </qresource></RCC>

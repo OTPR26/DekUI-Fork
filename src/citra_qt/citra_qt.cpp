@@ -530,7 +530,7 @@ GMainWindow::GMainWindow(Core::System& system_)
     quit_action->setMenuRole(QAction::QuitRole);
     connect(quit_action,&QAction::triggered,this,&QWidget::close);
     ui->menubar->show();
-    setWindowIcon(QIcon(QStringLiteral(":/dekui/flower.png")));render_window->setWindowIcon(windowIcon());
+    setWindowIcon(QIcon(QStringLiteral(":/dekui/icon-0.png")));render_window->setWindowIcon(windowIcon());
     ui->action_Show_Status_Bar->setChecked(false);
     statusBar()->hide();
 

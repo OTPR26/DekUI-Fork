@@ -27,17 +27,31 @@ object LauncherIconSelection {
 
     fun select(context: Context, index: Int) {
         require(index in 0..4)
-        context.packageManager.setComponentEnabledSetting(components(context)[index],
-            PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
+        val component = components(context)[index]
+        if (context.packageManager.getComponentEnabledSetting(component) != PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {
+            context.packageManager.setComponentEnabledSetting(component,
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
+        }
         prefs(context).edit().putInt("selection", index).apply()
     }
 
     private fun refresh(context: Context) {
         val selected = selected(context)
-        components(context).forEachIndexed { index, component ->
-            context.packageManager.setComponentEnabledSetting(component,
-                if (index == selected) PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-                else PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
+        val manager = context.packageManager
+        val changes = components(context).mapIndexedNotNull { index, component ->
+            val desired = if (index == selected) PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                else PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+            if (manager.getComponentEnabledSetting(component) == desired) null else component to desired
+        }
+        if (changes.isEmpty()) return
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            manager.setComponentEnabledSettings(changes.map { (component, state) ->
+                PackageManager.ComponentEnabledSetting(component, state, PackageManager.DONT_KILL_APP)
+            })
+        } else {
+            changes.forEach { (component, state) ->
+                manager.setComponentEnabledSetting(component, state, PackageManager.DONT_KILL_APP)
+            }
         }
     }
 
