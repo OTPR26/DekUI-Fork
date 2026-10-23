@@ -45,19 +45,14 @@ TEST_CASE_METHOD(MerryAudio::MerryAudioFixture, "AudioTest-BiquadFilter",
     }
 
     {
-        /*
-        const s16 b0 = 0.057200221035302035 * (1 << 14);
-        const s16 b1 = 0.11440044207060407 * (1 << 14);
-        const s16 b2 = 0.0238274928983472 * (1 << 14);
-        const s16 a1 = -1.2188761083637 * (1 << 14);
-        const s16 a2 = 0.44767699250490806 * (1 << 14);
-        */
-        srand((u32)time(nullptr));
-        const s16 b0 = rand();
-        const s16 b1 = rand();
-        const s16 b2 = rand();
-        const s16 a1 = rand();
-        const s16 a2 = rand();
+        // Stable low-pass coefficients keep the reference accumulator in range.
+        // Random feedback coefficients can overflow signed arithmetic and make
+        // this comparison depend on the wall-clock seed.
+        constexpr s16 b0 = static_cast<s16>(0.057200221035302035 * (1 << 14));
+        constexpr s16 b1 = static_cast<s16>(0.11440044207060407 * (1 << 14));
+        constexpr s16 b2 = static_cast<s16>(0.0238274928983472 * (1 << 14));
+        constexpr s16 a1 = static_cast<s16>(-1.2188761083637 * (1 << 14));
+        constexpr s16 a2 = static_cast<s16>(0.44767699250490806 * (1 << 14));
 
         std::array<s32, 160> expected_output;
         {
