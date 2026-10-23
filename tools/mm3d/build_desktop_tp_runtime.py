@@ -59,6 +59,8 @@ def main():
         cargo = str(root/'cargo/bin/cargo')
         env['PATH'] = str(root/'cargo/bin') + os.pathsep + env['PATH']
     if target and target.endswith('gnu'):
+        # Keep the disc reader independent of an installed MSYS2 liblzma DLL.
+        env['LZMA_API_STATIC'] = '1'
         env['CC_x86_64_pc_windows_gnu'] = 'gcc'
         env['CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER'] = 'gcc'
     if target:
