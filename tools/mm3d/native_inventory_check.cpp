@@ -4103,4 +4103,5 @@ int main(int argc,char** argv) {
     BottomStripNavigationChecks();
     InventoryTransitionChecks();
     std::cout<<"Native menu signatures, routing, transforms/restoration and guarded paths passed.\n";
+    return 0;
 }
