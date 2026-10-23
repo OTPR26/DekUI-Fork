@@ -1390,6 +1390,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                 auto android=AndroidMenu::Snapshot();
                 bool show=android.touch;
                 if(AndroidMenuStyle::Checkbox("Show touch controls",&show))AndroidMenu::Request(AndroidMenu::TouchVisible,show);
+                if(ImGui::Button("Touch-control appearance / HUD on buttons"))AndroidMenu::Request(AndroidMenu::TouchAppearance);
                 if(ImGui::Button("Edit touch-control placement"))AndroidMenu::Request(AndroidMenu::TouchEdit);
                 if(ImGui::Button("Choose visible touch buttons"))AndroidMenu::Request(AndroidMenu::TouchButtons);
                 int opacity=android.opacity;

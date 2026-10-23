@@ -8,7 +8,7 @@
 
 namespace MM3D::AndroidMenu {
 enum Action { Bind=1, CancelBind, TouchVisible, TouchEdit, TouchButtons, TouchOpacity,
-              TouchScale, Haptics, SwapScreens, LoadAmiibo, RemoveAmiibo, Textures, ClearBind, ClearTextures };
+              TouchScale, Haptics, SwapScreens, LoadAmiibo, RemoveAmiibo, Textures, ClearBind, ClearTextures, TouchAppearance };
 inline std::atomic<int> pending{0};
 inline void Request(Action action, unsigned value=0) {
     int empty=0;

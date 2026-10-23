@@ -574,6 +574,31 @@ class EmulationFragment :
         setInsets()
     }
 
+    private fun showReMaskedTouchAppearance() {
+        val content=android.widget.LinearLayout(requireContext()).apply {
+            orientation=android.widget.LinearLayout.VERTICAL
+            val padding=(20*resources.displayMetrics.density).toInt();setPadding(padding,0,padding,0)
+        }
+        val layouts=android.widget.RadioGroup(requireContext())
+        val names=arrayOf("Nintendo layout", "Swapped A/B layout", "Large action button")
+        names.forEachIndexed { index, name ->
+            layouts.addView(android.widget.RadioButton(requireContext()).apply {id=100+index;text=name})
+        }
+        layouts.check(100+preferences.getInt("ReMaskedTouchFaceLayout",0).coerceIn(0,2))
+        content.addView(layouts)
+        val hud=android.widget.CheckBox(requireContext()).apply {text="HUD on buttons";isChecked=preferences.getBoolean("ReMaskedTouchHud",true)}
+        val floating=android.widget.CheckBox(requireContext()).apply {text="Floating movement stick";isChecked=EmulationMenuSettings.joystickRelCenter}
+        content.addView(hud);content.addView(floating)
+        MaterialAlertDialogBuilder(requireContext()).setTitle("Touch-control appearance").setView(content)
+            .setNegativeButton(android.R.string.cancel,null)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                preferences.edit().putInt("ReMaskedTouchFaceLayout",layouts.checkedRadioButtonId-100)
+                    .putBoolean("ReMaskedTouchHud",hud.isChecked).apply()
+                EmulationMenuSettings.joystickRelCenter=floating.isChecked
+                binding.surfaceInputOverlay.refreshControls()
+            }.show()
+    }
+
     private fun handleDekuiAndroidAction(action: Int) {
         if (action == 0) return
         val kind=action ushr 16; val value=action and 65535
@@ -596,6 +621,7 @@ class EmulationFragment :
                 "content://com.android.externalstorage.documents/document/primary%3AROMs%2Fn3DS"))
             13 -> org.citra.citra_emu.utils.DekuiAndroidMenu.clear(value)
             14 -> org.citra.citra_emu.utils.DekuiTextureStorage.clear()
+            15 -> showReMaskedTouchAppearance()
         }
     }
 
@@ -639,6 +665,7 @@ class EmulationFragment :
     }
 
     override fun onPause() {
+        binding.surfaceInputOverlay.cancelTouchInputs()
         if (NativeLibrary.isRunning()) {
             emulationState.pause()
         }

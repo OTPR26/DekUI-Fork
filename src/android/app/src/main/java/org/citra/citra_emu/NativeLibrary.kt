@@ -120,6 +120,7 @@ object NativeLibrary {
     external fun setDekuiGameLanguage(language: Int): Boolean
     external fun onDekuiScroll(x: Float, y: Float, amount: Float)
 
+    external fun setReMaskedTouchHud(anchors: FloatArray, enabled: Boolean)
     external fun closeDekuiSettings()
     external fun hasDekuiSettings(): Boolean
     external fun openDekuiSettings(): Boolean

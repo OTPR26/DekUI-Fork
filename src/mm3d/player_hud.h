@@ -2,6 +2,7 @@
 #pragma once
 #include "mm3d/hud_adjustments.h"
 #include "mm3d/native_inventory.h"
+#include "mm3d/touch_hud.h"
 namespace MM3D::PlayerHud {
 using namespace NativeInventory;
 using namespace HudAdjustments;
@@ -32,16 +33,30 @@ struct Hook {
     // A/B and X/Y/I/II live in different layouts. Cache their unadjusted
     // rendered bounds so all six scale about the same top-right corner.
     std::array<Bounds,2> button_bounds;
+    std::array<unsigned,3> touch_trace_frames{};
     // Tatl (Hud.chat_alart) belongs to the D-pad in Hud2. Keep the native
     // upper-left bounds so both layouts use the same anchor and vertical push.
     // Cache bounds, not a transform: slider changes apply in either draw order.
     std::array<Bounds,3> upper_bounds; // Dpad, Magic, Hearts
-    template<class M> bool Measure(M& m,U32 node,Bounds& bounds) {
+    template<class M> bool Measure(M& m,U32 node,Bounds& bounds,bool visibleOnly=false) {
         std::vector<Write> unused;std::vector<U32> nodes;
         if(!helper.Transform(m,node,unused,nodes,{1,0,0,1,0,0}))return false;
         const auto f=[&](U32 at)->std::optional<float>{auto b=m.Read(at);if(!b)return {};
             float v=std::bit_cast<float>(*b);return std::isfinite(v)?std::optional<float>(v):std::nullopt;};
+        std::vector<U32> excluded;
         for(auto n:nodes){
+            if(visibleOnly){
+                if(std::find(excluded.begin(),excluded.end(),n)!=excluded.end())continue;
+                const auto flags=m.Read(n+0xd4),alpha=m.Read(n+0x134);
+                const float opacity=alpha?std::bit_cast<float>(*alpha):1.f;
+                if((flags&&!(*flags&1))||!std::isfinite(opacity)||opacity<=0){
+                    // Hidden counters can retain old child matrices and alpha.
+                    // Exclude their entire subtree, not just the hidden parent.
+                    std::vector<Write> ignored;std::vector<U32> branch;
+                    if(!helper.Transform(m,n,ignored,branch,{1,0,0,1,0,0}))return false;
+                    excluded.insert(excluded.end(),branch.begin(),branch.end());continue;
+                }
+            }
             auto geo=m.Read(n+0x28);if(!geo)return false;if(!*geo)continue;
             auto type=m.Read(*geo+4);if(!type)return false;if((*type&65535)!=6)continue;
             auto x=f(*geo+0x14),y=f(*geo+0x18),w=f(*geo+0x20),h=f(*geo+0x24),
@@ -85,6 +100,59 @@ struct Hook {
             const int dx=button_x[i].load(),dy=button_y[i].load();if(!dx&&!dy)continue;
             for(auto n:nodes)if(Named(m,n,icons[i])||(i<4&&Named(m,n,bases[i])))
                 if(!helper.Transform(m,n,writes,seen,{1,0,0,1,float(dx),float(dy)}))return;
+        }
+        for(auto w:writes)m.Write(w.address,w.after);
+        frames.back().insert(frames.back().end(),writes.begin(),writes.end());
+    }
+    template<class M> void PlaceTouchHud(M& m,const std::vector<U32>& nodes,bool actions,bool hud2) {
+        const auto state=TouchHud::Snapshot();if(!state.enabled)return;
+        constexpr const char* icons[]{"a_action_button","b_action_button","icon_item_x_g","icon_item_y_g",
+            "icon_item_1_g","icon_item_2_g","icon_u_container","icon_d_container","icon_l_container","icon_r_container"};
+        constexpr const char* artwork[]{"a_action_text","a_action_icon","icon_x_btn","icon_y_btn",
+            "icon_c_btn01","icon_c_btn03","icon_u","icon_d","icon_l","icon_r"};
+        std::vector<Write> writes;
+        const unsigned kind=actions?0:hud2?1:2;
+        const auto sample=touch_trace_frames[kind]++;
+        const bool trace=sample<2||(sample<18000&&sample%600==0);
+        for(unsigned slot=0;slot<state.anchors.size();++slot){
+            if(slot>=6?!hud2:actions!=(slot<2))continue;
+            const auto target=state.anchors[slot];if(!target.Valid())continue;
+            U32 icon=0;for(auto n:nodes)if(Named(m,n,icons[slot])){icon=n;break;}
+            if(!icon){if(trace)TouchHud::Trace(slot,"missing-icon",target);continue;}
+            std::vector<Write> unused;std::vector<U32> children;
+            if(!helper.Transform(m,icon,unused,children,{1,0,0,1,0,0})){if(trace)TouchHud::Trace(slot,"walk-failed",target);continue;}
+            U32 art=0;for(auto n:children)if(Named(m,n,artwork[slot])){art=n;break;}
+            // Native button backgrounds and their labels have different origins
+            // from the item image. Position from the live image, never its base.
+            Bounds bounds;if(!Measure(m,art?art:icon,bounds,true)){
+                if(trace)TouchHud::Trace(slot,"measure-failed",target,float(art),float(m.Read((art?art:icon)+0x28).value_or(0)));
+                continue;
+            }
+            if(trace)TouchHud::Trace(slot,"bounds",target,bounds.left,bounds.top,bounds.right,bounds.bottom);
+            const float width=bounds.right-bounds.left,height=bounds.bottom-bounds.top;
+            if(width<.01f||height<.01f)continue;
+            const float factor=slot==0?std::min(target.diameter*.85f/width,target.diameter*.28f/height):
+                target.diameter*(slot>=6?.5f:.42f)/std::max(width,height);
+            const float cx=(bounds.left+bounds.right)*.5f,cy=(bounds.top+bounds.bottom)*.5f;
+            std::vector<U32> seen;
+            std::vector<Write> branch;
+            if(!helper.Transform(m,icon,branch,seen,{factor,0,0,factor,target.x-cx*factor,target.y-cy*factor})){
+                if(trace)TouchHud::Trace(slot,"placement-failed",target);continue;
+            }
+            writes.insert(writes.end(),branch.begin(),branch.end());
+        }
+        // The Android view draws the outlines. Suppress the native duplicate
+        // bases and letter labels while retaining live item counts and fades.
+        for(auto n:nodes){
+            bool hide=false;
+            for(const char* name:{"a_button_base","btn_x_g","btn_y_g","btn_corner01_g","btn_corner03_g",
+                "icon_x_base","icon_y_base","icon_1_base","icon_2_base","disp_x_pane","disp_y_pane",
+                "disp_1_pane","disp_2_pane","pane_dpad","always_dpad_outline","icon_item_oca_g"})
+                if(Named(m,n,name)){hide=true;break;}
+            if(hide){std::vector<U32> seen;std::vector<Write> branch;
+                if(helper.Transform(m,n,branch,seen,{0,0,0,0,0,0}))writes.insert(writes.end(),branch.begin(),branch.end());
+                else if(trace)TouchHud::Trace(99,"hide-walk-failed",{},float(n));
+            }
         }
         for(auto w:writes)m.Write(w.address,w.after);
         frames.back().insert(frames.back().end(),writes.begin(),writes.end());
@@ -253,6 +321,7 @@ struct Hook {
             for(auto w:fades)m.Write(w.address,w.after);
             frames.back().insert(frames.back().end(),fades.begin(),fades.end());
         }
+        PlaceTouchHud(m,nodes,hud,hud2);
     }
     template<class M> void End(M& m){if(frames.empty())return;
         for(auto i=frames.back().rbegin();i!=frames.back().rend();++i)m.Write(i->address,i->before);

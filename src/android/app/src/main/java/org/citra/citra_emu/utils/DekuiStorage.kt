@@ -51,6 +51,8 @@ object DekuiStorage {
     private fun controls(context:Context){
         val prefs=PreferenceManager.getDefaultSharedPreferences(context)
         val file=File(root(context),"config/android-controls.json")
+        listener?.let{prefs.unregisterOnSharedPreferenceChangeListener(it)}
+        listener=null
         if(file.isFile){
             val json=JSONObject(file.readText());check(json.optInt("version")==1){"Unsupported controller settings version"}
             val values=json.getJSONObject("bindings");val editor=prefs.edit()
@@ -65,6 +67,7 @@ object DekuiStorage {
             }}
             check(editor.commit())
         }
+        org.citra.citra_emu.overlay.ReMaskedShoulderBindings.migrateLegacy(prefs)
         fun save(){
             val values=JSONObject();prefs.all.filterKeys{bindingKey(it)}.forEach{(k,v)->values.put(k,if(v is Set<*>)JSONArray(v.toList())else v)}
             val json=JSONObject().put("version",1).put("bindings",values)

@@ -1,3 +1,5 @@
+#include "mm3d/touch_hud.h"
+#include "mm3d/widescreen.h"
 // Copyright 2019-2026 Citra Emulator Project / Azahar Emulator Project
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
@@ -536,6 +538,23 @@ jintArray Java_org_citra_citra_1emu_NativeLibrary_pollDekuiSettings([[maybe_unus
 #else
     return nullptr;
 #endif
+}
+
+void Java_org_citra_citra_1emu_NativeLibrary_setReMaskedTouchHud(JNIEnv* env,jclass,jfloatArray values,jboolean enabled) {
+    MM3D::TouchHud::State next;
+#ifdef ENABLE_MM3D_PRESENTATION
+    if(enabled&&window&&values&&env->GetArrayLength(values)==30){
+        std::array<jfloat,30> data{};env->GetFloatArrayRegion(values,0,30,data.data());
+        const auto& layout=window->GetFramebufferLayout();const auto& top=layout.top_screen;
+        next.enabled=layout.top_screen_enabled;
+        static unsigned bridge_traces=0;
+        if(bridge_traces++<6)MM3D::TouchHud::Trace(90,"viewport",{},float(layout.width),float(layout.height),float(top.GetWidth()),float(top.GetHeight()));
+        for(unsigned i=0;i<10;++i)next.anchors[i]=MM3D::TouchHud::Project(data[i*3],data[i*3+1],data[i*3+2],
+            float(layout.width),float(layout.height),float(top.left),float(top.top),
+            float(top.GetWidth()),float(top.GetHeight()),MM3D::Widescreen::Active());
+    }
+#endif
+    MM3D::TouchHud::Publish(next);
 }
 
 void Java_org_citra_citra_1emu_NativeLibrary_closeDekuiSettings(JNIEnv*, jclass) {

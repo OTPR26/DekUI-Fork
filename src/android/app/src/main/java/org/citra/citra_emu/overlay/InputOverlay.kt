@@ -52,6 +52,72 @@ class InputOverlay(context: Context?, attrs: AttributeSet?) :
     private var joystickBeingConfigured: InputOverlayDrawableJoystick? = null
     private val settingsViewModel = NativeLibrary.sEmulationActivity.get()!!.settingsViewModel
 
+    private val remaskedTouch by lazy {
+        ReMaskedTouchControls(context, this, preferences, object : ReMaskedTouchControls.Bridge {
+            private val axes = FloatArray(4)
+            override fun button(id: Int, down: Boolean) {
+                if (id == 4) { if (down) NativeLibrary.openDekuiSettings(); return }
+                val key = when(id) {
+                    0 -> NativeLibrary.ButtonType.BUTTON_A
+                    1 -> NativeLibrary.ButtonType.BUTTON_B
+                    2 -> NativeLibrary.ButtonType.BUTTON_X
+                    3 -> NativeLibrary.ButtonType.BUTTON_Y
+                    6 -> NativeLibrary.ButtonType.BUTTON_START
+                    9 -> ReMaskedShoulderBindings.button(id)
+                    10 -> ReMaskedShoulderBindings.button(id)
+                    11 -> NativeLibrary.ButtonType.DPAD_UP
+                    12 -> NativeLibrary.ButtonType.DPAD_DOWN
+                    13 -> NativeLibrary.ButtonType.DPAD_LEFT
+                    14 -> NativeLibrary.ButtonType.DPAD_RIGHT
+                    else -> return
+                }
+                NativeLibrary.onGamePadEvent(NativeLibrary.TOUCHSCREEN_DEVICE, key, if(down) 1 else 0)
+                if(down) hapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+            }
+            override fun axis(id: Int, value: Int) {
+                if(id >= 4) {
+                    NativeLibrary.onGamePadEvent(NativeLibrary.TOUCHSCREEN_DEVICE,
+                        ReMaskedShoulderBindings.trigger(id),
+                        if(value>0) 1 else 0)
+                    return
+                }
+                axes[id] = value / 32767f
+                val start = id / 2 * 2
+                NativeLibrary.onGamePadMoveEvent(NativeLibrary.TOUCHSCREEN_DEVICE,
+                    if(start==0) NativeLibrary.ButtonType.STICK_LEFT else NativeLibrary.ButtonType.STICK_C,
+                    axes[start], axes[start+1])
+            }
+            override fun opacity() = preferences.getInt("controlOpacity", 50) / 100f
+            override fun size() = (preferences.getInt("controlScale", 50) + 50) / 100f
+            override fun state(): Int = 1 or (if(EmulationMenuSettings.showOverlay) 4 else 0) or
+                (preferences.getInt("ReMaskedTouchFaceLayout",0).coerceIn(0,2) shl 3) or
+                (if(EmulationMenuSettings.joystickRelCenter) 64 else 0) or 128 or
+                (if(preferences.getBoolean("ReMaskedTouchHud",true)) 256 else 0)
+            override fun enabled(value: Boolean) { EmulationMenuSettings.showOverlay=value; invalidate() }
+            override fun hud(anchors: FloatArray, enabled: Boolean) {
+                NativeLibrary.setReMaskedTouchHud(anchors, enabled)
+            }
+        })
+    }
+
+    fun cancelTouchInputs() {
+        if(org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) {
+            remaskedTouch.cancelInputs()
+            NativeLibrary.setReMaskedTouchHud(FloatArray(30),false)
+        }
+    }
+
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        if(!hasWindowFocus) cancelTouchInputs()
+        else if(org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) remaskedTouch.refresh()
+    }
+
+    override fun onDetachedFromWindow() {
+        cancelTouchInputs()
+        super.onDetachedFromWindow()
+    }
+
     // Stores the ID of the pointer that interacted with the 3DS touchscreen.
     private var touchscreenPointerId = -1
 
@@ -78,6 +144,12 @@ class InputOverlay(context: Context?, attrs: AttributeSet?) :
 
     override fun draw(canvas: Canvas) {
         super.draw(canvas)
+        if(org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) {
+            if(remaskedTouch.width!=width || remaskedTouch.height!=height) remaskedTouch.layout(0,0,width,height)
+            if(NativeLibrary.isDekuiSettingsOpen()) {cancelTouchInputs();remaskedTouch.refresh();postInvalidateOnAnimation();return}
+            remaskedTouch.draw(canvas)
+            return
+        }
         overlayButtons.forEach { it.draw(canvas) }
         overlayDpads.forEach { it.draw(canvas) }
         overlayJoysticks.forEach { it.draw(canvas) }
@@ -165,7 +237,8 @@ class InputOverlay(context: Context?, attrs: AttributeSet?) :
     }
 
     override fun onTouch(v: View, event: MotionEvent): Boolean {
-        if (handleDekuiTouch(event)) return true
+        if (handleDekuiTouch(event)) {cancelTouchInputs();return true}
+        if(org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) return remaskedTouch.onTouchEvent(event)
         if (isInEditMode) {
             return onTouchWhileEditing(event)
         }
@@ -732,6 +805,7 @@ class InputOverlay(context: Context?, attrs: AttributeSet?) :
     }
 
     fun refreshControls() {
+        if(org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) {remaskedTouch.refresh();return}
         // Remove all the overlay buttons from the HashSet.
         overlayButtons.clear()
         overlayDpads.clear()
@@ -760,6 +834,7 @@ class InputOverlay(context: Context?, attrs: AttributeSet?) :
 
     fun setIsInEditMode(isInEditMode: Boolean) {
         this.isInEditMode = isInEditMode
+        if(org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) remaskedTouch.setEditing(isInEditMode)
     }
 
     private fun defaultOverlay() {
@@ -789,6 +864,7 @@ class InputOverlay(context: Context?, attrs: AttributeSet?) :
     }
 
     fun resetButtonPlacement() {
+        if(org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) {remaskedTouch.resetPlacement();return}
         val isLandscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         if (isLandscape) {
             defaultOverlayLandscape()

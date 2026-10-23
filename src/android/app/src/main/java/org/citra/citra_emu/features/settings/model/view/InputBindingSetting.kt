@@ -15,6 +15,7 @@ import androidx.preference.PreferenceManager
 import org.citra.citra_emu.CitraApplication
 import org.citra.citra_emu.NativeLibrary
 import org.citra.citra_emu.R
+import org.citra.citra_emu.overlay.ReMaskedShoulderBindings
 import org.citra.citra_emu.features.hotkeys.Hotkey
 import org.citra.citra_emu.features.settings.model.AbstractSetting
 import org.citra.citra_emu.features.settings.model.AbstractStringSetting
@@ -153,6 +154,10 @@ class InputBindingSetting(val abstractSetting: AbstractSetting, titleId: Int) :
      * Removes the old mapping for this key from the settings, e.g. on user clearing the setting.
      */
     fun removeOldMapping() {
+        if (isTrigger()) {
+            ReMaskedShoulderBindings.clearShoulder(preferences,buttonCode,abstractSetting.key)
+            return
+        }
         // Try remove all possible keys we wrote for this setting
         val oldKey = preferences.getString(reverseKey, "")
         if (oldKey != "") {
@@ -163,6 +168,7 @@ class InputBindingSetting(val abstractSetting: AbstractSetting, titleId: Int) :
                 .remove(oldKey + "_GuestButton") // Used for axis button
                 .remove(oldKey + "_Inverted") // used for axis inversion
                 .remove(reverseKey)
+                .apply()
             val buttonCodes = try {
                 preferences.getStringSet(oldKey, mutableSetOf<String>())!!.toMutableSet()
             } catch (e: ClassCastException) {
@@ -183,10 +189,11 @@ class InputBindingSetting(val abstractSetting: AbstractSetting, titleId: Int) :
         val key = getInputButtonKey(keyEvent)
         // Pull in all codes associated with this key
         // Migrate from the old int preference if need be
+        // Remove the previous route before reading the destination set. Otherwise
+        // rebinding to the same key can restore codes from the old snapshot.
+        removeOldMapping()
         val buttonCodes = InputBindingSetting.getButtonSet(keyEvent)
         buttonCodes.add(buttonCode)
-        // Cleanup old mapping for this setting
-        removeOldMapping()
 
         editor.putStringSet(key, buttonCodes.mapTo(mutableSetOf()) { it.toString() })
 
@@ -607,8 +614,8 @@ class InputBindingSetting(val abstractSetting: AbstractSetting, titleId: Int) :
          */
         fun applyJoyConBindings() {
             applyBindings(
-                joyconFaceButtonMappings + commonButtonMappings + joyconDpadButtonMappings,
-                joyconStickAxisMappings
+                joyconFaceButtonMappings + gameplayCommonButtons + joyconDpadButtonMappings,
+                joyconStickAxisMappings + gameplayShoulderAxes
             )
         }
 
@@ -620,20 +627,30 @@ class InputBindingSetting(val abstractSetting: AbstractSetting, titleId: Int) :
          * @param useAxisDpad true if the d-pad should be mapped as axis (HAT_X/HAT_Y),
          *   false if it should be mapped as individual button keycodes (DPAD_UP/DOWN/LEFT/RIGHT)
          */
+        private val dekuiShoulderButtons get() = listOf(
+            DefaultButtonMapping(Settings.KEY_BUTTON_L, KeyEvent.KEYCODE_BUTTON_L2, ReMaskedShoulderBindings.TARGET),
+            DefaultButtonMapping(Settings.KEY_BUTTON_R, KeyEvent.KEYCODE_BUTTON_R2, ReMaskedShoulderBindings.SHIELD),
+            DefaultButtonMapping(Settings.KEY_BUTTON_ZL, KeyEvent.KEYCODE_BUTTON_L1, ReMaskedShoulderBindings.ITEM_LEFT),
+            DefaultButtonMapping(Settings.KEY_BUTTON_ZR, KeyEvent.KEYCODE_BUTTON_R1, ReMaskedShoulderBindings.ITEM_RIGHT)
+        )
+        private val dekuiShoulderAxes get() = listOf(
+            DefaultAxisMapping(Settings.KEY_BUTTON_L, MotionEvent.AXIS_LTRIGGER, ReMaskedShoulderBindings.TARGET, 0, false),
+            DefaultAxisMapping(Settings.KEY_BUTTON_R, MotionEvent.AXIS_RTRIGGER, ReMaskedShoulderBindings.SHIELD, 0, false)
+        )
+
+        private val gameplayCommonButtons get() = if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION)
+            dekuiShoulderButtons + commonButtonMappings.filterNot { it.settingKey in Settings.triggerKeys }
+        else commonButtonMappings
+        private val gameplayShoulderAxes get() = if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION)
+            dekuiShoulderAxes else emptyList()
+
         /** Default physical button positions. Installed once on first launch. */
         fun applyDekuiDefaultBindings() {
-            val buttons = xboxFaceButtonMappings + dpadButtonMappings + listOf(
-                DefaultButtonMapping(Settings.KEY_BUTTON_L, KeyEvent.KEYCODE_BUTTON_L2, NativeLibrary.ButtonType.TRIGGER_L),
-                DefaultButtonMapping(Settings.KEY_BUTTON_R, KeyEvent.KEYCODE_BUTTON_R2, NativeLibrary.ButtonType.TRIGGER_R),
-                DefaultButtonMapping(Settings.KEY_BUTTON_ZL, KeyEvent.KEYCODE_BUTTON_L1, NativeLibrary.ButtonType.BUTTON_ZL),
-                DefaultButtonMapping(Settings.KEY_BUTTON_ZR, KeyEvent.KEYCODE_BUTTON_R1, NativeLibrary.ButtonType.BUTTON_ZR),
+            val buttons = xboxFaceButtonMappings + dpadButtonMappings + dekuiShoulderButtons + listOf(
                 DefaultButtonMapping(Settings.KEY_BUTTON_START, KeyEvent.KEYCODE_BUTTON_SELECT, NativeLibrary.ButtonType.BUTTON_START),
                 DefaultButtonMapping(Settings.KEY_BUTTON_SELECT, KeyEvent.KEYCODE_BUTTON_START, NativeLibrary.ButtonType.BUTTON_SELECT)
             )
-            applyBindings(buttons, stickAxisMappings + dpadAxisMappings + listOf(
-                DefaultAxisMapping(Settings.KEY_BUTTON_L, MotionEvent.AXIS_LTRIGGER, NativeLibrary.ButtonType.TRIGGER_L, 0, false),
-                DefaultAxisMapping(Settings.KEY_BUTTON_R, MotionEvent.AXIS_RTRIGGER, NativeLibrary.ButtonType.TRIGGER_R, 0, false)
-            ))
+            applyBindings(buttons, stickAxisMappings + dpadAxisMappings + dekuiShoulderAxes)
         }
 
         /** Shared controller profile translated to Android key and axis IDs. */
@@ -659,19 +676,12 @@ class InputBindingSetting(val abstractSetting: AbstractSetting, titleId: Int) :
                 }
             }
             check(editor.commit()) { "Cannot clear previous game bindings" }
-            val buttons = xboxFaceButtonMappings + dpadButtonMappings + listOf(
-                DefaultButtonMapping(Settings.KEY_BUTTON_L, KeyEvent.KEYCODE_BUTTON_L2, NativeLibrary.ButtonType.TRIGGER_L),
-                DefaultButtonMapping(Settings.KEY_BUTTON_R, KeyEvent.KEYCODE_BUTTON_R2, NativeLibrary.ButtonType.TRIGGER_R),
-                DefaultButtonMapping(Settings.KEY_BUTTON_ZL, KeyEvent.KEYCODE_BUTTON_L1, NativeLibrary.ButtonType.BUTTON_ZL),
-                DefaultButtonMapping(Settings.KEY_BUTTON_ZR, KeyEvent.KEYCODE_BUTTON_R1, NativeLibrary.ButtonType.BUTTON_ZR),
+            val buttons = xboxFaceButtonMappings + dpadButtonMappings + dekuiShoulderButtons + listOf(
                 DefaultButtonMapping(Settings.KEY_BUTTON_START, KeyEvent.KEYCODE_BUTTON_SELECT, NativeLibrary.ButtonType.BUTTON_START),
                 DefaultButtonMapping(Settings.KEY_BUTTON_SELECT, KeyEvent.KEYCODE_BUTTON_START, NativeLibrary.ButtonType.BUTTON_SELECT),
                 DefaultButtonMapping(Settings.KEY_BUTTON_HOME, KeyEvent.KEYCODE_BUTTON_MODE, NativeLibrary.ButtonType.BUTTON_HOME)
             )
-            applyBindings(buttons,stickAxisMappings+dpadAxisMappings+listOf(
-                DefaultAxisMapping(Settings.KEY_BUTTON_L, MotionEvent.AXIS_LTRIGGER, NativeLibrary.ButtonType.TRIGGER_L,0,false),
-                DefaultAxisMapping(Settings.KEY_BUTTON_R, MotionEvent.AXIS_RTRIGGER, NativeLibrary.ButtonType.TRIGGER_R,0,false)
-            ))
+            applyBindings(buttons, stickAxisMappings + dpadAxisMappings + dekuiShoulderAxes)
         }
 
         fun applyAutoMapBindings(isNintendoLayout: Boolean, useAxisDpad: Boolean) {
@@ -681,16 +691,16 @@ class InputBindingSetting(val abstractSetting: AbstractSetting, titleId: Int) :
                 xboxFaceButtonMappings
             }
             val buttonMappings = if (useAxisDpad) {
-                faceButtons + commonButtonMappings
+                faceButtons + gameplayCommonButtons
             } else {
-                faceButtons + commonButtonMappings + dpadButtonMappings
+                faceButtons + gameplayCommonButtons + dpadButtonMappings
             }
             val axisMappings = if (useAxisDpad) {
                 stickAxisMappings + dpadAxisMappings
             } else {
                 stickAxisMappings
             }
-            applyBindings(buttonMappings, axisMappings)
+            applyBindings(buttonMappings, axisMappings + gameplayShoulderAxes)
         }
 
         private fun applyDefaultButtonMapping(
