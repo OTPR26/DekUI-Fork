@@ -63,6 +63,7 @@ class InputOverlay(context: Context?, attrs: AttributeSet?) :
                     2 -> NativeLibrary.ButtonType.BUTTON_X
                     3 -> NativeLibrary.ButtonType.BUTTON_Y
                     6 -> NativeLibrary.ButtonType.BUTTON_START
+                    7 -> NativeLibrary.ButtonType.BUTTON_SELECT
                     9 -> ReMaskedShoulderBindings.button(id)
                     10 -> ReMaskedShoulderBindings.button(id)
                     11 -> NativeLibrary.ButtonType.DPAD_UP
