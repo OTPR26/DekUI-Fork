@@ -32,6 +32,8 @@ add_library(citra_qt STATIC EXCLUDE_FROM_ALL
     dekui_import.cpp
     dekui_import.h
     dekui_frontend.qrc
+    launcher_icon.cpp
+    launcher_icon.h
     citra_qt.cpp
     citra_qt.h
     configuration/config.cpp
@@ -291,7 +293,7 @@ target_sources(citra_qt
 )
 
 if (WIN32)
-    target_link_libraries(citra_qt PRIVATE Qt6::EntryPointImplementation)
+    target_link_libraries(citra_qt PRIVATE Qt6::EntryPointImplementation shell32 shlwapi ole32 propsys uuid)
 endif()
 
 if(ENABLE_SDL2)

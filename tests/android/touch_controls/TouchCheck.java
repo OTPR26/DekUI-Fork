@@ -33,6 +33,17 @@ public class TouchCheck extends Instrumentation {
         v.onTouchEvent(e);e.recycle();
     }
     void draw(ReMaskedTouchControls v,Bitmap image){image.eraseColor(android.graphics.Color.TRANSPARENT);v.draw(new Canvas(image));}
+    android.graphics.RectF buttonBounds(ReMaskedTouchControls view,String label)throws Exception {
+        java.lang.reflect.Field field=ReMaskedTouchControls.class.getDeclaredField("controls");field.setAccessible(true);
+        for(Object control:(Iterable<?>)field.get(view)) {
+            java.lang.reflect.Field text=control.getClass().getDeclaredField("label");text.setAccessible(true);
+            if(label.equals(text.get(control))) {
+                java.lang.reflect.Field bounds=control.getClass().getDeclaredField("bounds");bounds.setAccessible(true);
+                return new android.graphics.RectF((android.graphics.RectF)bounds.get(control));
+            }
+        }
+        return null;
+    }
     void shoulderChecks(){
         SharedPreferences p=getContext().getSharedPreferences("shoulder-check",0);p.edit().clear().commit();
         check(!ReMaskedShoulderBindings.migrateLegacy(p)&&p.getAll().isEmpty(),"Fresh install still receives defaults");
@@ -66,6 +77,16 @@ public class TouchCheck extends Instrumentation {
         Bridge b=new Bridge();View owner=new View(getContext());
         ReMaskedTouchControls v=new ReMaskedTouchControls(getContext(),owner,prefs,b);
         v.layout(0,0,1920,1080);Bitmap image=Bitmap.createBitmap(1920,1080,Bitmap.Config.ARGB_8888);draw(v,image);
+        android.graphics.RectF select=buttonBounds(v,"Select");
+        check(select!=null,"Select is present in the touch layout");
+        event(v,MotionEvent.ACTION_DOWN,new int[]{0},new float[]{select.centerX()},new float[]{select.centerY()});
+        check(b.buttons[7]&&!b.buttons[4],"Select sends its own action instead of Settings");
+        event(v,MotionEvent.ACTION_UP,new int[]{0},new float[]{select.centerX()},new float[]{select.centerY()});
+        check(!b.buttons[7],"Select releases on touch up");
+        prefs.edit().putBoolean("buttonToggle9",false).commit();v.refresh();draw(v,image);
+        check(buttonBounds(v,"Select")==null,"Select respects its visibility preference");
+        prefs.edit().putBoolean("buttonToggle9",true).commit();v.refresh();draw(v,image);
+        check(buttonBounds(v,"Select")!=null,"Select can be enabled again");
         check(b.hud,"HUD overlay enabled");
         check(b.anchors.length==30,"Independent anchors for all four D-pad directions");
         for(int i=0;i<10;i++){check(b.anchors[i*3]>0&&b.anchors[i*3]<1,"X anchor fits screen");check(b.anchors[i*3+1]>0&&b.anchors[i*3+1]<1,"Y anchor fits screen");}

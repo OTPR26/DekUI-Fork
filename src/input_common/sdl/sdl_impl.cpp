@@ -377,7 +377,7 @@ void SDLState::InitJoystick(int joystick_index) {
     }
     const std::string guid = GetGUID(sdl_joystick);
 
-    std::lock_guard lock{joystick_map_mutex};
+    std::unique_lock lock{joystick_map_mutex};
     const auto publish_controller=[&](int port) {
         if(!sdl_gamecontroller)return;
         Common::ParamPackage params{{"engine","sdl"},{"api","controller"}};
@@ -393,6 +393,8 @@ void SDLState::InitJoystick(int joystick_index) {
         joystick_map[guid] = vec;
         joystick_vector->emplace_back(joystick);
         publish_controller(0);
+        lock.unlock();
+        joystick->EnableMotion();
         return;
     }
 
@@ -400,9 +402,12 @@ void SDLState::InitJoystick(int joystick_index) {
     const auto it = std::find_if(joystick_guid_list->begin(), joystick_guid_list->end(),
                                  [](const auto& joystick) { return !joystick->GetSDLJoystick(); });
     if (it != joystick_guid_list->end()) {
-        (*it)->SetSDLJoystick(sdl_joystick, sdl_gamecontroller);
-        joystick_vector->emplace_back(*it);
-        publish_controller((*it)->GetPort());
+        auto joystick = *it;
+        joystick->SetSDLJoystick(sdl_joystick, sdl_gamecontroller);
+        joystick_vector->emplace_back(joystick);
+        publish_controller(joystick->GetPort());
+        lock.unlock();
+        joystick->EnableMotion();
         return;
     }
     const int port = static_cast<int>(joystick_guid_list->size());
@@ -410,6 +415,8 @@ void SDLState::InitJoystick(int joystick_index) {
     joystick_guid_list->emplace_back(joystick);
     joystick_vector->emplace_back(joystick);
     publish_controller(port);
+    lock.unlock();
+    joystick->EnableMotion();
 }
 
 void SDLState::CloseJoystick(SDL_JoystickID instance_id) {
@@ -844,6 +851,10 @@ SDLState::SDLState() {
     SDL_AddEventWatch(&SDLEventWatcher, this);
 
     initialized = true;
+    // Complete initial enumeration before the polling thread can process hotplug events.
+    for (int i = 0; i < SDL_NumJoysticks(); ++i) {
+        InitJoystick(i);
+    }
     if (start_thread) {
         poll_thread = std::thread([this] {
             using namespace std::chrono_literals;
@@ -852,11 +863,6 @@ SDLState::SDLState() {
                 std::this_thread::sleep_for(10ms);
             }
         });
-    }
-    // Because the events for joystick connection happens before we have our event watcher
-    // added, we can just open all the joysticks right here
-    for (int i = 0; i < SDL_NumJoysticks(); ++i) {
-        InitJoystick(i);
     }
 }
 

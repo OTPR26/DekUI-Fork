@@ -101,7 +101,7 @@ public final class ReMaskedTouchControls extends View {
     private float individualScale(int nativeId){return (preferences.getInt("controlScale-"+nativeId,50)+50)/100f;}
     private float stickRadius(int id){return 75*unit*individualScale(id==0?713:718);}
     private void add(int id,String label,float x,float y,float w,float h,int shape) {
-        int toggle=id>=0&&id<4&&shape==0?id:id==9?4:id==10?5:id==104?6:id==105?7:id==6?8:shape==3?10:shape==2?(id==0?11:12):-1;
+        int toggle=id>=0&&id<4&&shape==0?id:id==9?4:id==10?5:id==104?6:id==105?7:id==6?8:id==7?9:shape==3?10:shape==2?(id==0?11:12):-1;
         if(toggle>=0&&!preferences.getBoolean("buttonToggle"+toggle,toggle!=12))return;
         if(shape<2&&id>=0){int nativeId=id<4?700+id:id==9?773:id==10?774:id==104?707:id==105?708:id==6?704:705;
             float scale=individualScale(nativeId);x+=w*(1-scale)/2;y+=h*(1-scale)/2;w*=scale;h*=scale;}
@@ -138,6 +138,7 @@ public final class ReMaskedTouchControls extends View {
             }
             {
                 add(6,"Start",w/2+62*unit,h-bottom-30*unit,76*unit,30*unit,1);
+                add(7,"Select",w/2-38*unit,h-bottom-30*unit,76*unit,30*unit,1);
             }
             float cross=96*unit*individualScale(780),cx=left,cy=Math.max(top+(extras?114:58)*unit,h-bottom-252*unit);
             add(11,"",cx+cross/3,cy,cross/3,cross/3,3);

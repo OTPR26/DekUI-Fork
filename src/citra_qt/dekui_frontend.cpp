@@ -41,6 +41,7 @@
 #include <QVBoxLayout>
 #include <QtConcurrent/QtConcurrentRun>
 #include "citra_qt/dekui_frontend.h"
+#include "citra_qt/launcher_icon.h"
 #include "citra_qt/dekui_import.h"
 #include "common/param_package.h"
 #include "common/scm_rev.h"
@@ -138,13 +139,18 @@ void ApplyIcon() {
     QApplication::setWindowIcon(icon);
     for (auto* widget : QApplication::topLevelWidgets())
         widget->setWindowIcon(icon);
+#ifdef Q_OS_WIN
+    const QString iconPath = Root() + QStringLiteral("/user/config/launcher/icon-%1.ico").arg(SelectedIcon());
+    if (LauncherIcon::SaveIco(resource, iconPath))
+        LauncherIcon::ApplyWindows(iconPath);
+#endif
 #ifdef Q_OS_LINUX
     // Update the same managed desktop entry; never create another shortcut.
-    const auto iconPath = Root() + QStringLiteral("/user/config/launcher/icon-%1.png").arg(SelectedIcon());
+    const QString iconPath = Root() + QStringLiteral("/user/config/launcher/icon-%1.png").arg(SelectedIcon());
     QDir().mkpath(QFileInfo(iconPath).absolutePath());
     if (!QFileInfo::exists(iconPath))
         QFile::copy(resource, iconPath);
-    const auto applications = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + QStringLiteral("/applications/");
+    const QString applications = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + QStringLiteral("/applications/");
     for (const auto& name : {QStringLiteral("io.github.tgacquin.dekui.desktop"), QStringLiteral("majora-remasked.desktop")}) {
         const auto path = applications + name;
         QFile input(path);
@@ -819,6 +825,8 @@ class SettingsDialog final : public QDialog {
             box->addLayout(icons);
 #ifdef Q_OS_MACOS
             Note(box, QStringLiteral("Changes the Dock and window icon. The app in Finder uses the combined icon."));
+#elif defined(Q_OS_WIN)
+            Note(box, QStringLiteral("Changes the window, taskbar, and existing shortcuts for this copy. The .exe file uses the combined icon. Pinned icons may need an app restart to refresh."));
 #else
             Note(box, QStringLiteral("Changes the app icon. Your desktop may take a moment to refresh."));
 #endif
@@ -1059,11 +1067,15 @@ public:
         connect(settings, &QShortcut::activated, this,
                 [this] { SettingsDialog(this, false).exec(); });
         start->setFocus();
+        ApplyIcon(); // The startup window now exists, so publish its Windows taskbar properties.
         if (open_mods)
             QTimer::singleShot(0, this, [this] { SettingsDialog(this, false, true).exec(); });
     }
 };
 } // namespace
+void ApplySelectedIcon() {
+    ApplyIcon();
+}
 bool Startup(QWidget* parent, bool open_mods) {
     QFontDatabase::addApplicationFont(QStringLiteral(":/dekui/font.ttf"));
     DesktopImport::EnsureController();

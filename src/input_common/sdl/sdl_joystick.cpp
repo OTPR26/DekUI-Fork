@@ -13,7 +13,6 @@ SDLJoystick::SDLJoystick(std::string guid_, int port_, SDL_Joystick* joystick,
       sdl_controller{game_controller, &SDL_GameControllerClose} {
     CreateControllerButtonMap();
     CalibrateJoystickAxes();
-    EnableMotion();
 }
 
 void SDLJoystick::CalibrateJoystickAxes() {
@@ -167,9 +166,7 @@ void SDLJoystick::SetSDLJoystick(SDL_Joystick* joystick, SDL_GameController* con
     joystick_axis_centers.clear();
     CreateControllerButtonMap();
     CalibrateJoystickAxes();
-    // Sensor enablement belongs to the native handle, not this persistent
-    // wrapper. A reconnected controller starts with its sensors disabled.
-    EnableMotion();
+    // The owner enables sensors after publishing the handle and releasing its map lock.
 }
 
 void SDLJoystick::CreateControllerButtonMap() {

@@ -10,6 +10,47 @@ from build_release_assets import RESOURCES
 from setup_game_folder import setup, validate
 
 
+def complete_setup(root, rom, restoration):
+    """Fill an unprepared user folder without replacing existing settings or saves."""
+    user = root/'user'
+    if user.is_symlink() or not user.is_dir():
+        raise ValueError('The user folder must be a real directory; it was not changed.')
+    with tempfile.TemporaryDirectory(prefix='.mm3d-recover-', dir=root) as tmp:
+        prepared = setup(Path(tmp), restoration, rom, copy_game=False, reference_game=True)
+        files = sorted(p for p in prepared.rglob('*') if p.is_file())
+        marker = prepared/'setup/ready.json'
+        files.remove(marker)
+        files.append(marker)  # Publish readiness only after every resource is installed.
+        directories = sorted(p for p in prepared.rglob('*') if p.is_dir())
+        missing = []
+        for source in directories + files:
+            relative = source.relative_to(prepared)
+            target = user/relative
+            for ancestor in (target, *target.parents):
+                if ancestor.is_symlink():
+                    raise ValueError('Setup refuses symbolic links in the user folder.')
+                if ancestor == user:
+                    break
+            if target.exists():
+                compatible = target.is_dir() if source.is_dir() else (
+                    target.is_file() and (relative.parts[0] == 'config' or
+                                         target.read_bytes() == source.read_bytes()))
+                if not compatible:
+                    raise ValueError('Existing game resources conflict with setup: '+relative.as_posix()+
+                                     '. Existing data was not replaced.')
+            else:
+                missing.append((source, target))
+        for source, target in missing:
+            if source.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            # Exclusive creation also protects against another first-launch helper.
+            with target.open('xb') as stream:
+                stream.write(source.read_bytes())
+    return user
+
+
 def prepare(root, rom, patch=None, exheader=None, hud=None, in_place=False, upgrade_existing=False, reference_game=False):
     if (root/'user').exists() and not upgrade_existing:
         raise ValueError('This folder already has user data. Choose a fresh application folder; existing saves will not be replaced.')
@@ -36,7 +77,9 @@ def prepare(root, rom, patch=None, exheader=None, hud=None, in_place=False, upgr
         restoration=Path(tmp)
         for name,path in selected.items():
             target=restoration/name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(path,target)
-        if (root/'user').exists():
+        if (root/'user').exists() and not (root/'user/setup/ready.json').exists():
+            result = complete_setup(root, rom, restoration)
+        elif (root/'user').exists():
             from upgrade_game_resources import upgrade
             result = upgrade(root,rom,restoration)
         else:

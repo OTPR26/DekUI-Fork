@@ -101,6 +101,10 @@ if (ENABLE_QT AND ENABLE_DISCORD_RPC)
 endif()
 
 if(WIN32)
+    # Ninja must rebuild the executable's resources when its icon changes.
+    set_property(SOURCE citra.rc APPEND PROPERTY OBJECT_DEPENDS
+        "${PROJECT_SOURCE_DIR}/dist/azahar.ico"
+        "${PROJECT_SOURCE_DIR}/dist/azahar.manifest")
     # compile as a win32 gui application instead of a console application
     if(MSVC)
         set_target_properties(citra_meta PROPERTIES LINK_FLAGS_RELEASE "/SUBSYSTEM:WINDOWS")

@@ -4,7 +4,7 @@ import json
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-from graphical_setup import prepare
+from graphical_setup import prepare, complete_setup
 import graphical_setup
 from setup_game_folder import setup
 
@@ -93,6 +93,66 @@ class GraphicalSetupTests(unittest.TestCase):
             with patch('setup_game_folder.validate'), patch('setup_game_folder.extract',side_effect=ValueError('invalid')):
                 with self.assertRaises(ValueError):setup(root,root,rom)
             self.assertEqual(rom.read_bytes(),b'keep')
+
+    def test_unprepared_user_folder_keeps_settings_and_saves(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            user = root/'user'
+            (user/'config').mkdir(parents=True)
+            settings = user/'config/qt-config.ini'
+            settings.write_bytes(b'custom controls')
+            save = user/'save.dat'
+            save.write_bytes(b'progress')
+            rom = root/'game.3ds'
+            rom.write_bytes(b'game')
+            with patch('setup_game_folder.validate'), patch('setup_game_folder.extract',
+                    side_effect=lambda rom, out: out.mkdir(parents=True)), patch('setup_game_folder.build'):
+                complete_setup(root, rom, root)
+            self.assertEqual(settings.read_bytes(), b'custom controls')
+            self.assertEqual(save.read_bytes(), b'progress')
+            marker = json.loads((user/'setup/ready.json').read_text())
+            self.assertEqual(marker['layout_version'], 2)
+            self.assertEqual(marker['resource_version'], 2)
+            self.assertTrue((user/'load/textures/0004000000125500').is_dir())
+            self.assertFalse((root/'game').exists())
+            self.assertFalse(list(root.glob('.mm3d-recover-*')))
+
+    def test_incomplete_setup_conflict_does_not_publish_readiness(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root/'user/setup/original/custom.bin'
+            target.parent.mkdir(parents=True)
+            target.write_bytes(b'keep')
+            def extract(rom, out):
+                out.mkdir(parents=True)
+                (out/'custom.bin').write_bytes(b'different')
+            with patch('setup_game_folder.validate'), patch('setup_game_folder.extract',
+                    side_effect=extract), patch('setup_game_folder.build'):
+                with self.assertRaisesRegex(ValueError, 'conflict'):
+                    complete_setup(root, root/'game.3ds', root)
+            self.assertEqual(target.read_bytes(), b'keep')
+            self.assertFalse((root/'user/setup/ready.json').exists())
+
+    def test_incomplete_setup_rejects_unsafe_parent_before_copying(self):
+        for symlink in (False, True):
+            with self.subTest(symlink=symlink), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                user = root/'user'
+                user.mkdir()
+                outside = root/'outside'
+                outside.mkdir()
+                if symlink:
+                    (user/'setup').symlink_to(outside, target_is_directory=True)
+                else:
+                    (user/'setup').write_bytes(b'keep')
+                with patch('setup_game_folder.validate'), patch('setup_game_folder.extract',
+                        side_effect=lambda rom, out: out.mkdir(parents=True)), patch('setup_game_folder.build'):
+                    with self.assertRaises(ValueError):
+                        complete_setup(root, root/'game.3ds', root)
+                self.assertFalse((user/'load').exists())
+                self.assertEqual(list(outside.iterdir()), [])
+                if not symlink:
+                    self.assertEqual((user/'setup').read_bytes(), b'keep')
 
 
 if __name__=='__main__':unittest.main()

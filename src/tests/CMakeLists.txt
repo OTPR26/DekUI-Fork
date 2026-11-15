@@ -38,6 +38,26 @@ if (ENABLE_LIBRETRO)
 endif()
 
 add_test(NAME tests COMMAND tests)
+if (ENABLE_QT)
+    add_executable(desktop_icon_tests
+        input_common/launcher_icon.cpp
+        ../citra_qt/launcher_icon.cpp)
+    target_link_libraries(desktop_icon_tests PRIVATE Qt6::Widgets catch2)
+    target_compile_definitions(desktop_icon_tests PRIVATE QT_USE_QSTRINGBUILDER)
+    if (WIN32)
+        target_link_libraries(desktop_icon_tests PRIVATE shell32 shlwapi ole32 propsys uuid)
+    endif()
+    add_test(NAME desktop_icon_tests COMMAND desktop_icon_tests)
+    set_tests_properties(desktop_icon_tests PROPERTIES TIMEOUT 30)
+endif()
+
+if (ENABLE_SDL2)
+    add_executable(sdl_startup_tests input_common/sdl_startup.cpp)
+    target_link_libraries(sdl_startup_tests PRIVATE input_common SDL2::SDL2 catch2)
+    add_test(NAME sdl_startup_tests COMMAND sdl_startup_tests)
+    set_tests_properties(sdl_startup_tests PROPERTIES TIMEOUT 30)
+endif()
+
 if(NOT ANDROID AND (CMAKE_SYSTEM_NAME STREQUAL CMAKE_HOST_SYSTEM_NAME))
     catch_discover_tests(tests)
 endif()

@@ -530,7 +530,9 @@ GMainWindow::GMainWindow(Core::System& system_)
     quit_action->setMenuRole(QAction::QuitRole);
     connect(quit_action,&QAction::triggered,this,&QWidget::close);
     ui->menubar->show();
-    setWindowIcon(QIcon(QStringLiteral(":/dekui/icon-0.png")));render_window->setWindowIcon(windowIcon());
+    // Startup has already loaded the user's selected icon. Keep it when the
+    // gameplay windows replace the startup dialog, including the second screen.
+    MM3D::DesktopFrontend::ApplySelectedIcon();
     ui->action_Show_Status_Bar->setChecked(false);
     statusBar()->hide();
 
