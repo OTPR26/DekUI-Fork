@@ -316,15 +316,26 @@ void NativeA32WindowSession::Setup() {
     // Azahar names texture folders by the installed title's program ID:
     // --title-id, else the one the process image's exheader carries.
 #if defined(REMASKED_NATIVE_GAME)
-    if (const char* bundled = std::getenv("REMASKED_BUNDLED_CONTENT")) {
-      const auto content = std::filesystem::path(bundled);
-      // Immutable bundled HUD wins over the bundled base texture pack.
+    std::filesystem::path ownerContent;
+    if (const char* bundled = std::getenv("REMASKED_BUNDLED_CONTENT")) ownerContent = bundled;
+    auto content = ownerContent;
+    if (const char* hud = std::getenv("REMASKED_GAME_HUD_LAYER")) {
+      auto generated = std::filesystem::path(hud).parent_path() / "HudArtwork";
+      if (std::filesystem::is_regular_file(generated / "owner-content.json")) content = std::move(generated);
+    }
+    if (!content.empty()) {
+      // The on-device HUD and owner HUD share the interface cache and base layer.
       auto& pack = Oot3d::Renderer::AzaharTexturePackRuntime::Instance();
+      auto interfaceHashes = ReMasked::InterfaceTextureHashes(content);
+      if (!ownerContent.empty() && ownerContent != content) {
+        const auto ownerHashes = ReMasked::InterfaceTextureHashes(ownerContent);
+        interfaceHashes.insert(interfaceHashes.end(), ownerHashes.begin(), ownerHashes.end());
+      }
 #if defined(__ANDROID__)
-      pack.SetInterfaceTextureHashes(ReMasked::InterfaceTextureHashes(content), 64ULL * 1024 * 1024,4096);
+      pack.SetInterfaceTextureHashes(interfaceHashes, 64ULL * 1024 * 1024,4096);
 #else
       const bool boundedAppleAtlases = std::getenv("REMASKED_IOS_BOUNDED_TEXTURES") != nullptr;
-      pack.SetInterfaceTextureHashes(ReMasked::InterfaceTextureHashes(content), 64ULL * 1024 * 1024,
+      pack.SetInterfaceTextureHashes(interfaceHashes, 64ULL * 1024 * 1024,
                                     boundedAppleAtlases ? 4096 : 0);
 #endif
       pack.SetDecodedCacheBudgetBytes((std::getenv("REMASKED_IOS_BOUNDED_TEXTURES") ? 96ULL : 192ULL) * 1024 * 1024);
@@ -332,7 +343,9 @@ void NativeA32WindowSession::Setup() {
       if (const char* modelTextures = std::getenv("REMASKED_GAME_MODEL_TEXTURES"))
         textureDirectories.emplace_back(modelTextures);
       pack.SetBaseDirectories(std::move(textureDirectories));
-      pack.SetCustomBaseDirectories({content / "HenrikoMobile"});
+      const auto custom = ownerContent.empty() ? std::filesystem::path{} : ownerContent / "HenrikoMobile";
+      pack.SetCustomBaseDirectories(std::filesystem::is_directory(custom)
+          ? std::vector{custom} : std::vector<std::filesystem::path>{});
     }
 #endif
     Oot3d::Renderer::AzaharTexturePackRuntime::Instance().SetHostDefaults({

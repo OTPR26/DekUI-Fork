@@ -26,9 +26,34 @@ static uint64_t MemoryClockMs() {
         std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
+static NSURL* ReMaskedAppleSupportRoot() {
+#if TARGET_OS_TV
+    constexpr NSSearchPathDirectory directory = NSCachesDirectory;
+#else
+    constexpr NSSearchPathDirectory directory = NSApplicationSupportDirectory;
+#endif
+    NSURL* support = [NSFileManager.defaultManager URLsForDirectory:directory
+        inDomains:NSUserDomainMask].firstObject;
+    return [support URLByAppendingPathComponent:@"ReMaskedNativeGame" isDirectory:YES];
+}
+
+static NSURL* ReMaskedAppleHudLayer(NSURL* root) {
+    NSURL* local = [root URLByAppendingPathComponent:@"GameContent/RestorationHud" isDirectory:YES];
+    NSURL* prepared = [root URLByAppendingPathComponent:@"GameContent/PrivateGame/RestorationHud" isDirectory:YES];
+    NSURL* bundled = [NSBundle.mainBundle.resourceURL
+        URLByAppendingPathComponent:@"GameContent/RestorationHud" isDirectory:YES];
+    for (NSURL* candidate in @[local, prepared, bundled]) {
+        if ([NSFileManager.defaultManager fileExistsAtPath:
+                [candidate URLByAppendingPathComponent:@"layout/Joker.Main.New.gar"].path] &&
+            [NSFileManager.defaultManager fileExistsAtPath:
+                [candidate URLByAppendingPathComponent:@"layout/Joker.Main.Play.gar"].path])
+            return candidate;
+    }
+    return nil;
+}
+
 bool ReMaskedAppleHudAvailable() {
-    NSURL* root = [NSBundle.mainBundle.resourceURL URLByAppendingPathComponent:@"GameContent/RestorationHud/layout/Joker.Main.New.gar"];
-    return [NSFileManager.defaultManager fileExistsAtPath:root.path];
+    return ReMaskedAppleHudLayer(ReMaskedAppleSupportRoot()) != nil;
 }
 bool ReMaskedAppleHudEnabled() {
     id value = [NSUserDefaults.standardUserDefaults objectForKey:@"ReMasked.Native.RestorationHud"];
@@ -37,6 +62,17 @@ bool ReMaskedAppleHudEnabled() {
 void ReMaskedAppleSetHudEnabled(bool enabled) {
     [NSUserDefaults.standardUserDefaults setBool:enabled forKey:@"ReMasked.Native.RestorationHud"];
     [NSUserDefaults.standardUserDefaults synchronize];
+}
+
+void RefreshReMaskedAppleHud() {
+    NSURL* hud = ReMaskedAppleHudLayer(ReMaskedAppleSupportRoot());
+    if (hud && ReMaskedAppleHudEnabled()) {
+        setenv("REMASKED_GAME_HUD_LAYER", hud.fileSystemRepresentation, 1);
+        setenv("REMASKED_PRESERVE_BUTTON_ART", "1", 1);
+    } else {
+        unsetenv("REMASKED_GAME_HUD_LAYER");
+        unsetenv("REMASKED_PRESERVE_BUTTON_ART");
+    }
 }
 
 void InitializeReMaskedAppleGameHost() {
@@ -48,14 +84,7 @@ void InitializeReMaskedAppleGameHost() {
         // Physical tvOS permits writable game state in Caches, not Application
         // Support. Textures/game data stay in the bundle; committed saves are
         // separately protected by preferences recovery and private CloudKit.
-#if TARGET_OS_TV
-        constexpr NSSearchPathDirectory directory = NSCachesDirectory;
-#else
-        constexpr NSSearchPathDirectory directory = NSApplicationSupportDirectory;
-#endif
-        NSURL* support = [[NSFileManager defaultManager] URLsForDirectory:directory
-            inDomains:NSUserDomainMask].firstObject;
-        NSURL* root = [support URLByAppendingPathComponent:@"ReMaskedNativeGame" isDirectory:YES];
+        NSURL* root = ReMaskedAppleSupportRoot();
         NSError* error = nil;
         if (![[NSFileManager defaultManager] createDirectoryAtURL:root
                 withIntermediateDirectories:YES attributes:nil error:&error])
@@ -84,14 +113,7 @@ void InitializeReMaskedAppleGameHost() {
                 if ([args[i] isEqual:@"--title-romfs-layer"] && [args[i+1] isEqual:ownedLayer]) {
                     [args removeObjectAtIndex:i+1]; [args removeObjectAtIndex:i];
                 }
-            if (ReMaskedAppleHudAvailable() && ReMaskedAppleHudEnabled()) {
-                NSURL* hud = [game URLByAppendingPathComponent:@"RestorationHud" isDirectory:YES];
-                setenv("REMASKED_GAME_HUD_LAYER", hud.fileSystemRepresentation, 1);
-                setenv("REMASKED_PRESERVE_BUTTON_ART", "1", 1);
-            } else {
-                unsetenv("REMASKED_GAME_HUD_LAYER");
-                unsetenv("REMASKED_PRESERVE_BUTTON_ART");
-            }
+            RefreshReMaskedAppleHud();
             document[@"arguments"] = args;
             NSData* updated = [NSJSONSerialization dataWithJSONObject:document options:NSJSONWritingPrettyPrinted error:nil];
             if (!updated || ![updated writeToURL:profile options:NSDataWritingAtomic error:nil])
@@ -104,8 +126,10 @@ void InitializeReMaskedAppleGameHost() {
         std::filesystem::current_path(root.fileSystemRepresentation);
         setenv("REMASKED_GAME_ROOT", root.fileSystemRepresentation, 1);
         setenv("REMASKED_GAME_PRESENTATION", [[root URLByAppendingPathComponent:@"runtime-presentation.json"] fileSystemRepresentation], 1);
-        NSURL* owned = [NSBundle.mainBundle.resourceURL URLByAppendingPathComponent:@"OwnerContent" isDirectory:YES];
-        if ([[NSFileManager defaultManager] fileExistsAtPath:[[owned URLByAppendingPathComponent:@"owner-content.json"] path]])
+        NSURL* owned = [root URLByAppendingPathComponent:@"OwnerContent" isDirectory:YES];
+        if (![NSFileManager.defaultManager fileExistsAtPath:[owned URLByAppendingPathComponent:@"owner-content.json"].path])
+            owned = [NSBundle.mainBundle.resourceURL URLByAppendingPathComponent:@"OwnerContent" isDirectory:YES];
+        if ([NSFileManager.defaultManager fileExistsAtPath:[owned URLByAppendingPathComponent:@"owner-content.json"].path])
             setenv("REMASKED_BUNDLED_CONTENT", owned.fileSystemRepresentation, 1);
         SDL_SetHint(SDL_HINT_APPLE_TV_CONTROLLER_UI_EVENTS, "0");
         // The Siri Remote must never occupy player 1 ahead of a real pad.
@@ -183,11 +207,13 @@ void InitializeReMaskedAppleSaves(const char* directory) {
             !ReMaskedSaveSyncRecoverLocal(directory))
             throw std::runtime_error("Save recovery failed; existing progress was left unchanged");
         NSString* marker = @"ReMaskedTV.OwnerSaveImported.v1";
-        const char* content = std::getenv("REMASKED_BUNDLED_CONTENT");
-        if (content && ![NSUserDefaults.standardUserDefaults boolForKey:marker]) {
-            NSString* owned = [NSString stringWithUTF8String:content];
+        NSURL* bundled = [NSBundle.mainBundle.resourceURL
+            URLByAppendingPathComponent:@"OwnerContent" isDirectory:YES];
+        NSString* manifestPath = [bundled URLByAppendingPathComponent:@"owner-content.json"].path;
+        if ([fm fileExistsAtPath:manifestPath] && ![NSUserDefaults.standardUserDefaults boolForKey:marker]) {
+            NSString* owned = bundled.path;
             NSDictionary* manifest = [NSJSONSerialization JSONObjectWithData:
-                [NSData dataWithContentsOfFile:[owned stringByAppendingPathComponent:@"owner-content.json"]]
+                [NSData dataWithContentsOfFile:manifestPath]
                 options:0 error:nil];
             NSArray* names = @[@"save0.bin", @"save1.bin", @"save2.bin"];
             bool existing = false;

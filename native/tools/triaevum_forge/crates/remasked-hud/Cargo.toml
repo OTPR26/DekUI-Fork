@@ -1,0 +1,16 @@
+[package]
+name = "remasked-hud"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+forge-assets = { path = "../forge-assets", features = ["title-mm3d"] }
+forge-base = { path = "../forge-base" }
+png = "0.17"
+sevenz-rust = { version = "0.6.1", default-features = false }

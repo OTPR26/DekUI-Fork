@@ -26,7 +26,7 @@ final class PreparedGameImport {
         "code.bin", 32L * 1024 * 1024, "exheader.bin", 2048L,
         "romfs.bin", 4L * 1024 * 1024 * 1024, "process-manifest.json", 1024L * 1024);
 
-    static void install(ContentResolver resolver, Uri folder, Path game) throws Exception {
+    static void install(ContentResolver resolver, Uri folder, Path game, byte[] presentationDefaults) throws Exception {
         String folderId = DocumentsContract.getTreeDocumentId(folder);
         Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(folder, folderId);
         Map<String, Uri> sources = new HashMap<>();
@@ -45,15 +45,7 @@ final class PreparedGameImport {
         }
         if (sources.size() != LIMITS.size()) throw new IOException("The prepared folder is incomplete.");
 
-        Files.createDirectories(game);
-        Path destination = game.resolve("PrivateGame");
-        Path profile = game.resolve("ReMaskedNativeGame.launch.json");
-        if (Files.exists(destination) || Files.exists(profile)) {
-            throw new IOException("Game files are already installed locally.");
-        }
-        Path staging = Files.createTempDirectory(game, ".game-import-");
-        boolean published = false;
-        try {
+        install(game, presentationDefaults, staging -> {
             for (var entry : LIMITS.entrySet()) {
                 String name = entry.getKey();
                 Path target = staging.resolve(name);
@@ -71,14 +63,73 @@ final class PreparedGameImport {
                     if (size == 0) throw new IOException(name + " is empty.");
                 }
             }
+        });
+    }
+
+    static void installRom(ContentResolver resolver, Uri uri, Path game, Path privateInputs,
+                           byte[] presentationDefaults, RomPreparation prepare) throws Exception {
+        Files.createDirectories(privateInputs);
+        Path savedRom = privateInputs.resolve("mm3d.3ds");
+        Path temporary = Files.createTempFile(privateInputs, ".rom-import-", ".3ds");
+        boolean[] addedRom = {false};
+        try {
+            try (InputStream input = resolver.openInputStream(uri);
+                 OutputStream output = Files.newOutputStream(temporary)) {
+                if (input == null) throw new IOException("Files could not open the selected ROM.");
+                byte[] buffer = new byte[256 * 1024];
+                long size = 0;
+                int read;
+                while ((read = input.read(buffer)) != -1) {
+                    size += read;
+                    if (size > LIMITS.get("romfs.bin")) throw new IOException("The ROM exceeds 4 GiB.");
+                    output.write(buffer, 0, read);
+                }
+            }
+            install(game, presentationDefaults, staging -> {
+                prepare.write(temporary, staging, CODE_HASH);
+                if (!Files.exists(savedRom)) {
+                    Files.move(temporary, savedRom, StandardCopyOption.ATOMIC_MOVE);
+                    addedRom[0] = true;
+                }
+            });
+        } catch (Exception error) {
+            if (addedRom[0]) Files.deleteIfExists(savedRom);
+            throw error;
+        } finally {
+            Files.deleteIfExists(temporary);
+        }
+    }
+
+    @FunctionalInterface
+    interface RomPreparation {
+        void write(Path rom, Path staging, String codeHash) throws Exception;
+    }
+
+    @FunctionalInterface
+    private interface StageInput {
+        void write(Path staging) throws Exception;
+    }
+
+    private static void install(Path game, byte[] presentationDefaults, StageInput input) throws Exception {
+        Files.createDirectories(game);
+        Path destination = game.resolve("PrivateGame");
+        Path profile = game.resolve("ReMaskedNativeGame.launch.json");
+        if (Files.exists(destination) || Files.exists(profile)) {
+            throw new IOException("Game files are already installed locally.");
+        }
+        Path staging = Files.createTempDirectory(game, ".game-import-");
+        boolean published = false;
+        try {
+            input.write(staging);
             validate(staging);
             for (String directory : List.of("resources", "saves", "logs/crashes", "savestates", "textures/load", "textures/dump")) {
                 Files.createDirectories(game.resolve(directory));
             }
-            for (String name : List.of("presentation.json", "runtime-presentation.json")) {
-                Path settings = game.resolve(name);
-                if (!Files.exists(settings)) Files.write(settings, "{}".getBytes(StandardCharsets.UTF_8), java.nio.file.StandardOpenOption.CREATE_NEW);
-            }
+            Path canonical = game.resolve("presentation.json");
+            if (!Files.exists(canonical))
+                Files.write(canonical, presentationDefaults, java.nio.file.StandardOpenOption.CREATE_NEW);
+            Path runtime = game.resolve("runtime-presentation.json");
+            if (!Files.exists(runtime)) Files.copy(canonical, runtime);
             Path stagedProfile = staging.resolve("launch.json");
             Files.write(stagedProfile, profile().toString(2).getBytes(StandardCharsets.UTF_8));
             Files.move(staging, destination, StandardCopyOption.ATOMIC_MOVE);
@@ -87,9 +138,12 @@ final class PreparedGameImport {
         } finally {
             if (!Files.exists(profile)) {
                 Path incomplete = published ? destination : staging;
-                for (String name : LIMITS.keySet()) Files.deleteIfExists(incomplete.resolve(name));
-                Files.deleteIfExists(incomplete.resolve("launch.json"));
-                Files.deleteIfExists(incomplete);
+                try (var files = Files.walk(incomplete)) {
+                    for (Path path : files.sorted(java.util.Comparator.reverseOrder())
+                            .collect(java.util.stream.Collectors.toList())) {
+                        Files.deleteIfExists(path);
+                    }
+                }
             }
         }
     }

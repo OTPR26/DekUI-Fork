@@ -150,7 +150,23 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
   set_property(SOURCE "${root}/runtime/three_ds_recomp/src/fast/backends/gfx_sdl2.cpp"
     TARGET_DIRECTORY three_ds_recomp_runtime APPEND PROPERTY COMPILE_DEFINITIONS REMASKED_IOS_NATIVE_DISPLAY=1)
   target_sources(oot3d_native_game PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/ios/touch_controls.mm" "${CMAKE_CURRENT_SOURCE_DIR}/ios/ios_host.mm"
-    "${CMAKE_CURRENT_SOURCE_DIR}/ios/drive_data.mm")
+    "${CMAKE_CURRENT_SOURCE_DIR}/ios/drive_data.mm" "${CMAKE_CURRENT_SOURCE_DIR}/ios/rom_setup.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/ios/hud_download.mm")
+  include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/HudSetup.cmake")
+  if(CMAKE_OSX_SYSROOT MATCHES "[Ss]imulator")
+    remasked_link_hud_setup(oot3d_native_game "${root}" aarch64-apple-ios-sim)
+  else()
+    remasked_link_hud_setup(oot3d_native_game "${root}" aarch64-apple-ios)
+  endif()
+  # First-run installs have no bundled title data. Keep the controller
+  # database in the resource directory that the prepared launch profile mounts.
+  set(remasked_controller_db "${root}/runtime/triaevum_resources/gamecontrollerdb.txt")
+  set_property(SOURCE "${remasked_controller_db}" TARGET_DIRECTORY oot3d_native_game
+    PROPERTY MACOSX_PACKAGE_LOCATION "Resources/GameContent/resources")
+  set(remasked_presentation_defaults "${CMAKE_CURRENT_SOURCE_DIR}/../resources/presentation.json")
+  set_property(SOURCE "${remasked_presentation_defaults}" TARGET_DIRECTORY oot3d_native_game
+    PROPERTY MACOSX_PACKAGE_LOCATION "Resources")
+  target_sources(oot3d_native_game PRIVATE "${remasked_controller_db}" "${remasked_presentation_defaults}")
   target_link_libraries(oot3d_native_game PRIVATE "-framework GameController" "-framework UniformTypeIdentifiers")
   set(remasked_fonts "${CMAKE_CURRENT_BINARY_DIR}/remasked_interface_font_data.h")
   execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/../tools/generate_interface_fonts.py"

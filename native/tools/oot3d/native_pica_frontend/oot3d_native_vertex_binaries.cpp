@@ -50,7 +50,8 @@ const std::vector<Fast::Renderer::SpirvPackEntry>& Entries() {
 } // namespace
 
 bool InstallTitleBuiltInVertexPack(std::span<const unsigned char> pack) {
-    if (gEntriesRead) return false;
+    // Restarting the same title reuses the initialized shader families.
+    if (gEntriesRead) return pack.data() == gInstalledTitlePack.data() && pack.size() == gInstalledTitlePack.size();
     gInstalledTitlePack = pack;
     return true;
 }

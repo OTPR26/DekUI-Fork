@@ -205,6 +205,55 @@ fn floats(data: &mut [u8], values: &[(usize, f64)]) -> Result<()> {
     }
     Ok(())
 }
+// The caller has already verified the entire base archive against the
+// setup fingerprints. These offsets are within named MFL resources of that
+// revision. They encode ReMasked placement and geometry only.
+pub(crate) fn apply_remasked_buttons(name: &str, archive: &mut [u8]) -> Result<()> {
+    let members = entries(archive)?;
+    fn member<'a>(archive: &'a mut [u8], members: &BTreeMap<String, Entry>, name: &str) -> Result<&'a mut [u8]> {
+        let entry = members.get(name).ok_or_else(bad)?;
+        archive.get_mut(entry.start..entry.start + entry.size).ok_or_else(bad)
+    }
+    match name {
+        "Joker.Main.New.gar" => {
+            // Match the original ReMasked row spacing above the D-pad.
+            let hud_groups = member(archive, &members, "Hud2.mfl")?;
+            put(hud_groups, 0x208, &42f32.to_le_bytes())?;
+            let hud = member(archive, &members, "HudItemIconSet.mfl")?;
+            // Remove the four separate letter quads, leaving items and counters.
+            for at in [0xd78, 0xda8, 0xdd8, 0xe08] {
+                put(hud, at, &[0; 8])?;
+            }
+            // Bumper mounts and 48×24 frames. Both sample the same white
+            // shoulder outline, with the right frame mirrored in the atlas.
+            for (mount, linked_pane, frame, node, left, width) in [
+                (0xf8, 0x174, 0xe2c, 4u32, 0.6552734375f32, -0.1240234375f32),
+                (0x428, 0x4a4, 0xfdc, 13, 0.53125, 0.1240234375),
+            ] {
+                put(hud, mount, &15f32.to_le_bytes())?;
+                put(hud, linked_pane, &63u32.to_le_bytes())?;
+                put(hud, linked_pane + 4, &node.to_le_bytes())?;
+                put(hud, linked_pane + 8, &(-32f32).to_le_bytes())?;
+                put(hud, linked_pane + 12, &9f32.to_le_bytes())?;
+                for (i, value) in [8.0, 4.0, 0.0, 48.0, 24.0, left, 0.5625, width, 0.125].into_iter().enumerate() {
+                    put(hud, frame + i * 4, &value.to_le_bytes())?;
+                }
+                put(hud, frame + 38, &43u16.to_le_bytes())?;
+            }
+        }
+        "Joker.Main.Play.gar" => {
+            put(member(archive, &members, "AActionIcon.mfl")?, 0x1c8, &[0; 8])?;
+            let b_action = member(archive, &members, "BActionIcon.mfl")?;
+            put(b_action, 0x294, &[0; 8])?;
+            // Use the neutral second ring from the gameplay atlas rather than
+            // the stock B ring whose letter is painted into the texture.
+            put(b_action, 0x30e, &43u16.to_le_bytes())?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 pub fn transform(name: &str, source: &[u8], play: &[u8]) -> Result<Vec<u8>> {
     if name == "Joker.Main.Play.gar" {
         return restore_actions(play, source);

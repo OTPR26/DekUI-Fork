@@ -51,10 +51,14 @@ jobs:
           git -C "$RUNNER_TEMP/sdl-headers" fetch --depth 1 https://github.com/libsdl-org/SDL.git 98d1f3a45aae568ccd6ed5fec179330f47d4d356
           git -C "$RUNNER_TEMP/sdl-headers" checkout --detach FETCH_HEAD
           python3 native/ports/remasked/tools/check_ios_menu.py --core-build "$RUNNER_TEMP/mobile-core" --sdl "$RUNNER_TEMP/sdl-headers"
+      - name: Compile the iOS ROM setup and HUD download code
+        run: |
+          xcrun --sdk iphoneos clang++ -std=c++20 -target arm64-apple-ios17.0 -fobjc-arc -fsyntax-only \
+            native/ports/remasked/runtime/ios/hud_download.mm
       - name: Verify compiled path privacy
         run: python3 native/ports/remasked/tools/check_build_privacy.py --work "$RUNNER_TEMP"
   android-prepared-import:
-    name: Android prepared folder importer compilation
+    name: Android import and HUD source checks
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -65,4 +69,11 @@ jobs:
           set -euo pipefail
           test -f "$ANDROID_HOME/platforms/android-35/android.jar" || sdkmanager "platforms;android-35"
           javac --release 17 -cp "$ANDROID_HOME/platforms/android-35/android.jar" -d "$RUNNER_TEMP" \
-            native/ports/remasked/android-game/app/src/main/java/io/github/otpr26/remasked/nativegame/PreparedGameImport.java
+            native/ports/remasked/android-game/app/src/main/java/io/github/otpr26/remasked/nativegame/PreparedGameImport.java \
+            native/ports/remasked/android-game/app/src/main/java/io/github/otpr26/remasked/nativegame/HudSetup.java
+      - name: Compile the HUD setup library and test layout validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup run stable cargo build --locked --manifest-path native/tools/triaevum_forge/Cargo.toml -p remasked-hud
+          rustup run stable cargo test --locked --manifest-path native/tools/triaevum_forge/Cargo.toml -p forge-assets --features title-mm3d mm3d_layout

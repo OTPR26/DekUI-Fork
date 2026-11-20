@@ -47,3 +47,5 @@ target_include_directories(oot3d_native_game PRIVATE "${CMAKE_CURRENT_BINARY_DIR
 
 # Android secondary display surfaces use ANativeWindow ownership.
 target_link_libraries(oot3d_native_game PRIVATE android)
+include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/HudSetup.cmake")
+remasked_link_hud_setup(oot3d_native_game "${root}" aarch64-linux-android)

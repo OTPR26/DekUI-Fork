@@ -2,6 +2,11 @@ plugins { id("com.android.application"); id("org.jetbrains.kotlin.android"); id(
 val nativeStage = providers.gradleProperty("remaskedNativeStage")
 val sdlSource = providers.gradleProperty("remaskedSdlSource")
 val existingIdentity = providers.gradleProperty("remaskedExistingIdentity").getOrElse("false").toBoolean()
+val presentationAssets = layout.buildDirectory.dir("generated/presentationAssets")
+val stagePresentationDefaults by tasks.registering(Sync::class) {
+ from("../../resources/presentation.json")
+ into(presentationAssets)
+}
 android {
  namespace = "org.triaevum.android"
  compileSdk = 35
@@ -17,6 +22,7 @@ android {
  }
  buildFeatures { buildConfig = true }
  sourceSets.getByName("main") {
+  assets.srcDir(presentationAssets)
   if (existingIdentity) manifest.srcFile("src/existingIdentity/AndroidManifest.xml")
   java.srcDir("../../../android/app/src/main/java")
   res.srcDir("../../../android/app/src/main/res")
@@ -27,9 +33,15 @@ android {
  kotlinOptions { jvmTarget = "17" }
  packaging { jniLibs.useLegacyPackaging = true; jniLibs.keepDebugSymbols += "**/*.so" }
 }
+val romSetupSources = layout.buildDirectory.dir("generated/romSetupPython")
+val stageRomSetupSources by tasks.registering(Sync::class) {
+ from("../../../../tools/triaevum_release/ctr_rom.py")
+ from("../../../../tools/oot3d/native_a32_runtime/build_process_manifest.py")
+ into(romSetupSources)
+}
 chaquopy {
  defaultConfig { version = "3.13"; buildPython(providers.gradleProperty("remaskedBuildPython").getOrElse("python3.13")); pip { install("numpy==1.26.2"); install("pillow==11.0.0") } }
- sourceSets.getByName("main") { srcDir("../../models"); exclude("**/__pycache__/**", "**/*.pyc") }
+ sourceSets.getByName("main") { srcDir("../../models"); srcDir(romSetupSources); exclude("**/__pycache__/**", "**/*.pyc") }
 }
 dependencies { implementation(project(":controls")) }
 tasks.register("checkReMaskedNativeStage") {
@@ -39,4 +51,6 @@ tasks.register("checkReMaskedNativeStage") {
    check(file("${nativeStage.get()}/arm64-v8a/lib$name.so").isFile) { "Missing native runtime library $name" }
  }
 }
-tasks.named("preBuild") { dependsOn("checkReMaskedNativeStage") }
+tasks.named("preBuild") { dependsOn("checkReMaskedNativeStage", stageRomSetupSources, stagePresentationDefaults) }
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("PythonSources") }
+ .configureEach { dependsOn(stageRomSetupSources) }

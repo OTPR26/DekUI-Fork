@@ -20,7 +20,8 @@ std::span<const unsigned char> gTitlePack;
 bool gRead = false;
 } // namespace
 bool InstallTitleFragmentPack(std::span<const unsigned char> pack) {
-    if (gRead) return false;
+    // Restarting the same title reuses the initialized shader families.
+    if (gRead) return pack.data() == gTitlePack.data() && pack.size() == gTitlePack.size();
     gTitlePack = pack;
     return true;
 }

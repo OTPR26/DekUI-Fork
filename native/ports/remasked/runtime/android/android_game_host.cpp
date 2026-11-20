@@ -1,6 +1,28 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "oot3d/renderer/azahar_texture_pack.h"
 #include <jni.h>
+#include "../hud_setup.h"
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_io_github_otpr26_remasked_nativegame_HudSetup_prepareNative(
+    JNIEnv* env, jclass, jstring staging, jbyteArray archive, jbyteArray atlas) {
+    if (!staging || !archive || !atlas) return JNI_FALSE;
+    const auto archiveSize = env->GetArrayLength(archive);
+    const auto atlasSize = env->GetArrayLength(atlas);
+    if (archiveSize > 128 * 1024 || atlasSize > 2 * 1024 * 1024) return JNI_FALSE;
+    const char* path = env->GetStringUTFChars(staging, nullptr);
+    if (!path) return JNI_FALSE;
+    jbyte* layouts = env->GetByteArrayElements(archive, nullptr);
+    jbyte* artwork = layouts ? env->GetByteArrayElements(atlas, nullptr) : nullptr;
+    const bool success = artwork && remasked_prepare_hud(path,
+        reinterpret_cast<const uint8_t*>(layouts), archiveSize,
+        reinterpret_cast<const uint8_t*>(artwork), atlasSize);
+    if (artwork) env->ReleaseByteArrayElements(atlas, artwork, JNI_ABORT);
+    if (layouts) env->ReleaseByteArrayElements(archive, layouts, JNI_ABORT);
+    env->ReleaseStringUTFChars(staging, path);
+    return success ? JNI_TRUE : JNI_FALSE;
+}
+
 #include "oot3d_menu_font.h"
 #include "mm3d_single_screen.h"
 extern "C" JNIEXPORT void JNICALL

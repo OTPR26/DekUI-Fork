@@ -39,9 +39,23 @@ public final class ReMaskedGameActivity extends TriAevumActivity {
             Os.setenv("TRIAEVUM_DATA_DIRECTORY",root.getAbsolutePath(),true);
             Os.setenv("REMASKED_START_MENU",getIntent().getBooleanExtra("open_settings",false)?"1":"0",true);
             Os.setenv("REMASKED_GAME_PRESENTATION",new File(game,"runtime-presentation.json").getAbsolutePath(),true);
-            Os.setenv("REMASKED_BUNDLED_CONTENT",new File(root,"OwnerContent").getAbsolutePath(),true);
-            Os.setenv("REMASKED_GAME_HUD_LAYER",new File(game,"RestorationHud").getAbsolutePath(),true);
-            Os.setenv("REMASKED_PRESERVE_BUTTON_ART","1",true);
+            File ownerContent = new File(root, "OwnerContent");
+            if (new File(ownerContent, "owner-content.json").isFile()) {
+                Os.setenv("REMASKED_BUNDLED_CONTENT", ownerContent.getAbsolutePath(), true);
+            } else {
+                Os.unsetenv("REMASKED_BUNDLED_CONTENT");
+            }
+            File hud = new File(game, "RestorationHud");
+            if (!new File(hud, "layout/Joker.Main.New.gar").isFile()) {
+                hud = new File(game, "PrivateGame/RestorationHud");
+            }
+            if (new File(hud, "layout/Joker.Main.New.gar").isFile()) {
+                Os.setenv("REMASKED_GAME_HUD_LAYER", hud.getAbsolutePath(), true);
+                Os.setenv("REMASKED_PRESERVE_BUTTON_ART", "1", true);
+            } else {
+                Os.unsetenv("REMASKED_GAME_HUD_LAYER");
+                Os.unsetenv("REMASKED_PRESERVE_BUTTON_ART");
+            }
             Os.setenv("REMASKED_ANDROID_TOUCH_SKIN","1",true);
             Os.setenv("REMASKED_ANDROID_DENSITY",Float.toString(getResources().getDisplayMetrics().density),true);
             Os.setenv("TRIAEVUM_NATIVE_TEXTURE_CACHE_MIB","512",true);
