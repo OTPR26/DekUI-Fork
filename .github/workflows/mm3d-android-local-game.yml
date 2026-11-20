@@ -1,0 +1,106 @@
+name: Android local game boot prototype
+on:
+  push:
+    branches: [mobile-local-game]
+permissions:
+  contents: read
+concurrency:
+  group: mobile-local-game-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+      CCACHE_DIR: ${{ github.workspace }}/.ccache-android
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_MAXSIZE: 2G
+      CCACHE_COMPILERCHECK: content
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          fetch-depth: 1
+      - name: Set build directories
+        run: |
+          echo "ANDROID_USER_HOME=$RUNNER_TEMP/android-user" >> "$GITHUB_ENV"
+          echo "GRADLE_USER_HOME=$RUNNER_TEMP/gradle-user" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build ccache libgl1 libegl1 libxkbcommon0 libdbus-1-3
+          python3 -m pip install aqtinstall==3.3.0
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            'platforms;android-35' 'build-tools;36.1.0' 'ndk;27.3.13750724' 'cmake;3.31.6'
+      - uses: actions/cache@v5
+        id: qt
+        with:
+          path: ${{ runner.temp }}/qt-android
+          key: android-qt-6.12.0-linux-arm64-v1
+      - name: Install Qt Android and host tools
+        if: steps.qt.outputs.cache-hit != 'true'
+        run: python3 -m aqt install-qt linux android 6.12.0 android_arm64_v8a --autodesktop --outputdir "$RUNNER_TEMP/qt-android"
+      - name: Locate Qt kits
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])/'qt-android/6.12.0'
+          android = root/'android_arm64_v8a'
+          hosts = [p for p in root.iterdir() if p != android and (p/'lib/cmake/Qt6/Qt6Config.cmake').is_file()]
+          if not (android/'lib/cmake/Qt6/Qt6Config.cmake').is_file() or len(hosts) != 1:
+              raise SystemExit('Expected one matching Android kit and one host kit')
+          with open(os.environ['GITHUB_ENV'], 'a') as stream:
+              stream.write(f'DEKUI_ANDROID_QT_ROOT={android}\nDEKUI_HOST_QT_ROOT={hosts[0]}\n')
+          PY
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ${{ runner.temp }}/gradle-user/caches
+            ${{ runner.temp }}/gradle-user/wrapper
+          key: android-gradle-${{ runner.os }}-${{ hashFiles('src/android/**/*.gradle*', 'src/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: android-gradle-${{ runner.os }}-
+      - uses: actions/cache@v5
+        with:
+          path: .ccache-android
+          key: android-native-v1-${{ steps.source.outputs.sha }}
+          restore-keys: android-native-v1-
+      - name: Run setup and migration tests
+        run: |
+          python3 -m pip install numpy==2.2.6 pillow==11.0.0
+          python3 -m unittest discover -s tools/mm3d -p 'test_*.py'
+          c++ -std=c++20 -Wall -Wextra -Werror -Isrc src/mm3d/game_language_tests.cpp -o "$RUNNER_TEMP/game-language-tests"
+          "$RUNNER_TEMP/game-language-tests"
+          c++ -std=c++20 -Wall -Wextra -Werror -Isrc src/mm3d/mounted_player_tests.cpp -o "$RUNNER_TEMP/mounted-player-tests"
+          "$RUNNER_TEMP/mounted-player-tests"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - name: Build compressed-disc reader
+        run: |
+          bash tools/mm3d/build_android_disc_reader.sh
+      - name: Build isolated emulator test app
+        working-directory: src/android
+        run: |
+          ./gradlew :app:assembleVanillaPerformance \
+            -Pandroid.injected.build.abi=arm64-v8a -Pandroid.injected.testOnly=false \
+            -PdekuiPresentation=true -PremaskedLocalGamePrototype=true \
+            "-PdekuiQtRoot=$DEKUI_ANDROID_QT_ROOT" "-PdekuiQtHost=$DEKUI_HOST_QT_ROOT" \
+            --no-daemon --console=plain --max-workers=2 -Dorg.gradle.jvmargs=-Xmx3g
+      - name: Check prototype package
+        run: |
+          python3 tools/mm3d/check_local_game_apk.py
+          python3 tools/mm3d/check_release_privacy.py artifacts/Local-Game-Android-arm64.apk
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Local-Game-Android-arm64
+          path: artifacts/Local-Game-Android-arm64.apk
+          if-no-files-found: error

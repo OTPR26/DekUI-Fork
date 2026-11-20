@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 package org.citra.citra_emu.utils
 
+import org.citra.citra_emu.BuildConfig
 import android.content.Context
 import java.io.File
 import java.io.RandomAccessFile
@@ -22,7 +23,8 @@ object DekuiGameSetup {
     }
     fun prepare(context: Context, rom: File, root: File) {
         val expected = json(context, "supported-rom.json")
-        val recipe = json(context, "android-layout-recipe.json")
+        val recipe = if (BuildConfig.LOCAL_GAME_PROTOTYPE) JSONObject().put("inputs", JSONObject())
+            else json(context, "android-layout-recipe.json")
         val inputs = recipe.getJSONObject("inputs")
         val sources = mutableMapOf<String, ByteArray>()
         RandomAccessFile(rom, "r").use { stream ->
@@ -45,6 +47,8 @@ object DekuiGameSetup {
             }
             require(digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) } ==
                 expected.getString("main_partition_sha256")) { "Unsupported game: select the decrypted USA Rev 1 version" }
+            // The local-only boot probe needs no modified game files.
+            if (BuildConfig.LOCAL_GAME_PROTOTYPE) return
             val start = base + u32(base + 0x1b0) * 512 + 0x1000
             val romfsLength = u32(base + 0x1b4) * 512 - 0x1000
             fun rr(at: Long, count: Int): ByteArray {

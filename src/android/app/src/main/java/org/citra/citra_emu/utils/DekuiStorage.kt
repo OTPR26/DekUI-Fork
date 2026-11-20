@@ -14,7 +14,8 @@ import org.citra.citra_emu.NativeLibrary
 
 /** Shared, user-visible game data. App runtime libraries remain in app-private storage. */
 object DekuiStorage {
-    fun sharedRoot()=File(Environment.getExternalStorageDirectory(),"mm3dport")
+    fun folderName() = if (org.citra.citra_emu.BuildConfig.LOCAL_GAME_PROTOTYPE) "mm3dport-local-test" else "mm3dport"
+    fun sharedRoot() = File(Environment.getExternalStorageDirectory(), folderName())
     fun hasAccess(context:Context)=if(Build.VERSION.SDK_INT>=30)Environment.isExternalStorageManager()
         else androidx.core.content.ContextCompat.checkSelfPermission(context,android.Manifest.permission.WRITE_EXTERNAL_STORAGE)==android.content.pm.PackageManager.PERMISSION_GRANTED
     fun root(context:Context):File {
@@ -24,7 +25,7 @@ object DekuiStorage {
     fun game(context:Context)=if(context.getSharedPreferences("dekui-storage",Context.MODE_PRIVATE).getBoolean("shared-v1",false))
         File(root(context),"game/game.cci") else File(context.filesDir,"dekui-game/game.cci")
     fun migrate(context:Context){
-        check(hasAccess(context)){"Allow file access to use Internal storage/mm3dport"}
+        check(hasAccess(context)){"Allow file access to use Internal storage/${org.citra.citra_emu.utils.DekuiStorage.folderName()}"}
         val target=sharedRoot()
         if(context.getSharedPreferences("dekui-storage",Context.MODE_PRIVATE).getBoolean("shared-v1",false)) {
             check(File(target,".dekui-storage-v1").isFile){"The mm3dport data folder is missing. Restore your current folder before starting; the older private backup was retained."}

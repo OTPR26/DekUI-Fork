@@ -49,15 +49,27 @@ val stageDekuiDefaults by tasks.registering(Sync::class) {
     into(layout.buildDirectory.dir("generated/dekuiAssets/dekui-defaults"))
 }
 
+val localGamePrototype = providers.gradleProperty("remaskedLocalGamePrototype").map(String::toBoolean).orElse(false).get()
+
 val stageDekuiSetup by tasks.registering(Sync::class) {
     from("../../../resources/mm3d") {
-        include("supported-rom.json", "android-layout-recipe.json", "setup-fingerprints.json")
-        include("project-restoration/**")
+        include("supported-rom.json")
+        if (!localGamePrototype) {
+            include("android-layout-recipe.json", "setup-fingerprints.json")
+            include("project-restoration/**")
+        }
     }
     into(layout.buildDirectory.dir("generated/dekuiAssets/dekui-setup"))
 }
 
 val downloadedJniLibsPath = "${layout.buildDirectory.get().asFile.path}/downloadedJniLibs"
+
+val stageLocalGameAssets by tasks.registering(Sync::class) {
+    from("src/main/assets") {
+        exclude("dekui-hud8x/**", "dekui-pc-controls/**")
+    }
+    into(layout.buildDirectory.dir("generated/localGameAssets"))
+}
 
 android {
     namespace = "org.citra.citra_emu"
@@ -99,10 +111,11 @@ android {
         // the Play Store listing, which was originally set up for Lime3DS, to still be used.
         applicationId = "org.azahar_emu.azahar"
         if (dekuiPresentation) {
-            applicationId = "io.github.otpr26.dekuifork"
+            applicationId = if (localGamePrototype) "io.github.otpr26.dekuifork.localtest" else "io.github.otpr26.dekuifork"
         }
+        buildConfigField("boolean", "LOCAL_GAME_PROTOTYPE", localGamePrototype.toString())
         buildConfigField("boolean", "DEKUI_PRESENTATION", dekuiPresentation.toString())
-        manifestPlaceholders["applicationLabel"] = if (dekuiPresentation) "Majora ReMasked" else "@string/app_name"
+        manifestPlaceholders["applicationLabel"] = if (localGamePrototype) "Majora ReMasked Local Test" else if (dekuiPresentation) "Majora ReMasked" else "@string/app_name"
         minSdk = 29
         targetSdk = 37
         versionCode = autoVersion
@@ -271,6 +284,7 @@ android {
             // Set up path for downloaded native libraries
             jniLibs.srcDir(downloadedJniLibsPath)
             if (dekuiPresentation) jniLibs.srcDir(layout.buildDirectory.dir("dekuiJniLibs"))
+            if (localGamePrototype) assets.setSrcDirs(listOf(layout.buildDirectory.dir("generated/localGameAssets")))
             if (dekuiPresentation) assets.srcDir(layout.buildDirectory.dir("generated/dekuiAssets"))
         }
     }
@@ -408,7 +422,7 @@ android.applicationVariants.configureEach {
 }
 
 if (dekuiPresentation) {
-    tasks.named("preBuild").configure { dependsOn(stageDekuiDefaults, stageDekuiSetup) }
+    tasks.named("preBuild").configure { dependsOn(stageDekuiDefaults, stageDekuiSetup); if (localGamePrototype) dependsOn(stageLocalGameAssets) }
 }
 
 // The TP setup converter runs on demand, outside gameplay.

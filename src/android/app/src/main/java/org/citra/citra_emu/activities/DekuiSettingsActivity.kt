@@ -220,7 +220,7 @@ class DekuiSettingsActivity : AppCompatActivity() {
                     render()
                 }
                 note("Applies when you start the game. Settings menus remain in English.")
-                note("Game data: Internal storage/mm3dport\nHUD settings, controller bindings, saves and mods are stored here.")
+                note("Game data: Internal storage/${org.citra.citra_emu.utils.DekuiStorage.folderName()}\nHUD settings, controller bindings, saves and mods are stored here.")
                 iconSelection()
                 bool("Show frame rate","show_performance")
                 slider("Menu size",size.toFloat(),0f,40f) { update("android_menu_text_size" to it.toInt());size=it.toInt();render() }

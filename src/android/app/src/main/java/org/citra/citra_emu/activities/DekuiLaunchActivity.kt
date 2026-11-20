@@ -47,7 +47,7 @@ class DekuiLaunchActivity : AppCompatActivity() {
         if(preparingStorage)return
         if(!org.citra.citra_emu.utils.DekuiStorage.hasAccess(this)) {
             val panel=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setPadding(48,48,48,48) }
-            panel.addView(TextView(this).apply { text="Game data folder\n\nMajora ReMasked stores saves, mods and settings in Internal storage/mm3dport. Allow file access to create this folder and migrate existing data. Your existing private data will be kept as a backup.";textSize=20f })
+            panel.addView(TextView(this).apply { text="Game data folder\n\nMajora ReMasked stores saves, mods and settings in Internal storage/${org.citra.citra_emu.utils.DekuiStorage.folderName()}. Allow file access to create this folder and migrate existing data. Your existing private data will be kept as a backup.";textSize=20f })
             panel.addView(Button(this).apply { text="Allow file access";setOnClickListener {
                 if(android.os.Build.VERSION.SDK_INT>=30)storagePermission.launch(Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,Uri.parse("package:$packageName")))
                 else legacyStoragePermission.launch(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
@@ -55,7 +55,7 @@ class DekuiLaunchActivity : AppCompatActivity() {
             setContentView(panel);return
         }
         preparingStorage=true
-        val message=TextView(this).apply {text="Preparing Internal storage/mm3dport…\nCopying and verifying existing data. Originals will be retained.";textSize=20f;setPadding(48,48,48,48)}
+        val message=TextView(this).apply {text="Preparing Internal storage/${org.citra.citra_emu.utils.DekuiStorage.folderName()}…\nCopying and verifying existing data. Originals will be retained.";textSize=20f;setPadding(48,48,48,48)}
         setContentView(message)
         lifecycleScope.launch {
             val result=withContext(Dispatchers.IO){runCatching{org.citra.citra_emu.utils.DekuiStorage.migrate(this@DekuiLaunchActivity)}}
@@ -227,12 +227,14 @@ class DekuiLaunchActivity : AppCompatActivity() {
             android.widget.Toast.makeText(this,"Wait for mod generation to finish",android.widget.Toast.LENGTH_LONG).show();return
         }
 
-        runCatching { org.citra.citra_emu.utils.DekuiHudUpgrade.apply(this) }.onFailure {
-            android.widget.Toast.makeText(this, "PC HUD upgrade: ${it.message}", android.widget.Toast.LENGTH_LONG).show()
-        }
-        runCatching { org.citra.citra_emu.utils.DekuiPcControls.apply(this) }.onFailure {
-            status.text = "PC controls upgrade: ${it.message}"
-            return
+        if (!org.citra.citra_emu.BuildConfig.LOCAL_GAME_PROTOTYPE) {
+            runCatching { org.citra.citra_emu.utils.DekuiHudUpgrade.apply(this) }.onFailure {
+                android.widget.Toast.makeText(this, "PC HUD upgrade: ${it.message}", android.widget.Toast.LENGTH_LONG).show()
+            }
+            runCatching { org.citra.citra_emu.utils.DekuiPcControls.apply(this) }.onFailure {
+                status.text = "PC controls upgrade: ${it.message}"
+                return
+            }
         }
         org.citra.citra_emu.features.settings.model.Settings().loadSettings()
         if (org.citra.citra_emu.features.settings.model.BooleanSetting.CUSTOM_TEXTURES.boolean && !DekuiTextureStorage.readable()) {
