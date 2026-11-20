@@ -36,6 +36,8 @@ jobs:
             -fsyntax-only native/ports/remasked/runtime/ios/drive_data.mm
       - name: Test public mobile package privacy gates
         run: python3 -m unittest discover -s native/ports/remasked/tests -p test_public_mobile.py -v
+      - name: Verify public title input rejection
+        run: python3 -m unittest discover -s native/ports/remasked/tests -p test_public_title_gate.py -v
       - name: Build and test native mobile settings and input core
         run: |
           cmake -S native/ports/remasked -B "$RUNNER_TEMP/mobile-core" -DCMAKE_BUILD_TYPE=Release

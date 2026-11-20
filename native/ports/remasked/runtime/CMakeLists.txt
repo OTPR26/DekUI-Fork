@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.30)
 project(ReMaskedNativeGame LANGUAGES C CXX OBJC OBJCXX)
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/BuildPrivacy.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/PublicMobileTitle.cmake")
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "tvOS" AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   message(FATAL_ERROR "The native game host requires iOS or tvOS")
 endif()
@@ -23,16 +24,30 @@ set(INCLUDE_MPQ_SUPPORT OFF CACHE BOOL "" FORCE)
 set(SDL_SHARED OFF CACHE BOOL "" FORCE)
 set(SDL_STATIC ON CACHE BOOL "" FORCE)
 set(REMASKED_TITLE_BUILD "" CACHE PATH "Private matching tvOS title build")
+if(REMASKED_PUBLIC_MOBILE)
+  if(REMASKED_TITLE_BUILD OR REMASKED_OWNER_CONTENT OR REMASKED_GAME_CONTENT OR REMASKED_ICLOUD_CONTAINER)
+    message(FATAL_ERROR "Public mobile builds cannot use private archives, owner inputs or an owner CloudKit container")
+  endif()
+  remasked_check_public_title("${REMASKED_PUBLIC_TITLE_DIR}" "${REMASKED_PUBLIC_TITLE_MANIFEST_SHA256}")
+  set(remasked_title_link remasked_static_title)
+else()
+  set(remasked_title_link "${REMASKED_TITLE_BUILD}/libremasked_static_title.a")
+endif()
+
 set(REMASKED_MOLTENVK_ROOT "" CACHE PATH "Verified MoltenVK package")
 set(REMASKED_MOLTENVK_SLICE "tvos-arm64_x86_64-simulator" CACHE STRING "Matching XCFramework slice")
 set(molten "${REMASKED_MOLTENVK_ROOT}/MoltenVK/static/MoltenVK.xcframework/${REMASKED_MOLTENVK_SLICE}/libMoltenVK.a")
-if(NOT EXISTS "${molten}" OR NOT EXISTS "${REMASKED_TITLE_BUILD}/libremasked_static_title.a")
+if(NOT EXISTS "${molten}" OR (NOT REMASKED_PUBLIC_MOBILE AND NOT EXISTS "${remasked_title_link}"))
   message(FATAL_ERROR "Matching private title and MoltenVK libraries are required")
 endif()
 set(Vulkan_LIBRARY "${molten}" CACHE FILEPATH "Static MoltenVK" FORCE)
 set(Vulkan_INCLUDE_DIR "${REMASKED_MOLTENVK_ROOT}/MoltenVK/include" CACHE PATH "Vulkan headers" FORCE)
 get_filename_component(root "../../.." ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 add_subdirectory("${root}" product)
+if(REMASKED_PUBLIC_MOBILE)
+  include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/StaticTitle.cmake")
+  remasked_add_static_title("${root}" "${REMASKED_PUBLIC_TITLE_DIR}")
+endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
   target_compile_definitions(oot3d_mm3d_single_screen PUBLIC REMASKED_IOS_GAME=1)
   target_compile_definitions(oot3d_native_game PRIVATE REMASKED_IOS_GAME=1)
@@ -59,7 +74,7 @@ target_sources(oot3d_native_game PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/apple_game
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
   target_sources(oot3d_native_game PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/duo_layout_observer.mm")
 endif()
-target_link_libraries(oot3d_native_game PRIVATE "${REMASKED_TITLE_BUILD}/libremasked_static_title.a")
+target_link_libraries(oot3d_native_game PRIVATE "${remasked_title_link}")
 target_compile_definitions(NRI_Shared PRIVATE REMASKED_STATIC_MOLTENVK=1)
 target_compile_definitions(NRI PRIVATE REMASKED_STATIC_MOLTENVK=1)
 target_link_libraries(NRI PUBLIC "${molten}" "-framework Metal" "-framework Foundation" "-framework QuartzCore" "-framework IOSurface")
@@ -95,6 +110,16 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
 set_target_properties(oot3d_native_game PROPERTIES
   MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_BINARY_DIR}/ReMaskedInfo.plist")
 
+if(REMASKED_PUBLIC_MOBILE)
+  add_custom_target(remasked_public_resources
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_BUNDLE_DIR:oot3d_native_game>/GameContent/resources"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+      "${root}/runtime/triaevum_resources/gamecontrollerdb.txt"
+      "$<TARGET_BUNDLE_DIR:oot3d_native_game>/GameContent/resources/gamecontrollerdb.txt"
+    VERBATIM)
+  add_dependencies(oot3d_native_game remasked_public_resources)
+endif()
+
 # Private owner assets are copied into the signed, immutable bundle, never caches.
 set(REMASKED_OWNER_CONTENT "" CACHE PATH "Private verified owner resources; never commit or publish")
 if(REMASKED_OWNER_CONTENT)
@@ -121,7 +146,7 @@ target_link_libraries(oot3d_native_game PRIVATE "-framework CloudKit" "-framewor
 
 target_sources(oot3d_native_game PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/save_sync_panel.cpp")
 # These host-service tests also use the static title ABI in a mobile build.
-target_link_libraries(oot3d_native_a32_ctr_host_tests PRIVATE "${REMASKED_TITLE_BUILD}/libremasked_static_title.a")
+target_link_libraries(oot3d_native_a32_ctr_host_tests PRIVATE "${remasked_title_link}")
 
 set(REMASKED_GAME_CONTENT "" CACHE PATH "Private local game inputs for owner-device testing only")
 if(REMASKED_GAME_CONTENT)
