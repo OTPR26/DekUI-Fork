@@ -420,10 +420,10 @@ void ReMaskedIOSLaunch(){
  }
  std::shared_ptr<GameLanguageSettings> language;
  // Standalone Settings is available before any game content has been imported.
- const auto bundled = BundledContent();
- if (fs::is_regular_file(bundled / ReMaskedIOS::PreparedGameManifest)) {
-    const auto source = ReMaskedMenu::ReadFile(bundled / ReMaskedIOS::PreparedGameManifest).at("source");
-    auto languages = DetectGameLanguages(bundled / source.at("romfs_image_path").get<std::string>(),
+ const auto bundledGame = BundledContent();
+ if (fs::is_regular_file(bundledGame / ReMaskedIOS::PreparedGameManifest)) {
+    const auto source = ReMaskedMenu::ReadFile(bundledGame / ReMaskedIOS::PreparedGameManifest).at("source");
+    auto languages = DetectGameLanguages(bundledGame / source.at("romfs_image_path").get<std::string>(),
         source.value("romfs_service_offset", uint64_t(0)), source.value("romfs_service_size", uint64_t(0)), TitleAdapter::Mm3d);
     language = std::make_shared<GameLanguageSettings>(Root() / "game_language.json", languages);
  }

@@ -51,3 +51,16 @@ jobs:
           python3 native/ports/remasked/tools/check_ios_menu.py --core-build "$RUNNER_TEMP/mobile-core" --sdl "$RUNNER_TEMP/sdl-headers"
       - name: Verify compiled path privacy
         run: python3 native/ports/remasked/tools/check_build_privacy.py --work "$RUNNER_TEMP"
+  android-prepared-import:
+    name: Android prepared folder importer compilation
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Compile against Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "$ANDROID_HOME/platforms/android-35/android.jar" || sdkmanager "platforms;android-35"
+          javac --release 17 -cp "$ANDROID_HOME/platforms/android-35/android.jar" -d "$RUNNER_TEMP" \
+            native/ports/remasked/android-game/app/src/main/java/io/github/otpr26/remasked/nativegame/PreparedGameImport.java

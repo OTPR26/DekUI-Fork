@@ -19,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 /** The ReMasked launcher keeps model conversion out of the game process. */
 public final class ReMaskedLauncherActivity extends Activity {
     private static final int PICK_PAK=100;
+    private static final int PICK_GAME_FOLDER=101;
     private static volatile boolean importing;
     private TextView status;
     private File root() {return org.triaevum.android.GameDataDirectory.root(this);}
@@ -36,9 +37,16 @@ public final class ReMaskedLauncherActivity extends Activity {
     }
     private void play(boolean settings){
         if(ReMaskedDataFolderActivity.activeMove){report("Wait for the data move to finish.");return;}
-        if(importing){report("Wait for model import to finish.");return;}
+        if(importing){report("Wait for import to finish.");return;}
         if(settings&&!gameRunning()){startActivity(new Intent(this,ReMaskedSettingsActivity.class));return;}
-        if(!new File(root(),"GameContent/ReMaskedNativeGame.launch.json").isFile()){report("Game files have not been prepared yet.");return;}
+        if(!new File(root(),"GameContent/ReMaskedNativeGame.launch.json").isFile()){
+            new android.app.AlertDialog.Builder(this).setTitle("Import prepared game folder")
+                .setMessage("Choose your prepared folder containing code.bin, exheader.bin, romfs.bin and process-manifest.json. ReMasked copies the files into local storage.")
+                .setPositiveButton("Choose folder", (dialog, which) ->
+                    startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), PICK_GAME_FOLDER))
+                .setNegativeButton("Cancel", null).show();
+            return;
+        }
         startActivity(new Intent(this,ReMaskedGameActivity.class).putExtra("open_settings",settings)
             .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT|Intent.FLAG_ACTIVITY_SINGLE_TOP));
     }
@@ -96,6 +104,29 @@ public final class ReMaskedLauncherActivity extends Activity {
     }
     @Override protected void onActivityResult(int request,int result,Intent data) {
         super.onActivityResult(request,result,data);
+        if (request == PICK_GAME_FOLDER) {
+            if (result != RESULT_OK || data == null || data.getData() == null) return;
+            if (importing || gameRunning() || ReMaskedDataFolderActivity.activeMove) {
+                report("Return to the launcher and wait for any other data operation to finish.");
+                return;
+            }
+            importing = true;
+            Uri folder = data.getData();
+            Path game = root().toPath().resolve("GameContent");
+            report("Importing game files…");
+            new Thread(() -> {
+                try {
+                    PreparedGameImport.install(getContentResolver(), folder, game);
+                    report("Game files imported. You can now start the game.");
+                } catch (Exception error) {
+                    report("Game import failed: " + error.getMessage());
+                } finally {
+                    importing = false;
+                }
+            }, "remasked-game-import").start();
+            return;
+        }
+
         if(request==org.triaevum.android.GraphicsDriver.PICK_REQUEST){
             org.triaevum.android.GraphicsDriver.result(data);report(org.triaevum.android.GraphicsDriver.status(this));return;
         }
