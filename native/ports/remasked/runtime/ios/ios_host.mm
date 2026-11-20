@@ -8,6 +8,8 @@
 #include "ios_host.h"
 #include "aim_modes.h"
 #include "drive_data.h"
+#include "prepared_game.h"
+#include "oot3d_native_a32_process_image.h"
 #include "save_sync.h"
 #include "touch_controls.h"
 #include "fast/extension/remasked_dual_screen.h"
@@ -53,6 +55,86 @@ UIWindow* LauncherWindow=nil;
 NSTimer* LauncherTimer=nil;
 void FinishStartupLaunch();
 std::filesystem::path Root(){return std::filesystem::current_path();}
+namespace fs = std::filesystem;
+
+fs::path PreparedContent() {
+    return Root() / ReMaskedIOS::PreparedGameDirectory;
+}
+
+fs::path BundledContent() {
+    return fs::path(NSBundle.mainBundle.resourcePath.UTF8String) / ReMaskedIOS::PreparedGameDirectory;
+}
+
+bool HasGameContent() {
+    const auto manifest = ReMaskedIOS::PreparedGameManifest;
+    return fs::is_regular_file(PreparedContent() / manifest) ||
+           fs::is_regular_file(BundledContent() / manifest);
+}
+
+void ValidatePreparedGame(const fs::path& directory) {
+    const auto manifestPath = directory / ReMaskedIOS::PreparedGameManifest;
+    if (fs::file_size(manifestPath) > 1024 * 1024 ||
+        fs::file_size(directory / "code.bin") > 32ULL * 1024 * 1024 ||
+        fs::file_size(directory / "exheader.bin") != 2048) {
+        throw std::runtime_error("The prepared folder contains an invalid file size.");
+    }
+    const auto manifest = ReMaskedMenu::ReadFile(manifestPath);
+    const auto& source = manifest.at("source");
+    constexpr auto expectedCode = "6eec27b1827eab2c87744ac38066d569ffe6fe75790b1eb3300bd91f5099038d";
+    if (source.at("code_bin_path") != "code.bin" ||
+        source.at("exheader_path") != "exheader.bin" ||
+        source.at("romfs_image_path") != "romfs.bin" ||
+        source.at("code_bin_sha256") != expectedCode) {
+        throw std::runtime_error("The prepared folder does not match this runtime.");
+    }
+    NSData* code = [NSData dataWithContentsOfFile:Text((directory / "code.bin").string())];
+    if (!code || code.length > 32 * 1024 * 1024) {
+        throw std::runtime_error("The prepared code image is missing or invalid.");
+    }
+    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+    CC_SHA256(code.bytes, static_cast<CC_LONG>(code.length), digest);
+    NSMutableString* hash = [NSMutableString string];
+    for (auto byte : digest) [hash appendFormat:@"%02x", byte];
+    if (![hash isEqualToString:Text(expectedCode)]) {
+        throw std::runtime_error("The prepared code image does not match this runtime.");
+    }
+    std::string error;
+    if (!LoadNativeA32ProcessImageManifest(manifestPath, &error)) {
+        throw std::runtime_error("The prepared game manifest or file layout is invalid.");
+    }
+}
+
+void ImportPreparedGame(const fs::path& source, const fs::path& destination) {
+    if (fs::exists(destination)) {
+        throw std::runtime_error("Game files are already installed locally.");
+    }
+    fs::create_directories(destination.parent_path());
+    const auto staging = destination.parent_path() / NSUUID.UUID.UUIDString.UTF8String;
+    fs::create_directory(staging);
+    try {
+        const std::pair<const char*, uint64_t> limits[] = {
+            {"code.bin", 32ULL * 1024 * 1024},
+            {"exheader.bin", 2048},
+            {"romfs.bin", 4ULL * 1024 * 1024 * 1024},
+            {ReMaskedIOS::PreparedGameManifest, 1024 * 1024}
+        };
+        for (const auto& [name, maxSize] : limits) {
+            const auto file = source / name;
+            if (!fs::is_regular_file(fs::symlink_status(file)) ||
+                fs::file_size(file) == 0 || fs::file_size(file) > maxSize) {
+                throw std::runtime_error(std::string("Missing or invalid prepared file: ") + name);
+            }
+            fs::copy_file(file, staging / name);
+        }
+        ValidatePreparedGame(staging);
+        fs::rename(staging, destination);
+    } catch (...) {
+        std::error_code ignored;
+        fs::remove_all(staging, ignored);
+        throw;
+    }
+}
+
 void SaveTouch(){
  auto patch=ReMaskedMenu::TakeTouch();if(patch.contains("appIconSelection"))ReMaskedIOSApplyIcon(patch["appIconSelection"].get<int>());
  Json values=Json::object();NSData* old=[NSUserDefaults.standardUserDefaults dataForKey:@"ReMasked.TouchSettings.v1"];if(old)try{values=Json::parse(std::string((const char*)old.bytes,old.length));}catch(...){}
@@ -119,7 +201,7 @@ static void Notice(NSString* title,NSString* message){UIAlertController* a=[UIAl
 }
 - (void)reload{if(SettingsOwner())SettingsOwner()->Refresh();self.launcher.hidden=self.settings;self.masks.hidden=self.settings;self.subtitle.hidden=self.settings;[self.view setNeedsLayout];self.categories.hidden=!self.settings;self.rows.hidden=!self.settings;[self.view viewWithTag:110].hidden=!self.settings;[self.categories reloadData];[self.rows reloadData];[self showModelModal];}
 - (void)back{if(LiveMenu){SettingsModel().Close();[self dismissViewControllerAnimated:YES completion:^{PresentingSettings=false;LiveMenu=nullptr;ActiveController=nil;}];}else{self.settings=NO;[self reload];}}
-- (void)launchAction:(UIButton*)button{NSString* name=button.currentTitle;if([name isEqual:@"Start game"]){SaveTouch();StartRequested=true;self.launcher.userInteractionEnabled=NO;self.status.text=@"Starting game…";NSLog(@"REMASKED_IOS_START requested by user");
+- (void)launchAction:(UIButton*)button{NSString* name=button.currentTitle;if([name isEqual:@"Start game"]){if(!HasGameContent()){[self route:@"remasked-prepare-game"];return;}SaveTouch();StartRequested=true;self.launcher.userInteractionEnabled=NO;self.status.text=@"Starting game…";NSLog(@"REMASKED_IOS_START requested by user");
  try{FinishStartupLaunch();if(ResumeMain)ResumeMain();}catch(const std::exception& error){StartRequested=false;self.launcher.userInteractionEnabled=YES;Notice(@"Could not start game",Text(error.what()));}}else if([name isEqual:@"Settings"]){self.settings=YES;[self reload];}else Notice(@"Majora ReMasked",@"A DekUI Fork\n\nSettings are available here and during play. Start opens the Items menu; Select opens app settings.");}
 - (NSInteger)tableView:(UITableView*)table numberOfRowsInSection:(NSInteger)section{if(!SettingsOwner())return 0;auto& doc=SettingsModel().Doc();return table==self.categories?doc.Tabs.size():doc.Tabs.at(self.page).Rows.size();}
 - (UITableViewCell*)tableView:(UITableView*)table cellForRowAtIndexPath:(NSIndexPath*)index{
@@ -164,6 +246,21 @@ static void Notice(NSString* title,NSString* message){UIAlertController* a=[UIAl
  });
 }
 - (void)route:(NSString*)route{
+ if ([route isEqual:@"remasked-prepare-game"] && !GameRunning) {
+    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Import prepared game folder"
+        message:@"Choose your prepared folder containing code.bin, exheader.bin, romfs.bin and process-manifest.json. ReMasked copies the files into local storage."
+        preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Choose folder" style:UIAlertActionStyleDefault handler:^(UIAlertAction*) {
+        self.pickerPurpose = @"prepared-game";
+        UIDocumentPickerViewController* picker = [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypeFolder] asCopy:NO];
+        picker.delegate = self;
+        [self presentViewController:picker animated:YES completion:nil];
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
+    return;
+ }
+
  if([route isEqual:@"remasked-data-folder"]){if(GameRunning){Notice(@"Data folder",@"Choose a data folder from startup Settings after closing the game.");return;}self.pickerPurpose=@"data";UIDocumentPickerViewController* picker=[[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypeFolder] asCopy:NO];picker.delegate=self;[self presentViewController:picker animated:YES completion:nil];return;}
  if([route isEqual:@"remasked-data-sync"]){[self syncDrive:nil resolution:ReMaskedDrive::Resolution::Ask];return;}
  if([route isEqual:@"remasked-data-default"]){if(GameRunning)return;ReMaskedDrive::Disconnect();[self reload];self.status.text=ReMaskedDrive::Status();return;}
@@ -184,6 +281,39 @@ static void Notice(NSString* title,NSString* message){UIAlertController* a=[UIAl
  if([route isEqual:@"remasked-save-import"]){self.pickerPurpose=@"saves";UIDocumentPickerViewController* p=[[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypeData] asCopy:YES];p.allowsMultipleSelection=YES;p.delegate=self;[self presentViewController:p animated:YES completion:nil];return;}
 }
 - (void)documentPicker:(UIDocumentPickerViewController*)controller didPickDocumentsAtURLs:(NSArray<NSURL*>*)urls{
+ if ([self.pickerPurpose isEqual:@"prepared-game"]) {
+    if (urls.count != 1 || GameRunning) return;
+    NSURL* folder = urls.firstObject;
+    const auto destination = PreparedContent();
+    self.view.userInteractionEnabled = NO;
+    self.status.text = @"Importing game files…";
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        const BOOL access = [folder startAccessingSecurityScopedResource];
+        __block NSString* failure = nil;
+        NSError* coordinationError = nil;
+        NSFileCoordinator* coordinator = [[NSFileCoordinator alloc] initWithFilePresenter:nil];
+        [coordinator coordinateReadingItemAtURL:folder options:0 error:&coordinationError byAccessor:^(NSURL* source) {
+            try {
+                ImportPreparedGame(fs::path(source.fileSystemRepresentation), destination);
+            } catch (const std::exception& error) {
+                failure = Text(error.what());
+            }
+        }];
+        if (access) [folder stopAccessingSecurityScopedResource];
+        if (coordinationError) failure = @"Files could not open the selected folder.";
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.view.userInteractionEnabled = YES;
+            if (failure) {
+                self.status.text = @"Game import failed.";
+                Notice(@"Game import failed", failure);
+                return;
+            }
+            self.status.text = @"Game files imported. You can now start the game.";
+            [self reload];
+        });
+    });
+    return;
+ }
  try{
  if([self.pickerPurpose isEqual:@"data"]){if(urls.count!=1)throw std::runtime_error("Choose one data folder");[self syncDrive:urls.firstObject resolution:ReMaskedDrive::Resolution::Ask];return;}
  if([self.pickerPurpose isEqual:@"model"]){if(urls.count!=1)throw std::runtime_error("Choose one prepared model folder");NSURL* selected=urls.firstObject;BOOL access=[selected startAccessingSecurityScopedResource];@try{
@@ -210,6 +340,13 @@ void ReMaskedIOSAppendSettings(Menu::Document& document){
   }
   std::erase_if(tab.Rows,[](const Menu::Row& r){return r.Key=="Show Select / App settings"||r.Key=="Select / App settings size"||r.Key=="Current graphics driver"||r.Key=="Use system driver"||r.Key=="Choose driver ZIP…"||r.Key=="Output resolution"||r.Key=="Screen mode"||r.Key=="Choose custom data folder…"||r.Key=="Use app data folder";});
   if(tab.Title=="Data"){
+   Menu::Row setup;
+   setup.Kind = Menu::RowKind::Action;
+   setup.Key = "Import prepared game folder…";
+   setup.Available = [] { return !GameRunning && !HasGameContent(); };
+   setup.UnavailableReason = "Game files are already available.";
+   setup.Activate = [] { ReMaskedIOSRoute("remasked-prepare-game"); return Menu::WriteResult{}; };
+   tab.Rows.insert(tab.Rows.begin(), std::move(setup));
    Menu::Row location;location.Kind=Menu::RowKind::Info;location.Key="Data folder";location.DynamicText=[](){return std::string(ReMaskedDrive::FolderName().UTF8String);};tab.Rows.push_back(std::move(location));
    Menu::Row status;status.Kind=Menu::RowKind::Info;status.Key="Folder sync";status.DynamicText=[](){return std::string(ReMaskedDrive::Status().UTF8String);};tab.Rows.push_back(std::move(status));
    for(auto [label,route]:std::vector<std::pair<std::string,std::string>>{{"Choose iCloud Drive / Files folder…","remasked-data-folder"},{"Sync data folder now","remasked-data-sync"},{"Use local data only","remasked-data-default"}}){Menu::Row row;row.Kind=Menu::RowKind::Action;row.Key=label;row.Help="Sync saves, portable settings, imported models, textures and game files at startup and after quitting gameplay. Local working files and caches stay on this device. Deletions are not synced.";row.Available=[route](){return !GameRunning&&(route!="remasked-data-sync"||ReMaskedDrive::Enabled());};row.UnavailableReason=GameRunning?"Available from startup Settings after closing the game.":"Choose a data folder first.";row.Activate=[route](){ReMaskedIOSRoute(route);return Menu::WriteResult{};};tab.Rows.push_back(std::move(row));}
@@ -271,6 +408,9 @@ void ReMaskedIOSLaunch(){
  std::string deviceKey="iOS-"+std::string(UIDevice.currentDevice.model.UTF8String)+"-"+UIDevice.currentDevice.systemVersion.UTF8String;
  setenv("REMASKED_GRAPHICS_DEVICE_KEY",deviceKey.c_str(),1);setenv("REMASKED_GRAPHICS_CAPABILITIES",(Root()/"graphics-capabilities.json").c_str(),1);
  auto store=std::make_shared<Store>(Root()/"native-game.json");if(!std::filesystem::exists(store->Path))ReMaskedMenu::AtomicWrite(store->Path,Json::object());Fast::Extension::InstallGraphicsSettingsPersistencePort(store);ReMaskedGraphics::Load();
+ for (const auto* name : {"presentation.json", "runtime-presentation.json"}) {
+    if (!fs::exists(Root() / name)) ReMaskedMenu::AtomicWrite(Root() / name, Json::object());
+ }
  if(!Mm3dSingleScreen::LoadSettings(Root()/"presentation.json"))throw std::runtime_error("Could not load ReMasked presentation settings");
  NSData* saved=[NSUserDefaults.standardUserDefaults dataForKey:@"ReMasked.TouchSettings.v1"];if(saved)try{ReMaskedMenu::ReportTouch(Json::parse(std::string((const char*)saved.bytes,saved.length)));}catch(...){}
  {
@@ -278,10 +418,15 @@ void ReMaskedIOSLaunch(){
   ThreeDsRecomp::Input::OverlayTouchSettings().Report({v.value("visible",true),v.value("controlOpacity",28),v.value("controlScale",50)+50,v.value("vibration",true),v.value("hideWithController",true)});
   v["dataDirectory"]=Root().string();
  }
- auto content=std::filesystem::path(NSBundle.mainBundle.resourcePath.UTF8String)/"GameContent/PrivateGame";
- auto manifest=ReMaskedMenu::ReadFile(content/"process-manifest.json");auto source=manifest.at("source");
- auto languages=DetectGameLanguages(content/source.at("romfs_image_path").get<std::string>(),source.value("romfs_service_offset",uint64_t(0)),source.value("romfs_service_size",uint64_t(0)),TitleAdapter::Mm3d);
- auto language=std::make_shared<GameLanguageSettings>(Root()/"game_language.json",languages);
+ std::shared_ptr<GameLanguageSettings> language;
+ // Standalone Settings is available before any game content has been imported.
+ const auto bundled = BundledContent();
+ if (fs::is_regular_file(bundled / ReMaskedIOS::PreparedGameManifest)) {
+    const auto source = ReMaskedMenu::ReadFile(bundled / ReMaskedIOS::PreparedGameManifest).at("source");
+    auto languages = DetectGameLanguages(bundled / source.at("romfs_image_path").get<std::string>(),
+        source.value("romfs_service_offset", uint64_t(0)), source.value("romfs_service_size", uint64_t(0)), TitleAdapter::Mm3d);
+    language = std::make_shared<GameLanguageSettings>(Root() / "game_language.json", languages);
+ }
  auto runtime=std::make_shared<NativeControlConfigRuntime>(cp,controls);InGameMenuHost host;host.Controls=Menu::HelpControls::Touch;host.SaveDataDirectory=Root()/"saves";host.LogsDirectory=Root()/"logs";host.OpenInstallerPage=[](std::string_view route,std::string*){ReMaskedIOSRoute(std::string(route));return true;};host.AppendSettingsTabs=[](Menu::Document& d){ReMaskedIOSAppendSettings(d);};
  Startup=std::make_unique<InGameMenu>(InGameMenuOwners{runtime,nullptr,language,nullptr,nullptr,nullptr,std::move(host),std::make_shared<Ship::AudioOutputPolicy>(store),{.QuickPutAway=true,.RollDash=true},true});
  for(auto& tab:SettingsModel().Doc().Tabs){std::erase_if(tab.Rows,[](const Menu::Row& r){return r.Key=="Quit game";});for(auto& row:tab.Rows){if(row.Key=="Edit layout"||row.Key=="Calibrate controller gyro"){row.Available=[](){return false;};row.UnavailableReason="Available during gameplay";}if(tab.Title=="Graphics"&&row.Write){auto write=row.Write;row.Write=[write,store](int value){auto result=write(value);if(!result.Error&&!store->StoreGraphics(Fast::Extension::SerializeGraphicsSettings(Fast::Extension::GraphicsSettingsRuntime::Instance().Snapshot())))return Menu::WriteResult{"Could not save graphics",true};return result;};}}}
@@ -314,7 +459,16 @@ void RebuildStartup(){
 }
 void FinishStartupLaunch(){
  // Apply file-backed model selection only before a guest filesystem exists.
- auto j=ReMaskedMenu::Current(true);auto profile=Root()/"ReMaskedNativeGame.launch.json";auto launch=ReMaskedMenu::ReadFile(profile);auto args=launch.at("arguments");
+ auto j=ReMaskedMenu::Current(true);
+ auto profile=Root()/"ReMaskedNativeGame.launch.json";
+ Json launch;
+ if (fs::is_regular_file(PreparedContent() / ReMaskedIOS::PreparedGameManifest)) {
+    ValidatePreparedGame(PreparedContent());
+    launch = ReMaskedIOS::PreparedGameLaunchProfile();
+ } else {
+    launch = ReMaskedMenu::ReadFile(profile);
+ }
+ auto args=launch.at("arguments");
  for(int i=int(args.size())-2;i>=0;--i)if(args[i]=="--title-romfs-layer"&&args[i+1].is_string()&&args[i+1].get<std::string>().starts_with((Root()/"models").string())){args.erase(args.begin()+i,args.begin()+i+2);}
  for(const char* key:{"REMASKED_GAME_MODEL_LAYER","REMASKED_GAME_VOICE_LAYER","REMASKED_GAME_MODEL_TEXTURES","REMASKED_SWORD_ICON"})unsetenv(key);
  setenv("REMASKED_TALL_PLAYER","0",1);setenv("REMASKED_ADULT_TUNIC_COLOR","0",1);
