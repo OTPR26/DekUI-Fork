@@ -13,7 +13,7 @@ concurrency:
 jobs:
   ios-data-folder:
     name: iOS data folder transaction checks
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -49,3 +49,5 @@ jobs:
           git -C "$RUNNER_TEMP/sdl-headers" fetch --depth 1 https://github.com/libsdl-org/SDL.git 98d1f3a45aae568ccd6ed5fec179330f47d4d356
           git -C "$RUNNER_TEMP/sdl-headers" checkout --detach FETCH_HEAD
           python3 native/ports/remasked/tools/check_ios_menu.py --core-build "$RUNNER_TEMP/mobile-core" --sdl "$RUNNER_TEMP/sdl-headers"
+      - name: Verify compiled path privacy
+        run: python3 native/ports/remasked/tools/check_build_privacy.py --work "$RUNNER_TEMP"

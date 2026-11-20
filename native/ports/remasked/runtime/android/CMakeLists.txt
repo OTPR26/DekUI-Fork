@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.30)
 project(ReMaskedAndroidGame LANGUAGES C CXX)
+include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/BuildPrivacy.cmake")
 set(TRIAEVUM_TITLES "oot3d;mm3d" CACHE STRING "" FORCE)
 set(TRIAEVUM_PRODUCT_TITLE mm3d CACHE STRING "" FORCE)
 set(TRIAEVUM_DEVELOPER_TOOLS OFF CACHE BOOL "" FORCE)

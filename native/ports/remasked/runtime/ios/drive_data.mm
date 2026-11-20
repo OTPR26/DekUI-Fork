@@ -38,7 +38,7 @@ NSDictionary* Scan(NSURL* root){
  return hashes;
 }
 }
-NSString* FolderName(){return [NSUserDefaults.standardUserDefaults stringForKey:Label]?:@"App data folder";}
+NSString* FolderName(){return [NSUserDefaults.standardUserDefaults stringForKey:Label]?:@"Not selected (local only)";}
 NSString* Status(){return state;}
 bool Enabled(){return [NSUserDefaults.standardUserDefaults dataForKey:Bookmark]!=nil;}
 void Disconnect(){[NSUserDefaults.standardUserDefaults removeObjectForKey:Bookmark];[NSUserDefaults.standardUserDefaults removeObjectForKey:Label];state=@"Using local data. The Drive copy was retained.";}

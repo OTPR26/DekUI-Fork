@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.30)
 project(ReMaskedNativeGame LANGUAGES C CXX OBJC OBJCXX)
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/BuildPrivacy.cmake")
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "tvOS" AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   message(FATAL_ERROR "The native game host requires iOS or tvOS")
 endif()
