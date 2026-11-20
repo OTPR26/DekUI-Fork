@@ -28,7 +28,11 @@ NSDictionary* Scan(NSURL* root){
   NSURL* current=root;for(NSString* part in directory.pathComponents){current=[current URLByAppendingPathComponent:part];if([fm fileExistsAtPath:current.path])Regular(current,true);}
   NSURL* base=[root URLByAppendingPathComponent:directory];if(![fm fileExistsAtPath:base.path])continue;
   __block NSError* enumerationError=nil;NSDirectoryEnumerator* it=[fm enumeratorAtURL:base includingPropertiesForKeys:nil options:0 errorHandler:^BOOL(NSURL*,NSError* error){enumerationError=error;return NO;}];
-  for(NSURL* url in it){Require([url.path hasPrefix:[root.path stringByAppendingString:@"/"]],@"Data file escaped the selected folder.");NSString* relative=[url.path substringFromIndex:root.path.length+1];NSDictionary* a=[fm attributesOfItemAtPath:url.path error:nil];if([a[NSFileType] isEqual:NSFileTypeDirectory])continue;add(url,relative);}
+  for(NSURL* url in it){NSDictionary* a=[fm attributesOfItemAtPath:url.path error:nil];if([a[NSFileType] isEqual:NSFileTypeDirectory])continue;Regular(url,false);
+   NSArray* prefix=root.URLByResolvingSymlinksInPath.path.pathComponents;NSArray* parts=url.URLByResolvingSymlinksInPath.path.pathComponents;
+   Require(parts.count>prefix.count&&[[parts subarrayWithRange:NSMakeRange(0,prefix.count)] isEqual:prefix],@"Data file escaped the selected folder.");
+   NSString* relative=[[parts subarrayWithRange:NSMakeRange(prefix.count,parts.count-prefix.count)] componentsJoinedByString:@"/"];add(url,relative);
+  }
   Require(!enumerationError,@"The data folder could not be enumerated.");
  }
  return hashes;
