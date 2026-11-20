@@ -1,0 +1,885 @@
+#include "oot3d_native_ui_lifecycle_bridge.h"
+#include "oot3d_top_screen_wide_items_runtime.h"
+#include "oot3d_top_screen_dpad_presentation.h"
+
+#include "oot3d_native_a32_input.h"
+#include "oot3d_top_screen_items_hint_consumer.h"
+#include "oot3d_top_screen_mod_profile.h"
+#include "oot3d_ui/ui_gameplay_hud_inline_semantics.h"
+
+#include <algorithm>
+#include <span>
+#include <string>
+#include <string_view>
+#include <utility>
+
+namespace Oot3dNativeGame {
+namespace {
+
+constexpr uint32_t kRendererBuiltinCtxbSources = 0x0055B490U;
+constexpr uint32_t kCtxbRuntimeTextureGuestAddressOffset = 0x4CU;
+constexpr std::string_view kPauseSharedSemanticPrefix =
+    "oot3d/native/pause_shared/";
+
+class NativeA32UiMemoryReader final : public oot3d::ui::GuestMemoryReader {
+public:
+  explicit NativeA32UiMemoryReader(const NativeA32Memory &memory) noexcept
+      : mMemory(memory) {}
+
+  bool Read(uint32_t address, void *destination,
+            std::size_t size) const noexcept override {
+    if (destination == nullptr && size != 0U) {
+      return false;
+    }
+    return mMemory.ReadBytes(
+        address, std::span<uint8_t>(static_cast<uint8_t *>(destination), size));
+  }
+
+private:
+  const NativeA32Memory &mMemory;
+};
+
+std::size_t SeamPhaseIndex(oot3d::ui::UiSeamPhase phase) noexcept {
+  return static_cast<std::size_t>(phase);
+}
+
+bool RouteGuestForPhase(oot3d::ui::UiSeamPhase phase,
+                        const oot3d::ui::UiFramePlan &plan,
+                        oot3d::ui::UiNativeDisposition disposition) noexcept {
+  if (disposition != oot3d::ui::UiNativeDisposition::Replaceable) {
+    return true;
+  }
+  switch (phase) {
+  case oot3d::ui::UiSeamPhase::Update:
+  case oot3d::ui::UiSeamPhase::Initialize:
+  case oot3d::ui::UiSeamPhase::Reset:
+  case oot3d::ui::UiSeamPhase::Helper:
+    return plan.run_guest_mechanics;
+  case oot3d::ui::UiSeamPhase::Draw:
+  case oot3d::ui::UiSeamPhase::Submit:
+  case oot3d::ui::UiSeamPhase::Composite:
+    return plan.run_guest_presentation;
+  case oot3d::ui::UiSeamPhase::Input:
+    return plan.forward_input_to_guest;
+  case oot3d::ui::UiSeamPhase::Action:
+  case oot3d::ui::UiSeamPhase::Query:
+    return true;
+  }
+  return true;
+}
+
+} // namespace
+
+bool BeginsNativeGameplayUiPresentation(
+    const NativeUiLifecycleObservation &observation) noexcept {
+  if (!observation.matched || observation.contract == nullptr ||
+      observation.contract->subsystem != oot3d::ui::UiSubsystem::GameplayHud) {
+    return false;
+  }
+  const auto phase = observation.contract->phase;
+  const bool presentationPhase = phase == oot3d::ui::UiSeamPhase::Draw ||
+                                 phase == oot3d::ui::UiSeamPhase::Submit ||
+                                 phase == oot3d::ui::UiSeamPhase::Composite;
+  const bool ownsPresentation =
+      (observation.contract->responsibilities &
+       oot3d::ui::UiResponsibilityBit(
+           oot3d::ui::UiResponsibility::Presentation)) != 0U;
+  return presentationPhase && ownsPresentation;
+}
+
+Oot3dNativeUiLifecycleBridge::Oot3dNativeUiLifecycleBridge(
+    NativeA32Memory &memory)
+    : mMemory(memory), mRoots(oot3d::ui::BuildVerifiedOot3dUiGuestRoots(
+                           oot3d::ui::kOot3dSaveContextAddress)),
+      mRouter(mRuntime) {}
+
+void Oot3dNativeUiLifecycleBridge::BeginHostFrame(uint32_t hostFrame) noexcept {
+  ++mHostFrameGeneration;
+  mStats.current_host_frame = hostFrame;
+}
+
+void Oot3dNativeUiLifecycleBridge::BeginObservationFrameIfNeeded() noexcept {
+  if (mObservationFrameGeneration == mHostFrameGeneration) {
+    return;
+  }
+  mObservedSubsystems.fill(false);
+  mLastObservedSubsystem.reset();
+  mObservationFrameGeneration = mHostFrameGeneration;
+}
+
+void Oot3dNativeUiLifecycleBridge::ResetAfterStateLoad(
+    uint32_t hostFrame) noexcept {
+  mRuntime = oot3d::ui::N64IntegratedUiRuntime{};
+  mStats = {};
+  mStats.current_host_frame = hostFrame;
+  mHostFrameGeneration = 0;
+  mObservationFrameGeneration = UINT64_MAX;
+  mCapturedGeneration = UINT64_MAX;
+  mLatestState = {};
+  mHasLatestState = false;
+  mOmoteUraSelector = {};
+  mVersionChoiceRevealed = false;
+  mObservedSubsystems.fill(false);
+  mLastObservedSubsystem.reset();
+  mTopScreenPauseProjection = {};
+  mTopScreenPauseProjection.AlternatePage = mTopScreenConfig.MinimapVisible;
+  mTopScreenPauseEdgeGeometry.reset();
+  mTopScreenPausePageRedrawEdgeGeometry.reset();
+  mTopScreenSystemPagePresentation = false;
+  mTopScreenItemsHint = {};
+  mTopScreenDpadPickerCursor = {};
+  mTopScreenItemsShortcutCursor = {};
+  if (mTopScreenItemsShortcuts != nullptr) mTopScreenItemsShortcuts->CancelDpadPicker();
+  mTopScreenTouchCopies = {};
+  mTopScreenViewAlpha = 1.0F;
+  mTopScreenOcarina.Reset();
+}
+
+NativeUiLifecycleObservation
+Oot3dNativeUiLifecycleBridge::ObserveGuestEntry(uint32_t guestEntry) {
+  NativeUiLifecycleObservation result;
+  const auto &entries = GuestEntryPoints();
+  if (!std::binary_search(entries.begin(), entries.end(), guestEntry)) {
+    return result;
+  }
+  const auto &contracts = oot3d::ui::Oot3dNativeUiFunctionContracts();
+  const auto found = std::find_if(
+      contracts.begin(), contracts.end(),
+      [guestEntry](const oot3d::ui::UiNativeFunctionContract &contract) {
+        return contract.guest_entry == guestEntry;
+      });
+  if (found == contracts.end()) {
+    return result;
+  }
+
+  BeginObservationFrameIfNeeded();
+
+  result.matched = true;
+  result.contract = &*found;
+  result.frame_plan = mRouter.PlanFrame(found->subsystem);
+  mObservedSubsystems[static_cast<std::size_t>(found->subsystem)] = true;
+  mLastObservedSubsystem = found->subsystem;
+  result.route_to_guest =
+      RouteGuestForPhase(found->phase, result.frame_plan, found->disposition);
+  ++mStats.matched_entries;
+  mStats.last_guest_entry = guestEntry;
+  ++mStats.calls_by_subsystem[static_cast<std::size_t>(found->subsystem)];
+  const std::size_t phaseIndex = SeamPhaseIndex(found->phase);
+  if (phaseIndex < mStats.calls_by_phase.size()) {
+    ++mStats.calls_by_phase[phaseIndex];
+  }
+  if (result.route_to_guest) {
+    ++mStats.guest_routed_entries;
+  } else {
+    ++mStats.host_routed_entries;
+  }
+
+  if (mCapturedGeneration != mHostFrameGeneration) {
+    CaptureState();
+    mCapturedGeneration = mHostFrameGeneration;
+  }
+  return result;
+}
+
+void Oot3dNativeUiLifecycleBridge::ObserveGameplayComposition() noexcept {
+  BeginObservationFrameIfNeeded();
+  mObservedSubsystems[static_cast<std::size_t>(
+      oot3d::ui::UiSubsystem::GameplayHud)] = true;
+  mLastObservedSubsystem = oot3d::ui::UiSubsystem::GameplayHud;
+}
+
+bool Oot3dNativeUiLifecycleBridge::ApplyTopScreenGuestHook(uint32_t guestPc,
+                                                           uint32_t guestR0) {
+  if (guestPc == kTopScreenQuestSubmitModelsHook) {
+    // Native submit refreshes counter geometry before the next draw.
+    // TopScreen 2.1.1 resets its guard (005E3D1C) in update 005D4A8C.
+    mTopScreenPauseProjection.QuestDrawModelAdjusted = false;
+    mTopScreenQuestBCopies.clear();
+    ++mStats.topscreen_quest_hook_calls;
+    TopScreenQuestModelTransformStats stats;
+    std::string error;
+    if (!ApplyTopScreenQuestSubmitModelTransforms(mMemory, mTopScreenConfig,
+                                                  &stats, &error)) {
+      ++mStats.topscreen_quest_hook_failures;
+      return true;
+    }
+    mStats.topscreen_quest_transforms +=
+        stats.MainModelsTransformed + stats.ChildModelsTransformed;
+    return true;
+  }
+  if (guestPc == kTopScreenQuestDrawHook) {
+    ++mStats.topscreen_quest_hook_calls;
+    TopScreenQuestModelTransformStats stats;
+    std::string error;
+    if (!ApplyTopScreenQuestDrawModelTransform(
+            mMemory, guestR0, mTopScreenConfig, mTopScreenPauseProjection,
+            &stats, &error)) {
+      ++mStats.topscreen_quest_hook_failures;
+      return true;
+    }
+    mStats.topscreen_quest_transforms += stats.DrawModelsTransformed;
+    // The host HUD draws the B icon and digits above its B circle, as 3.0's
+    // native order does; only while that HUD is composed.
+    // While the touch layout draws B's content inside the overlay's B, the
+    // native item icon must not stay where the HUD's B was.
+    RestoreTopScreenQuestHiddenColors(mMemory, mTopScreenQuestHiddenColors);
+    const bool touchB = mTopScreenConfig.TouchLayout &&
+                        ThreeDsRecomp::Input::OverlayTouchAnchors().Snapshot()[static_cast<std::size_t>(
+                            ThreeDsRecomp::Input::TouchAnchor::B)].Present;
+    TopScreenHudCompositorGate gate;
+    if (mTopScreenConfig.RenderHud && ReadTopScreenHudCompositorGate(mMemory, &gate, &error) &&
+        gate.Draw &&
+        !CaptureTopScreenQuestBButtonCopies(mMemory, mTopScreenConfig, &mTopScreenQuestBCopies, &error,
+                                            touchB ? &mTopScreenQuestHiddenColors : nullptr))
+      ++mStats.topscreen_quest_hook_failures;
+    return true;
+  }
+  if (guestPc != kTopScreenQuestMaterializedHook)
+    return false;
+
+  ++mStats.topscreen_quest_hook_calls;
+  // The first letter since the last take stays for its own label record.
+  if (mTopScreenActionLetterReads == 1U) mTopScreenFirstActionLetter = mTopScreenActionLetter;
+  ++mTopScreenActionLetterReads;
+  mTopScreenQuestActionCopies.clear();
+  mTopScreenActionLetter.reset();
+  constexpr uint32_t kQuestRenderBufferBinding = 0x004FC660U;
+  uint32_t renderBuffer = 0U;
+  TopScreenQuestGeometryContext context;
+  std::string error;
+  if (!mMemory.Read32(kQuestRenderBufferBinding, &renderBuffer) ||
+      renderBuffer == 0U ||
+      !ReadTopScreenQuestGeometryContext(mMemory, &context,
+                                         &mTopScreenPauseProjection, &error)) {
+    ++mStats.topscreen_quest_hook_failures;
+    return true;
+  }
+  if (context.NativePageGateActive) {
+    return true;
+  }
+  context.HudScale = mTopScreenConfig.HudScale;
+  context.HudMarginX = static_cast<float>(mTopScreenConfig.HudMarginX);
+  context.HudMarginY = static_cast<float>(mTopScreenConfig.HudMarginY);
+  const auto buttonGroup = ResolveTopScreenButtonGroupPlacement(mTopScreenConfig);
+  context.ButtonGroupScale = buttonGroup.Scale;
+  context.ButtonGroupOffsetX = buttonGroup.OffsetX;
+  context.ButtonGroupOffsetY = buttonGroup.OffsetY;
+  TopScreenQuestRenderBufferStats stats;
+  if (!TransformTopScreenQuestRenderBuffer(mMemory, renderBuffer, context,
+                                           &stats, &error)) {
+    ++mStats.topscreen_quest_hook_failures;
+    return true;
+  }
+  if (!ApplyTopScreenTimerCounterLayout(mMemory, context.HudScale, &error)) {
+    ++mStats.topscreen_quest_hook_failures;
+    return true;
+  }
+  // The touch layout draws the A ring and word inside the overlay's A.
+  const bool touchA = mTopScreenConfig.TouchLayout && mTopScreenConfig.RenderHud &&
+                      ThreeDsRecomp::Input::OverlayTouchAnchors().Snapshot()[static_cast<std::size_t>(
+                          ThreeDsRecomp::Input::TouchAnchor::A)].Present;
+  if (touchA && !CaptureTopScreenQuestActionCopies(mMemory, renderBuffer, mTopScreenConfig,
+                                                   &mTopScreenQuestActionCopies, &error)) {
+    ++mStats.topscreen_quest_hook_failures;
+  }
+  // The HUD button labels: where the native ring draws its A (read only).
+  if (!touchA && mTopScreenConfig.HudButtonLabels == TopScreenHudButtonLabels::Controller &&
+      !ReadTopScreenActionLetter(mMemory, renderBuffer, mTopScreenConfig, &mTopScreenActionLetter, &error)) {
+    ++mStats.topscreen_quest_hook_failures;
+  }
+  ++mStats.topscreen_quest_transforms;
+  return true;
+}
+
+std::vector<oot3d::ui::UiPrimitive>
+Oot3dNativeUiLifecycleBridge::BuildShadowPresentation(
+    oot3d::ui::UiSubsystem subsystem) {
+  std::vector<oot3d::ui::UiPrimitive> output;
+  const std::size_t index = static_cast<std::size_t>(subsystem);
+  if (!mHasLatestState || index >= mObservedSubsystems.size() ||
+      !mObservedSubsystems[index]) {
+    return output;
+  }
+  if (subsystem == oot3d::ui::UiSubsystem::GameplayHud) {
+    oot3d::ui::Oot3dHudTextureSources sources;
+    if (auto identity = NativePauseSharedTextureIdentity(
+            oot3d::ui::UiPauseSharedTextureSlot::PauseTopPage)) {
+      sources.pause_top_page = std::move(*identity);
+    }
+    if (auto identity = NativePauseSharedTextureIdentity(
+            oot3d::ui::UiPauseSharedTextureSlot::ItemIcons)) {
+      sources.item_icons = std::move(*identity);
+    }
+    if (auto identity = NativePauseSharedTextureIdentity(
+            oot3d::ui::UiPauseSharedTextureSlot::NumberGlyphs)) {
+      sources.number_glyphs = std::move(*identity);
+    }
+    mRuntime.SetHudTextureSources(std::move(sources));
+  }
+  mRuntime.AppendPresentation(
+      subsystem, oot3d::ui::UiBackendStateView(mLatestState), output);
+  if (!output.empty()) {
+    ++mStats.shadow_presentation_frames;
+    mStats.shadow_presentation_primitives += output.size();
+  }
+  return output;
+}
+
+std::vector<oot3d::ui::UiPrimitive>
+Oot3dNativeUiLifecycleBridge::BuildTopScreenPresentation(
+    oot3d::ui::UiSubsystem subsystem) {
+  std::vector<oot3d::ui::UiPrimitive> output;
+  const std::size_t index = static_cast<std::size_t>(subsystem);
+  const bool ocarinaLane = subsystem == oot3d::ui::UiSubsystem::TouchControls;
+  if (index >= mObservedSubsystems.size()) {
+    return output;
+  }
+  if (ocarinaLane) {
+    const auto ocarinaTexture = NativePauseSharedTextureIdentity(
+        oot3d::ui::UiPauseSharedTextureSlot::OcarinaPage);
+    if (!ocarinaTexture.has_value()) {
+      return output;
+    }
+    TopScreenOcarinaGeometry geometry;
+    std::string ocarinaError;
+    if (ReadTopScreenOcarinaGeometry(mMemory, mTopScreenOcarina, &geometry, &ocarinaError)) {
+      const auto itemIcons = NativePauseSharedTextureIdentity(
+          oot3d::ui::UiPauseSharedTextureSlot::ItemIcons);
+      (void)AppendTopScreenOcarinaPresentation(
+          geometry, *ocarinaTexture, output,
+          itemIcons.value_or(oot3d::ui::UiTextureIdentity{}));
+      if (geometry.Active) {
+        oot3d::ui::UiTextureIdentity uiAtlas;
+        uiAtlas.semantic_name = kTopScreen30UiAtlasSemantic;
+        (void)AppendTopScreenOcarinaNavigationPresentation(
+            BuildTopScreenOcarinaNavigationGeometry(mTopScreenOcarina.Direction()), uiAtlas,
+            output);
+      }
+    } else {
+      ++mStats.topscreen_ocarina_failures;
+      mStats.topscreen_ocarina_error = ocarinaError;
+    }
+    if (!output.empty()) {
+      ++mStats.topscreen_ocarina_frames;
+      mStats.topscreen_ocarina_primitives += output.size();
+      ++mStats.shadow_presentation_frames;
+      mStats.shadow_presentation_primitives += output.size();
+    }
+    return output;
+  }
+  if (subsystem != oot3d::ui::UiSubsystem::GameplayHud) {
+    return output;
+  }
+  mTopScreenDpadPickerCursor = {};
+  mTopScreenItemsShortcutCursor = {};
+  mTopScreenComposedActionLetter.reset();
+  if (mTopScreenItemsShortcuts != nullptr) mTopScreenItemsShortcuts->ObserveDpadPickerPage();
+  TopScreenHudCompositorGate compositorGate;
+  std::string compositorGateError;
+  const bool compositorGateKnown = ReadTopScreenHudCompositorGate(
+      mMemory, &compositorGate, &compositorGateError);
+  const auto texture = NativePauseSharedTextureIdentity(
+      oot3d::ui::UiPauseSharedTextureSlot::PauseTopPage);
+  if (!texture.has_value()) {
+    return output;
+  }
+  if (compositorGateKnown && compositorGate.Draw &&
+      mTopScreenConfig.RenderHud) {
+    mTopScreenComposedActionLetter = mTopScreenActionLetter;
+    std::uint32_t pulsePhase = 0U;
+    (void)mMemory.Read32(0x0050AF8CU, &pulsePhase);
+    // TopScreen's compositor reads current native state, not the set of UI
+    // callbacks reached in this host refresh. Read after guest work, alongside
+    // the live quad streams below; do not advance lifecycle/input state here.
+    const NativeA32UiMemoryReader reader(mMemory);
+    const auto capture = oot3d::ui::CaptureOot3dUiState(reader, mRoots);
+    const auto content = oot3d::ui::BuildOot3dUiHudContent(capture.state);
+    (void)AppendTopScreenHealthPresentation(
+        content, *texture, static_cast<std::uint8_t>(pulsePhase), output);
+    TopScreenTouchDynamicState touchState;
+    std::string touchStateError;
+    if (ReadTopScreenTouchDynamicState(mMemory, mTopScreenInput, &touchState,
+                                       &touchStateError)) {
+      auto touchGeometry = BuildTopScreenTouchClusterGeometry(
+          touchState.VerticalOffsets, touchState.Alpha,
+          mTopScreenConfig.HudLayout);
+      if (!mTopScreenConfig.RenderDpadIcons) {
+        touchGeometry.Alpha[5] = 0.0F;
+      }
+      // Button circles, D-pad cross and ZR/ZL labels: SingleScreen 3.0 atlas.
+      oot3d::ui::UiTextureIdentity uiAtlas;
+      uiAtlas.semantic_name = kTopScreen30UiAtlasSemantic;
+      const std::size_t clusterStart = output.size();
+      (void)AppendTopScreenTouchClusterPresentation(touchGeometry, uiAtlas,
+                                                    output);
+      const std::size_t clusterEnd = output.size();
+      TopScreenAuxiliaryTouchInputs auxiliaryInputs;
+      std::string auxiliaryInputError;
+      if (ReadTopScreenAuxiliaryTouchInputs(mMemory, &auxiliaryInputs,
+                                            &auxiliaryInputError)) {
+        auxiliaryInputs.SuppressBCopies = mTopScreenTouchCopies.SuppressBCopies;
+        auto auxiliaryGeometry = BuildTopScreenAuxiliaryTouchGeometry(
+                auxiliaryInputs, touchState.VerticalOffsets, touchState.Alpha,
+                mTopScreenConfig.HudLayout);
+        auxiliaryGeometry.Quads[4].Visible = false;
+        (void)AppendTopScreenAuxiliaryTouchPresentation(
+            auxiliaryGeometry, uiAtlas, output);
+      }
+      (void)AppendTopScreenTouchLabelsPresentation(
+          BuildTopScreenTouchLabelsGeometry(touchState.VerticalOffsets,
+                                            touchState.Alpha,
+                                            mTopScreenConfig.HudLayout),
+          uiAtlas, output);
+      TopScreenNativeItemOpacity itemOpacity;
+      const auto itemIcons = NativePauseSharedTextureIdentity(
+          oot3d::ui::UiPauseSharedTextureSlot::ItemIcons);
+      if (itemIcons.has_value()) {
+        std::string itemCopyError;
+        (void)AppendTopScreenNativeItemIconCopies(
+            mMemory, touchState.VerticalOffsets, touchState.Alpha, *itemIcons,
+            output, &itemCopyError, false, &itemOpacity);
+      }
+      // 3.0 0x005DCC90: the cross takes 0x005CCF6C on top of the HUD alpha.
+      bool nestedOwner = false;
+      float dpadAlpha = 1.0F;
+      if (ReadTopScreenPlayerNestedOwner(mMemory, &nestedOwner)) {
+        dpadAlpha = ResolveTopScreenDpadGroupAlpha(itemOpacity, nestedOwner);
+        for (std::size_t index = clusterStart; index < clusterEnd; ++index)
+          if (output[index].source_quad == 5U) output[index].color.alpha *= dpadAlpha;
+      }
+      TopScreenDpadPresentationState dpadState;
+      if (ReadTopScreenDpadPresentationState(mMemory, &dpadState)) {
+        dpadState.ItemOpacity = itemOpacity;
+        dpadState.GroupAlpha = dpadAlpha;
+        (void)AppendTopScreenDpadPresentation(
+            mTopScreenConfig, dpadState, auxiliaryInputs, mTopScreenViewAlpha,
+            itemIcons.value_or(oot3d::ui::UiTextureIdentity{}), uiAtlas, output);
+      }
+      if (const auto numberGlyphs = NativePauseSharedTextureIdentity(
+              oot3d::ui::UiPauseSharedTextureSlot::NumberGlyphs);
+          numberGlyphs.has_value()) {
+        std::string counterError;
+        (void)AppendTopScreenNativeCounters(
+            mMemory, touchState.VerticalOffsets, *numberGlyphs, output,
+            &counterError, &mTopScreenConfig, &mTopScreenInput);
+      }
+    }
+    TopScreenNativeTouchCopyStats nativeTouchStats;
+    std::string nativeTouchError;
+    const std::size_t nativeTouchStart = output.size();
+    (void)AppendTopScreenNativeTouchCopies(mMemory, *texture, output,
+                                           &nativeTouchStats, &nativeTouchError,
+                                           &mTopScreenConfig,
+                                           mTopScreenTouchCopies.SuppressBCopies);
+    const std::size_t nativeTouchEnd = output.size();
+    if (nativeTouchStats.SourceQuadsRead != 0U) {
+      ++mStats.topscreen_native_touch_copy_frames;
+      mStats.topscreen_native_touch_copy_primitives +=
+          nativeTouchStats.PrimitivesEmitted;
+    }
+    if (content.health.capacity_units.IsKnown()) {
+      const auto magic = BuildTopScreenMagicMeterGeometry(
+          content.magic, content.health.capacity_units.value);
+      (void)AppendTopScreenMagicMeterPresentation(magic, *texture, output);
+    }
+    ApplyTopScreenHudScale(output, mTopScreenConfig);
+    if (const auto itemIcons = NativePauseSharedTextureIdentity(
+            oot3d::ui::UiPauseSharedTextureSlot::ItemIcons)) {
+      const auto numberGlyphs = NativePauseSharedTextureIdentity(
+          oot3d::ui::UiPauseSharedTextureSlot::NumberGlyphs);
+      (void)AppendTopScreenQuestBButtonCopiesPresentation(
+          mTopScreenQuestBCopies, *itemIcons,
+          numberGlyphs.value_or(oot3d::ui::UiTextureIdentity{}), output);
+    }
+    if (!mTopScreenQuestActionCopies.empty()) {
+      (void)AppendTopScreenQuestActionCopiesPresentation(
+          mTopScreenQuestActionCopies,
+          NativePauseSharedTextureIdentity(oot3d::ui::UiPauseSharedTextureSlot::HudAtlas)
+              .value_or(oot3d::ui::UiTextureIdentity{}),
+          output);
+    }
+    ApplyTopScreenGameplayCanvas(output);
+    std::uint64_t visibleNativeTouchCopies = 0U;
+    std::uint64_t visibleHorseStamina = 0U;
+    for (std::size_t index = nativeTouchStart; index < nativeTouchEnd;
+         ++index) {
+      const auto &primitive = output[index];
+      if (primitive.visible) {
+        ++visibleNativeTouchCopies;
+      }
+      if (primitive.visible &&
+          primitive.role == oot3d::ui::UiPrimitiveRole::HorseStamina) {
+        ++visibleHorseStamina;
+      }
+    }
+    mStats.topscreen_native_touch_visible_primitives +=
+        visibleNativeTouchCopies;
+    if (visibleHorseStamina != 0U) {
+      ++mStats.topscreen_horse_stamina_visible_frames;
+      mStats.topscreen_horse_stamina_visible_primitives += visibleHorseStamina;
+    }
+  }
+  std::uint32_t systemPage = 0U;
+  const bool systemActive = mTopScreenSystemPagePresentation ||
+                            (mMemory.Read32(0x0050A530U, &systemPage) && systemPage != 0U);
+  const auto *pauseEdge =
+      mTopScreenVisionsEdgeGeometry.has_value()
+          ? &*mTopScreenVisionsEdgeGeometry
+          : (mTopScreenPausePageRedrawEdgeGeometry.has_value()
+                 ? &*mTopScreenPausePageRedrawEdgeGeometry
+                 : (mTopScreenPauseEdgeGeometry.has_value()
+                        ? &*mTopScreenPauseEdgeGeometry
+                        : nullptr));
+  if (!systemActive && pauseEdge != nullptr) {
+    if (const auto itemPage = NativePauseSharedTextureIdentity(
+            oot3d::ui::UiPauseSharedTextureSlot::ItemPage);
+        itemPage.has_value()) {
+      (void)AppendTopScreenPauseEdgePresentation(*pauseEdge, *itemPage, output);
+    }
+  }
+  // 3.0 0x005E0E6C: while the View Model is open the upper screen shows the
+  // native scene (0x005CD348) and 0x005E9C3C replaces every overlay below.
+  const bool viewModel = !systemActive && mTopScreenItemsShortcuts != nullptr &&
+                         mTopScreenItemsShortcuts->ViewModelActive();
+  oot3d::ui::UiTextureIdentity overlayAtlas;
+  overlayAtlas.semantic_name = kTopScreen30UiAtlasSemantic;
+  if (viewModel) {
+    mTopScreenItemsShortcutCursor = {};
+    mTopScreenDpadPickerCursor = {};
+    (void)AppendTopScreenViewModelControlsPresentation(overlayAtlas, output);
+  }
+  // 3.0 0x005E0E6C -> 0x005D4A0C: tab hints follow Items/Gear/Map redraw.
+  if (!systemActive && !viewModel && mTopScreenPausePageRedrawEdgeGeometry.has_value()) {
+    TopScreenTabHintInputs tabHints;
+    oot3d::ui::UiTextureIdentity uiAtlas;
+    uiAtlas.semantic_name = kTopScreen30UiAtlasSemantic;
+    if (ReadTopScreenTabHintInputs(mMemory, &tabHints))
+      (void)AppendTopScreenTabHintPresentation(tabHints, uiAtlas, output);
+  }
+  std::uint32_t itemsPage = 0U;
+  if (systemActive && mTopScreenItemsShortcuts != nullptr) mTopScreenItemsShortcuts->CancelDpadPicker();
+  if (!systemActive && !viewModel && mTopScreenItemsShortcuts != nullptr &&
+      mMemory.Read32(0x0050672CU, &itemsPage) && itemsPage != 0U) {
+    const auto itemIcons = NativePauseSharedTextureIdentity(oot3d::ui::UiPauseSharedTextureSlot::ItemIcons);
+    oot3d::ui::UiTextureIdentity uiAtlas;
+    uiAtlas.semantic_name = kTopScreen30UiAtlasSemantic;
+    (void)AppendTopScreenItemsShortcutPresentation(
+        mTopScreenItemsShortcuts->Shortcuts(), mTopScreenItemsShortcuts->ShortcutDraw(),
+        itemIcons.value_or(oot3d::ui::UiTextureIdentity{}), uiAtlas, output);
+    if (itemsPage == 2U && mTopScreenItemsShortcuts->ShortcutDraw().Active &&
+        !mTopScreenItemsShortcuts->DpadPicker().Active()) {
+      TopScreenItemsHintCursorBounds bounds;
+      // Read the selected stream after native cursor positioning, including
+      // host refreshes without another guest update. Rendering owns no timer.
+      if (ReadTopScreenItemsHintCursorBounds(mMemory, &bounds)) {
+        mTopScreenItemsShortcutCursor = BuildTopScreenItemsShortcutHoldCursor(
+            mTopScreenItemsShortcuts->Shortcuts(), bounds);
+        (void)AppendTopScreenItemsShortcutHoldPresentation(
+            mTopScreenItemsShortcutCursor, uiAtlas, output);
+      }
+    }
+    if (itemsPage == 2U)
+      (void)AppendTopScreenDpadPickerPresentation(
+          mTopScreenItemsShortcuts->DpadPicker(), mTopScreenItemsShortcuts->DpadPickerDraw(),
+          itemIcons.value_or(oot3d::ui::UiTextureIdentity{}), uiAtlas, output,
+          &mTopScreenDpadPickerCursor);
+  }
+  // 3.0 0x005E0F58 / 0x005E1030 on the Gear page: the A-hold ring beside
+  // the held slot, and a picker opened from there.
+  if (!systemActive && !viewModel && mTopScreenItemsShortcuts != nullptr) {
+    std::uint32_t gearSlot = 0U;
+    std::int32_t gearFrames = 0;
+    float ringX = 0.0F, ringY = 0.0F;
+    if (mTopScreenItemsShortcuts->GearHold(&gearSlot, &gearFrames) &&
+        ReadTopScreenGearHoldRingCenter(mMemory, gearSlot, &ringX, &ringY)) {
+      mTopScreenItemsShortcutCursor =
+          BuildTopScreenDpadPickerHoldCursor(ringX, ringY, gearFrames / 15.0F);
+      (void)AppendTopScreenItemsShortcutHoldPresentation(mTopScreenItemsShortcutCursor,
+                                                         overlayAtlas, output);
+    }
+    if (mTopScreenItemsShortcuts->DpadPicker().Gear) {
+      const auto itemIcons =
+          NativePauseSharedTextureIdentity(oot3d::ui::UiPauseSharedTextureSlot::ItemIcons);
+      (void)AppendTopScreenDpadPickerPresentation(
+          mTopScreenItemsShortcuts->DpadPicker(), mTopScreenItemsShortcuts->DpadPickerDraw(),
+          itemIcons.value_or(oot3d::ui::UiTextureIdentity{}), overlayAtlas, output,
+          &mTopScreenDpadPickerCursor);
+    }
+  }
+  oot3d::ui::UiTextureIdentity itemsHintAtlas;
+  itemsHintAtlas.semantic_name = kTopScreen30UiAtlasSemantic;
+  // The 3.0 oracle keeps SELECT ? under an open picker's dimmer (layer 15 <
+  // 30); only the View Model replaces it.
+  (void)AppendTopScreenItemsHintPresentation(
+      BuildTopScreenItemsHintGeometry(mTopScreenItemsHint,
+                                      mTopScreenConfig.RenderItemsHint && !viewModel),
+      itemsHintAtlas, output);
+  // 3.0 0x005E2AE0: the Gear "[X] View Model" legend obeys the same setting.
+  std::uint32_t gearLegendFade = 0U, gearLegendPulse = 0U;
+  TopScreenItemsHintCursorBounds gearCursor;
+  if (!systemActive && mTopScreenConfig.RenderItemsHint && mTopScreenItemsShortcuts != nullptr &&
+      mTopScreenItemsShortcuts->GearViewModelLegend(&gearLegendFade, &gearLegendPulse) &&
+      ReadTopScreenGearCursorBounds(mMemory, &gearCursor))
+    (void)AppendTopScreenGearViewModelLegendPresentation(gearCursor, gearLegendFade,
+                                                         gearLegendPulse, overlayAtlas, output);
+  bool fileSelectStripActive = false;
+  std::string fileSelectStripError;
+  if (ReadTopScreenFileSelectStripActive(mMemory, &fileSelectStripActive,
+                                         &fileSelectStripError) &&
+      fileSelectStripActive) {
+    if (const auto fileSelectTexture = NativeActiveFileSelectTextureIdentity();
+        fileSelectTexture.has_value()) {
+      (void)AppendTopScreenFileSelectStripPresentation(
+          BuildTopScreenFileSelectStripGeometry(true), *fileSelectTexture,
+          output);
+    }
+  }
+  if (!output.empty()) {
+    ++mStats.shadow_presentation_frames;
+    mStats.shadow_presentation_primitives += output.size();
+  }
+  return output;
+}
+
+void Oot3dNativeUiLifecycleBridge::SetTopScreenPauseEdgePresentation(
+    std::optional<TopScreenPauseEdgeGeometry> geometry) noexcept {
+  mTopScreenPauseEdgeGeometry = std::move(geometry);
+}
+
+void Oot3dNativeUiLifecycleBridge::SetTopScreenPausePageRedrawEdgePresentation(
+    std::optional<TopScreenPauseEdgeGeometry> geometry) noexcept {
+  mTopScreenPausePageRedrawEdgeGeometry = std::move(geometry);
+}
+
+void Oot3dNativeUiLifecycleBridge::SetTopScreenInputFrame(
+    const TopScreenExtendedInputFrame &input) noexcept {
+  mTopScreenInput = input;
+  TopScreenOcarinaState state;
+  if (ReadTopScreenOcarinaState(mMemory, &state)) {
+    mTopScreenOcarina.Advance(state, input.DpadLeftHeld || input.DpadLeftPressed,
+                            input.DpadRightHeld || input.DpadRightPressed,
+                            input.DpadLeftPressed, input.DpadRightPressed,
+                            input.DpadUpPressed);
+  }
+}
+
+void Oot3dNativeUiLifecycleBridge::SetTopScreenConfig(
+    const TopScreenUiConfig &config) noexcept {
+  mTopScreenConfig = config;
+  mTopScreenPauseProjection.AlternatePage = config.MinimapVisible;
+}
+
+bool Oot3dNativeUiLifecycleBridge::NativePresentationActive(
+    oot3d::ui::UiSubsystem subsystem) const noexcept {
+  if (!mHasLatestState) {
+    return false;
+  }
+  switch (subsystem) {
+  case oot3d::ui::UiSubsystem::FileSelect:
+    return mLatestState.file_select.controller_state.known &&
+           mLatestState.file_select.controller_state.value != 0;
+  case oot3d::ui::UiSubsystem::NameEntry:
+    return mLatestState.name_entry.controller_state.known &&
+           mLatestState.name_entry.controller_state.value != 0;
+  default:
+    return false;
+  }
+}
+
+bool Oot3dNativeUiLifecycleBridge::NativeGameplayPresentationActive()
+    const noexcept {
+  return mObservedSubsystems[static_cast<std::size_t>(
+      oot3d::ui::UiSubsystem::GameplayHud)];
+}
+
+bool Oot3dNativeUiLifecycleBridge::NativeTouchPresentationActive()
+    const noexcept {
+  // Pause pages retain OoT3D's touch-owned tabs and widgets after their
+  // TopScreen relocation. Physical pointer input must therefore stay mapped
+  // to the native 320x240 touch domain for the complete pause session.
+  if (mHasLatestState && mLatestState.pause.open.known &&
+      mLatestState.pause.open.value) {
+    return true;
+  }
+  return NativeFrontendPresentationActive();
+}
+
+bool Oot3dNativeUiLifecycleBridge::NativeFrontendPresentationActive()
+    const noexcept {
+  // The title's normal / Master Quest choice is a lower-screen menu of the
+  // root pause UI that runs while game_mode is still 1, so it has its own
+  // native discriminator.
+  if (mHasLatestState && IsNativeVersionChoicePresented(mOmoteUraSelector) &&
+      !NativeVersionChoiceAwaitingReveal()) {
+    return true;
+  }
+  // FileSelect owns the out-of-game options as well as the slot list.
+  // NameEntry is its separate native controller.
+  // Gameplay and frontend callbacks share a global update chain, so callback
+  // order is not ownership. SaveContext.game_mode is the persistent native
+  // discriminator: 0/1 are gameplay, while frontend modes are greater.
+  if (!mHasLatestState || !mLatestState.save.game_mode.known ||
+      IsTopScreenGameplayInputMode(
+          static_cast<uint32_t>(mLatestState.save.game_mode.value))) {
+    return false;
+  }
+  return NativePresentationActive(oot3d::ui::UiSubsystem::FileSelect) ||
+         NativePresentationActive(oot3d::ui::UiSubsystem::NameEntry);
+}
+
+std::optional<uint32_t>
+Oot3dNativeUiLifecycleBridge::NativeVersionChoiceBackdropGuestAddress()
+    const noexcept {
+  if (!mHasLatestState || !IsNativeVersionChoicePresented(mOmoteUraSelector) ||
+      NativeVersionChoiceAwaitingReveal() ||
+      mOmoteUraSelector.BackdropTexture == 0U) {
+    return std::nullopt;
+  }
+  return mOmoteUraSelector.BackdropTexture;
+}
+
+bool Oot3dNativeUiLifecycleBridge::NativeVersionChoiceAwaitingReveal()
+    const noexcept {
+  return mVersionChoiceRevealRequired && !mVersionChoiceRevealed &&
+         mHasLatestState && IsNativeVersionChoicePresented(mOmoteUraSelector);
+}
+
+bool Oot3dNativeUiLifecycleBridge::NativeVersionChoicePrompting()
+    const noexcept {
+  return mVersionChoiceRevealRequired && !mVersionChoiceRevealed &&
+         mHasLatestState && IsNativeVersionChoicePrompting(mOmoteUraSelector);
+}
+
+void Oot3dNativeUiLifecycleBridge::RevealNativeVersionChoice() noexcept {
+  if (NativeVersionChoiceAwaitingReveal() || NativeVersionChoicePrompting()) {
+    mVersionChoiceRevealed = true;
+    ++mStats.version_choice_reveals;
+  }
+}
+
+std::optional<uint32_t>
+Oot3dNativeUiLifecycleBridge::NativePauseSharedTextureGuestAddress(
+    oot3d::ui::UiPauseSharedTextureSlot slot) const {
+  const auto identity = NativePauseSharedTextureIdentity(slot);
+  return identity.has_value()
+             ? std::optional<uint32_t>(identity->guest_surface_address)
+             : std::nullopt;
+}
+
+std::optional<oot3d::ui::UiTextureIdentity>
+Oot3dNativeUiLifecycleBridge::NativePauseSharedTextureIdentity(
+    oot3d::ui::UiPauseSharedTextureSlot slot) const {
+  const std::size_t slotIndex = static_cast<std::size_t>(slot);
+  if (slotIndex >= oot3d::ui::kOot3dPauseSharedTextureCount) {
+    return std::nullopt;
+  }
+
+  // RendererTextureDescriptor_GetBuiltin returns these decoded CTXB source
+  // objects. The native descriptor binding copies their payload pointer,
+  // dimensions, and PICA format/type from +0x4c/+0x2c..+0x32.
+  uint32_t source = 0;
+  if (!mMemory.Read32(kRendererBuiltinCtxbSources +
+                          static_cast<uint32_t>(slotIndex * sizeof(uint32_t)),
+                      &source) ||
+      source == 0U) {
+    return std::nullopt;
+  }
+  uint32_t guestTextureAddress = 0;
+  if (!mMemory.Read32(source + kCtxbRuntimeTextureGuestAddressOffset,
+                      &guestTextureAddress) ||
+      guestTextureAddress == 0U) {
+    return std::nullopt;
+  }
+
+  const auto kind = oot3d::ui::Oot3dPauseSharedTextureKind(slot);
+  const auto *descriptor =
+      oot3d::ui::Oot3dLocalizedMenuTextureDescriptorFor(kind);
+  if (descriptor == nullptr || descriptor->semantic_name == nullptr) {
+    return std::nullopt;
+  }
+  oot3d::ui::UiTextureIdentity identity;
+  identity.guest_resource_address = source;
+  identity.guest_surface_address = guestTextureAddress;
+  identity.semantic_name =
+      std::string(kPauseSharedSemanticPrefix) + descriptor->semantic_name;
+  return identity;
+}
+
+std::optional<oot3d::ui::UiTextureIdentity>
+Oot3dNativeUiLifecycleBridge::NativeActiveFileSelectTextureIdentity() const {
+  // Payload 0x005CD64C expresses this as FileSelect globals 0x00504000 plus
+  // 0xFA0. The original loader at 0x00481390 and disposer at 0x002EE468 both
+  // own the resulting CTXB pointer at this exact absolute address.
+  constexpr std::uint32_t kFileSelectTextureOwner = 0x00504FA0U;
+  std::uint32_t source = 0U;
+  std::uint32_t guestTextureAddress = 0U;
+  if (!mMemory.Read32(kFileSelectTextureOwner, &source) || source == 0U ||
+      !mMemory.Read32(source + kCtxbRuntimeTextureGuestAddressOffset,
+                      &guestTextureAddress) ||
+      guestTextureAddress == 0U) {
+    return std::nullopt;
+  }
+  return oot3d::ui::UiTextureIdentity{
+      source, guestTextureAddress, "oot3d/native/localized/file_select_active"};
+}
+
+void Oot3dNativeUiLifecycleBridge::CaptureState() {
+  const NativeA32UiMemoryReader reader(mMemory);
+  const auto capture = oot3d::ui::CaptureOot3dUiState(reader, mRoots);
+  ++mStats.state_captures;
+  mStats.fields_read += capture.fields_read;
+  mStats.fields_missing += capture.fields_missing;
+  mLatestState = capture.state;
+  mHasLatestState = true;
+  if (!ReadNativeOmoteUraSelectorState(mMemory, &mOmoteUraSelector)) {
+    mOmoteUraSelector = {};
+  }
+  if (IsNativeVersionChoicePresented(mOmoteUraSelector)) {
+    ++mStats.version_choice_captures;
+    mStats.version_choice_last_selection = mOmoteUraSelector.Selection;
+  } else if (!IsNativeVersionChoicePrompting(mOmoteUraSelector)) {
+    // The next title waits for the player again.
+    mVersionChoiceRevealed = false;
+  }
+  mRouter.ObserveState(capture.state);
+  if (mTopScreenItemsShortcuts != nullptr) mTopScreenItemsShortcuts->ObserveDpadPickerPage();
+  TopScreenItemsHintCursorBounds itemsHintCursor;
+  std::string itemsHintError;
+  if (!ReadTopScreenItemsHintCursorBounds(mMemory, &itemsHintCursor,
+                                          &itemsHintError)) {
+    itemsHintCursor = {};
+  }
+  AdvanceTopScreenItemsHintState(mTopScreenItemsHint, itemsHintCursor);
+}
+
+const NativeUiLifecycleBridgeStats &
+Oot3dNativeUiLifecycleBridge::Stats() const noexcept {
+  return mStats;
+}
+
+const oot3d::ui::N64IntegratedUiRuntime &
+Oot3dNativeUiLifecycleBridge::Runtime() const noexcept {
+  return mRuntime;
+}
+
+TopScreenPauseProjectionState &
+Oot3dNativeUiLifecycleBridge::TopScreenPauseProjection() noexcept {
+  return mTopScreenPauseProjection;
+}
+
+const std::vector<uint32_t> &Oot3dNativeUiLifecycleBridge::GuestEntryPoints() {
+  static const std::vector<uint32_t> entries = [] {
+    std::vector<uint32_t> result;
+    const auto &contracts = oot3d::ui::Oot3dNativeUiFunctionContracts();
+    result.reserve(contracts.size());
+    for (const auto &contract : contracts) {
+      result.push_back(contract.guest_entry);
+    }
+    std::sort(result.begin(), result.end());
+    result.erase(std::unique(result.begin(), result.end()), result.end());
+    return result;
+  }();
+  return entries;
+}
+
+} // namespace Oot3dNativeGame

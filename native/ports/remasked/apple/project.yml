@@ -1,0 +1,63 @@
+name: ReMaskedNativePrototype
+options:
+  bundleIdPrefix: io.github.otpr26.remasked.nativeprototype
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    CLANG_CXX_LANGUAGE_STANDARD: c++20
+    GENERATE_INFOPLIST_FILE: YES
+    SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) $(REMASKED_NATIVE_FLAGS)
+    GCC_PREPROCESSOR_DEFINITIONS: $(inherited) $(REMASKED_NATIVE_DEFINITIONS)
+    OTHER_LDFLAGS: $(inherited) $(REMASKED_NRI_LIBS)
+    SWIFT_OBJC_BRIDGING_HEADER: ../shared/remasked_core.h
+    HEADER_SEARCH_PATHS:
+      - $(SRCROOT)/../shared
+      - $(SRCROOT)/../../../titles/mm3d/dekui
+      - $(SRCROOT)/../../../runtime/triaevum_module/include
+      - $(REMASKED_JSON_INCLUDE)
+    OTHER_CPLUSPLUSFLAGS:
+      - $(inherited)
+      - -ffile-prefix-map=$(SRCROOT)/../../..=.
+      - -fmacro-prefix-map=$(SRCROOT)/../../..=.
+    INFOPLIST_KEY_CFBundleDisplayName: ReMasked Native Prototype
+    INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+    INFOPLIST_KEY_UILaunchScreen_Generation: YES
+targetTemplates:
+  Host:
+    type: application
+    sources:
+      - path: ReMaskedApp.swift
+      - path: NativeRenderSurface.swift
+      - path: ../shared/remasked_core.cpp
+      - path: ../../../titles/mm3d/dekui/settings.cpp
+      - path: ../../../runtime/triaevum_module/src/input_service.cpp
+      - path: ../resources/presentation.json
+        buildPhase: resources
+    dependencies:
+      - sdk: GameController.framework
+      - sdk: MetalKit.framework
+targets:
+  ReMaskedIOS:
+    templates: [Host]
+    platform: iOS
+    deploymentTarget: "17.0"
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: io.github.otpr26.remasked.nativeprototype.ios
+      TARGETED_DEVICE_FAMILY: "1,2"
+      INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+  ReMaskedTV:
+    templates: [Host]
+    platform: tvOS
+    deploymentTarget: "17.0"
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: io.github.otpr26.remasked.nativeprototype.tvos
+      TARGETED_DEVICE_FAMILY: "3"
+schemes:
+  ReMaskedIOS:
+    build:
+      targets:
+        ReMaskedIOS: all
+  ReMaskedTV:
+    build:
+      targets:
+        ReMaskedTV: all

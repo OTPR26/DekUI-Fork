@@ -1,0 +1,591 @@
+from __future__ import annotations
+
+import csv
+import hashlib
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from whole_aot_program import (
+    build_program,
+    check_thumb_range_guards,
+    load_inline_argument_calls,
+    load_observed_sites,
+    load_thumb_ranges,
+    pinned,
+)
+
+
+BASE = 0x1000
+
+
+def branch(pc: int, target: int, *, condition: int = 0xE, link: bool = False) -> int:
+    displacement = target - (pc + 8)
+    if displacement % 4:
+        raise ValueError("unaligned branch target")
+    return (
+        (condition << 28)
+        | 0x0A000000
+        | (0x01000000 if link else 0)
+        | ((displacement >> 2) & 0x00FFFFFF)
+    )
+
+
+class WholeAotProgramTest(unittest.TestCase):
+    def test_sparse_relative_table_preserves_reserved_slots_without_executing_them(self):
+        words = [0xE28F5018, 0xE7956100, 0xE085F006, 0, 0, 0, 0, 0,
+                 0x20, 0, 0, 0x28, 0, 0, 0xFFFFFFFF, 0,
+                 0xE3A00001, 0xE12FFF1E, 0xE3A00002, 0xE12FFF1E]
+        with tempfile.TemporaryDirectory() as temporary:
+            inventory, audit = self._inputs(Path(temporary), [(BASE, 12, "sparse_jump")])
+            program = build_program(b"".join(w.to_bytes(4, "little") for w in words),
+                                    inventory, audit, base=BASE)
+        first = next(b for b in program.blocks if b.pc == BASE)
+        self.assertEqual({e.target for e in first.successors}, {BASE + 64, BASE + 72})
+        self.assertTrue({BASE + 32, BASE + 36, BASE + 40, BASE + 44} <= program.literal_data)
+        self.assertFalse({BASE + 32, BASE + 36, BASE + 40} & {b.pc for b in program.blocks})
+
+    def test_explicit_link_accumulates_offsets_and_crosses_unrelated_shifted_alu(self):
+        words = [0xE28FE010, 0xE28EE008, 0xE0851107, 0xE1A0F006,
+                 0, 0, 0, 0, 0xE12FFF1E]
+        slots = set(range(BASE, BASE + len(words) * 4, 4))
+        def resolve():
+            decoder = pinned._Decoder(b"".join(w.to_bytes(4, "little") for w in words), BASE)
+            return pinned._explicit_lr_call_return_site(decoder, slots, BASE + 12, set())
+        self.assertEqual(resolve(), BASE + 32)
+        for clobber in (0xE085E107, 0xE591E000, 0x128EE008, 0xEB000000):
+            words[2] = clobber
+            self.assertIsNone(resolve())
+
+    def test_plain_predicated_branch_preserves_an_explicit_link_continuation(self):
+        words = [0xE28FE018, branch(BASE + 4, BASE + 24, condition=1),
+                 0xE12FFF1E, 0, 0, 0, 0xE12FFF1E, 0, 0xE12FFF1E]
+        with tempfile.TemporaryDirectory() as temporary:
+            inventory, audit = self._inputs(Path(temporary),
+                                           [(BASE, 12, "linked_branch"), (BASE + 24, 4, "callee")])
+            program = build_program(b"".join(w.to_bytes(4, "little") for w in words),
+                                    inventory, audit, base=BASE)
+        first = next(block for block in program.blocks if block.pc == BASE)
+        self.assertEqual({(e.kind, e.target) for e in first.successors},
+                         {("branch", BASE + 24), ("resume", BASE + 32), ("fallthrough", BASE + 8)})
+        self.assertIn(BASE + 32, {b.pc for b in program.blocks})
+        self.assertEqual(program.unclaimed_blocks, ())
+
+    def test_constant_pc_destination_keeps_conditional_fallthrough(self):
+        words = [0xE28F4010, 0xE2844008, 0xE3500000, 0xD1A0F004,
+                 0xE12FFF1E, 0, 0, 0, 0xE3A00001, 0xE12FFF1E]
+        with tempfile.TemporaryDirectory() as temporary:
+            inventory, audit = self._inputs(Path(temporary), [(BASE, 20, "constant_jump")])
+            program = build_program(b"".join(w.to_bytes(4, "little") for w in words),
+                                    inventory, audit, base=BASE)
+        first = next(block for block in program.blocks if block.pc == BASE)
+        self.assertEqual({edge.target for edge in first.successors}, {BASE + 16, BASE + 32})
+        self.assertIn(BASE + 32, {block.pc for block in program.blocks})
+        self.assertEqual(program.unclaimed_blocks, ())
+        for clobber in (0xE5914000, 0x13A04000, 0xEB000000):
+            words[1] = clobber  # Unknown load, predicated write, or call.
+            decoder = pinned._Decoder(b"".join(w.to_bytes(4, "little") for w in words), BASE)
+            self.assertEqual(pinned._constant_pc_targets(decoder,
+                set(range(BASE, BASE + 16, 4)), set(range(BASE, BASE + len(words)*4, 4))), {})
+
+    def test_relative_table_load_can_precede_link_register_restoration(self):
+        words = [0xE28F6018, 0xE7965100, 0xE1A0E008, 0xE085F006,
+                 0, 0, 0, 0, 0x10, 0x18, 0xFFFFFFFF, 0,
+                 0xE3A00001, 0xE12FFF1E, 0xE3A00002, 0xE12FFF1E]
+        with tempfile.TemporaryDirectory() as temporary:
+            inventory, audit = self._inputs(Path(temporary), [(BASE, 16, "table_jump")])
+            program = build_program(b"".join(w.to_bytes(4, "little") for w in words),
+                                    inventory, audit, base=BASE)
+        first = next(block for block in program.blocks if block.pc == BASE)
+        self.assertEqual({edge.target for edge in first.successors}, {0x1030, 0x1038})
+        words[2] = 0xE1A05008  # Replacing the loaded offset invalidates the pattern.
+        decoder = pinned._Decoder(b"".join(w.to_bytes(4, "little") for w in words), BASE)
+        self.assertEqual(pinned._base_relative_switch_tables(decoder,
+            set(range(BASE, BASE + 16, 4)), set(range(BASE, BASE + len(words)*4, 4))), {})
+
+    def test_explicit_link_can_skip_the_instructions_after_computed_call(self):
+        words = [0xE28FE010, 0xE1A05000, 0xE1A0F006, 0xFFFFFFFF,
+                 0xFFFFFFFF, 0xFFFFFFFF, 0xE3A00001, 0xE12FFF1E]
+        with tempfile.TemporaryDirectory() as temporary:
+            inventory, audit = self._inputs(Path(temporary), [(BASE, 12, "call")])
+            program = build_program(b"".join(w.to_bytes(4, "little") for w in words),
+                                    inventory, audit, base=BASE)
+        first = next(block for block in program.blocks if block.pc == BASE)
+        self.assertIn(("resume", BASE + 24), {(edge.kind, edge.target) for edge in first.successors})
+        self.assertNotIn(BASE + 12, {block.pc for block in program.blocks})
+        self.assertIn(BASE + 24, {block.pc for block in program.blocks})
+        self.assertEqual(program.unclaimed_blocks, ())
+
+    def test_explicit_link_does_not_override_blx_or_cross_lr_clobbers(self):
+        words = [0xE28FE010, 0xE12FFF36, 0xE12FFF1E, 0, 0, 0, 0xE12FFF1E]
+        with tempfile.TemporaryDirectory() as temporary:
+            inventory, audit = self._inputs(Path(temporary), [(BASE, 12, "blx")])
+            program = build_program(b"".join(w.to_bytes(4, "little") for w in words),
+                                    inventory, audit, base=BASE)
+        first = next(block for block in program.blocks if block.pc == BASE)
+        self.assertIn(("resume", BASE + 8), {(edge.kind, edge.target) for edge in first.successors})
+        for clobber in (0xE791E002, 0xE1A0E086):  # LDR lr,[r1,r2]; LSL lr,r6,#1.
+            code = [0xE28FE010, clobber, 0xE1A0F006, 0, 0, 0, 0xE12FFF1E]
+            decoder = pinned._Decoder(b"".join(w.to_bytes(4, "little") for w in code), BASE)
+            self.assertIsNone(pinned._explicit_lr_call_return_site(
+                decoder, set(range(BASE, BASE + len(code) * 4, 4)), BASE + 8, set()))
+
+    def test_relative_switch_crosses_shift_alias_but_not_base_clobber(self):
+        words = [0xE12FFF1E, 0xE12FFF1E, 0xFFFFFFF8, 0xFFFFFFFC,
+                 0xE24F5010, 0xE1B07B86, 0xE7956008, 0xE085F006]
+        slots = set(range(BASE, BASE + len(words) * 4, 4))
+        reached = slots - {BASE + 8, BASE + 12}
+        def recover():
+            decoder = pinned._Decoder(b"".join(w.to_bytes(4, "little") for w in words), BASE)
+            return pinned._base_relative_switch_tables(decoder, reached, slots)
+        self.assertIn(BASE + 28, recover())
+        with tempfile.TemporaryDirectory() as temporary:
+            inventory, audit = self._inputs(Path(temporary), [(BASE + 16, 16, "shift_switch")])
+            program = build_program(b"".join(w.to_bytes(4, "little") for w in words),
+                                    inventory, audit, base=BASE)
+        self.assertTrue({BASE, BASE + 4} <= {block.pc for block in program.blocks})
+        self.assertTrue({BASE + 8, BASE + 12} <= program.literal_data)
+        words[5] = 0xE1B05B86  # LSLS r5,r6,#23 overwrites the ADR base.
+        self.assertEqual(recover(), {})
+
+    def test_negative_relative_table_with_intervening_index_arithmetic(self):
+        words = [0xE12FFF1E, 0xE12FFF1E, 0xFFFFFFF8, 0xFFFFFFFC,
+                 0xE24F5010, 0xE3A08000, 0xE3500000, 0x02888004,
+                 0xE7956008, 0xE085F006]
+        decoder = pinned._Decoder(b"".join(w.to_bytes(4, "little") for w in words), BASE)
+        slots = set(range(BASE, BASE + len(words)*4, 4))
+        reached = slots - {BASE+8, BASE+12}
+        tables = pinned._base_relative_switch_tables(decoder, reached, slots)
+        self.assertEqual(tables[BASE+36], (BASE+8, (BASE+8, BASE+12)))
+        words[5] = 0xE3A05000  # Base clobber: must not reuse an earlier ADR.
+        decoder = pinned._Decoder(b"".join(w.to_bytes(4, "little") for w in words), BASE)
+        self.assertEqual(pinned._base_relative_switch_tables(decoder, reached, slots), {})
+
+    def test_relative_table_requires_an_explicit_base_and_unshifted_pc_add(self):
+        words = [0xE1A05001, 0xE7956100, 0xE085F006, 0, 8, 12,
+                 0xE12FFF1E, 0xE12FFF1E]
+        slots = set(range(BASE, BASE + len(words)*4, 4))
+        def recover():
+            decoder = pinned._Decoder(b"".join(w.to_bytes(4, "little") for w in words), BASE)
+            return pinned._base_relative_switch_tables(decoder, {BASE, BASE+4, BASE+8}, slots)
+        self.assertEqual(recover(), {})  # Register-sourced base is not evidence.
+        words[0] = 0xE28F5008  # ADR r5, table at 0x1010.
+        self.assertIn(BASE+8, recover())
+        words[2] = 0xE085F086  # ADD pc,r5,r6,lsl#1 is not this table encoding.
+        self.assertEqual(recover(), {})
+
+    def test_base_relative_switch_targets_are_code_not_self_relative_pointers(self):
+        words = [0] * 16
+        words[:3] = [0xE28F5018, 0xE7956100, 0xE085F006]
+        words[8:10] = [0x10, 0x18]  # Both offsets are relative to 0x1020.
+        words[10] = 0xFFFFFFFF  # Unaligned target terminates the table.
+        words[12:16] = [0xE3A00001, 0xE12FFF1E, 0xE3A00002, 0xE12FFF1E]
+        code = b"".join(word.to_bytes(4, "little") for word in words)
+        with tempfile.TemporaryDirectory() as temporary:
+            inventory, audit = self._inputs(Path(temporary), [(BASE, 12, "switch")])
+            program = build_program(code, inventory, audit, base=BASE)
+        block = next(block for block in program.blocks if block.pc == BASE)
+        self.assertEqual({edge.target for edge in block.successors}, {0x1030, 0x1038})
+        self.assertTrue({0x1020, 0x1024} <= program.literal_data)
+        self.assertNotIn(0x1028, program.literal_data)
+        self.assertEqual(program.unclaimed_blocks, ())
+
+    def test_excluded_switch_case_remains_executable_without_public_abi(self):
+        words = [0xE12FFF1E, 0, 0, 0, 0xE3A00006, 0xE12FFF1E]
+        code = b"".join(word.to_bytes(4, "little") for word in words)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inventory, audit = self._inputs(root, [(0x1000, 4, "entry"), (0x1010, 8, "case6")])
+            audit.write_text("entry,classification\n0x1010,switch_owned_case\n", encoding="utf-8")
+            program = build_program(code, inventory, audit, base=BASE)
+        functions = {function.entry: function for function in program.functions}
+        self.assertEqual(functions[0x1010].origin, "internal_dispatch")
+        self.assertTrue(functions[0x1010].closed_static_cfg)
+        self.assertEqual(program.unclaimed_blocks, ())
+
+    def _inputs(
+        self,
+        root: Path,
+        rows: list[tuple[int, int, str]],
+    ) -> tuple[Path, Path]:
+        inventory = root / "inventory.csv"
+        with inventory.open("w", newline="", encoding="utf-8") as target:
+            writer = csv.DictWriter(target, fieldnames=("entry", "size", "name"))
+            writer.writeheader()
+            for entry, size, name in rows:
+                writer.writerow(
+                    {"entry": hex(entry), "size": hex(size), "name": name}
+                )
+        audit = root / "audit.csv"
+        audit.write_text("entry\n", encoding="utf-8")
+        return inventory, audit
+
+    def test_observed_sites_start_blocks_for_their_code_image_only(self) -> None:
+        words = [0xE3A00001, 0xE3A01002, 0xE3A02003, 0xE12FFF1E]
+        code = b"".join(w.to_bytes(4, "little") for w in words)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inventory, audit = self._inputs(root, [(BASE, 16, "straight")])
+            plain = build_program(code, inventory, audit, base=BASE)
+            observed = build_program(code, inventory, audit, base=BASE,
+                                     observed_sites=(BASE + 8,))
+            with self.assertRaisesRegex(ValueError, "not reachable"):
+                build_program(code, inventory, audit, base=BASE,
+                              observed_sites=(BASE + 32,))
+            catalog = root / "sites.json"
+            catalog.write_text(json.dumps({
+                "format": "oot3d_whole_aot_observed_sites_v1",
+                "code_sha256": hashlib.sha256(code).hexdigest(),
+                "sites": [{"pc": f"0x{BASE + 8:08X}", "use": "test"}]}), encoding="utf-8")
+            self.assertEqual(load_observed_sites(catalog, code), frozenset({BASE + 8}))
+            self.assertEqual(load_observed_sites(catalog, code + b"\0\0\0\0"), frozenset())
+        self.assertEqual([b.pc for b in plain.blocks], [BASE])
+        self.assertEqual([b.pc for b in observed.blocks], [BASE, BASE + 8])
+        first = observed.blocks[0]
+        self.assertEqual({(e.kind, e.target) for e in first.successors},
+                         {("fallthrough", BASE + 8)})
+
+    def test_recovers_function_cfg_call_and_literal(self) -> None:
+        words = [0] * 11
+        words[0] = 0xE3500000  # cmp r0, #0
+        words[1] = branch(0x1004, 0x1010, condition=0x0)  # beq
+        words[2] = branch(0x1008, 0x1020, link=True)
+        words[3] = 0xE12FFF1E  # bx lr
+        words[4] = 0xE3A00001  # mov r0, #1
+        words[5] = 0xE12FFF1E
+        words[8] = 0xE59F1000  # ldr r1, [pc]
+        words[9] = 0xE12FFF1E
+        words[10] = 0x12345678  # literal
+        code = b"".join(word.to_bytes(4, "little") for word in words)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inventory, audit = self._inputs(
+                root,
+                [(0x1000, 0x18, "caller"), (0x1020, 0x0C, "callee")],
+            )
+            program = build_program(
+                code,
+                inventory,
+                audit,
+                base=BASE,
+                executable_size=len(code),
+            )
+
+        functions = {function.entry: function for function in program.functions}
+        self.assertEqual(functions[0x1000].direct_calls, ((0x1008, 0x1020),))
+        self.assertTrue(functions[0x1000].closed_static_cfg)
+        self.assertTrue(functions[0x1020].closed_static_cfg)
+        self.assertIn(0x1028, program.literal_data)
+        self.assertEqual(program.unclaimed_blocks, ())
+        manifest = program.to_manifest(include_instructions=True)
+        serialized = json.dumps(manifest)
+        self.assertNotIn("PackedOp", serialized)
+        self.assertIn('"semantic": "control"', serialized)
+
+    def test_blx_immediate_is_an_external_thumb_boundary(self) -> None:
+        # 0x1000: blx #imm (H=0) -> Thumb 0x1010; 0x1004: blx #imm (H=1) ->
+        # Thumb 0x1012.  Neither destination is A32 code in the inventory.
+        words = [0] * 6
+        words[0] = 0xFA000002  # blx 0x1010 (thumb)
+        words[1] = 0xFB000001  # blx 0x1012 (thumb, H=1)
+        words[2] = 0xE12FFF1E  # bx lr
+        words[4] = 0x47704770  # thumb: bx lr; bx lr
+        code = b"".join(word.to_bytes(4, "little") for word in words)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inventory, audit = self._inputs(root, [(0x1000, 0x0C, "caller")])
+            program = build_program(
+                code, inventory, audit, base=BASE, executable_size=len(code)
+            )
+        function = {f.entry: f for f in program.functions}[0x1000]
+        self.assertTrue(function.closed_static_cfg)
+        self.assertEqual(function.unresolved_static_edges, ())
+        self.assertEqual(function.direct_calls, ())
+        edges = sorted(
+            (edge.site, edge.kind, edge.target)
+            for block in program.blocks
+            for edge in block.successors
+            if edge.kind in {"thumb_call", "resume"}
+        )
+        self.assertIn((0x1000, "thumb_call", 0x1011), edges)
+        self.assertIn((0x1004, "thumb_call", 0x1013), edges)
+        self.assertIn((0x1000, "resume", 0x1004), edges)
+        self.assertNotIn(0x1010, {block.pc for block in program.blocks})
+
+    def _inline_argument_image(self) -> bytes:
+        # caller 0x1000: push {r4, lr}; bl helper; .word 0x3EFFFFED (inline
+        # argument, decodes as CDPLO); pop {r4, pc}.  helper 0x1010:
+        # ldr r4, [lr], #4; bx lr (returns past the argument word).
+        words = [0] * 6
+        words[0] = 0xE92D4010
+        words[1] = branch(0x1004, 0x1010, link=True)
+        words[2] = 0x3EFFFFED
+        words[3] = 0xE8BD8010
+        words[4] = 0xE49E4004
+        words[5] = 0xE12FFF1E
+        return b"".join(word.to_bytes(4, "little") for word in words)
+
+    def test_inline_argument_call_resumes_past_its_data_word(self) -> None:
+        code = self._inline_argument_image()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inventory, audit = self._inputs(
+                root, [(0x1000, 0x10, "caller"), (0x1010, 0x08, "helper")]
+            )
+            fact = root / "inline.json"
+            fact.write_text(json.dumps({
+                "format": "a32_inline_argument_calls_v1",
+                "callees": [{"entry": "0x1010", "guard_word": "0xE49E4004",
+                             "inline_words": 1}]}), encoding="utf-8")
+            calls = load_inline_argument_calls(fact, code, BASE)
+            program = build_program(code, inventory, audit, base=BASE,
+                                    executable_size=len(code),
+                                    inline_argument_calls=calls)
+            # Negative: without the title fact the data word is decoded as
+            # an instruction on the call's fallthrough.
+            plain = build_program(code, inventory, audit, base=BASE,
+                                  executable_size=len(code))
+            # A guard word from another image refuses the fact.
+            other = bytearray(code)
+            other[16:20] = (0xE5904000).to_bytes(4, "little")
+            with self.assertRaisesRegex(ValueError, "guard word"):
+                load_inline_argument_calls(fact, bytes(other), BASE)
+        self.assertEqual(calls, {0x1010: 1})
+        caller = {f.entry: f for f in program.functions}[0x1000]
+        self.assertTrue(caller.closed_static_cfg)
+        resumes = [
+            (edge.site, edge.target)
+            for block in program.blocks
+            for edge in block.successors
+            if edge.kind == "resume"
+        ]
+        self.assertEqual(resumes, [(0x1004, 0x100C)])
+        self.assertIn(0x1008, program.literal_data)
+        reached = {
+            block.pc + 4 * index
+            for block in program.blocks
+            for index in range(len(block.instructions))
+        }
+        self.assertNotIn(0x1008, reached)
+        plain_reached = {
+            block.pc + 4 * index
+            for block in plain.blocks
+            for index in range(len(block.instructions))
+        }
+        self.assertIn(0x1008, plain_reached)
+
+    def test_negative_bl_to_unknown_a32_code_still_opens_the_cfg(self) -> None:
+        # The Thumb rule must not hide a genuinely unresolved A32 call.
+        words = [0] * 2
+        words[0] = branch(0x1000, 0x2000, link=True)
+        words[1] = 0xE12FFF1E
+        code = b"".join(word.to_bytes(4, "little") for word in words)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inventory, audit = self._inputs(root, [(0x1000, 0x08, "caller")])
+            program = build_program(
+                code, inventory, audit, base=BASE, executable_size=len(code)
+            )
+        function = {f.entry: f for f in program.functions}[0x1000]
+        self.assertFalse(function.closed_static_cfg)
+        self.assertEqual(
+            [(e.site, e.kind) for e in function.unresolved_static_edges],
+            [(0x1000, "direct_call")],
+        )
+
+    def test_marks_loop_and_cross_function_branch_as_tail_call(self) -> None:
+        words = [0] * 10
+        words[0] = 0xE2500001  # subs r0, r0, #1
+        words[1] = branch(0x1004, 0x1000, condition=0x1)  # bne loop
+        words[2] = branch(0x1008, 0x1020)
+        words[8] = 0xE12FFF1E
+        code = b"".join(word.to_bytes(4, "little") for word in words)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inventory, audit = self._inputs(
+                root,
+                [(0x1000, 0x0C, "loop"), (0x1020, 0x04, "tail")],
+            )
+            program = build_program(
+                code,
+                inventory,
+                audit,
+                base=BASE,
+                executable_size=len(code),
+            )
+
+        functions = {function.entry: function for function in program.functions}
+        self.assertEqual(functions[0x1000].tail_calls, ((0x1008, 0x1020),))
+        self.assertTrue(functions[0x1000].closed_static_cfg)
+
+    def test_conditional_return_preserves_fallthrough_in_function(self) -> None:
+        words = [0] * 4
+        words[0] = 0xE3500001  # cmp r0, #1
+        words[1] = 0xB12FFF1E  # bxlt lr
+        words[2] = 0xE3A00002  # mov r0, #2
+        words[3] = 0xE12FFF1E  # bx lr
+        code = b"".join(word.to_bytes(4, "little") for word in words)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inventory, audit = self._inputs(
+                root, [(0x1000, 0x10, "conditional_return")]
+            )
+            program = build_program(
+                code,
+                inventory,
+                audit,
+                base=BASE,
+                executable_size=len(code),
+            )
+
+        functions = {function.entry: function for function in program.functions}
+        function = functions[0x1000]
+        self.assertEqual(len(function.block_ids), 2)
+        self.assertTrue(function.closed_static_cfg)
+        self.assertNotIn(0x1008, functions)
+        self.assertEqual(program.unclaimed_blocks, ())
+
+    def test_complementary_conditional_tail_calls_close_cfg(self) -> None:
+        words = [0xFFFFFFFF] * 10
+        words[0] = 0xE3500000  # cmp r0,#0
+        words[1] = branch(0x1004, 0x1020, condition=0x1)  # bne first
+        words[2] = 0x03A01001  # moveq r1,#1; does not change NZCV
+        words[3] = branch(0x100C, 0x1024, condition=0x0)  # beq second
+        words[8] = 0xE12FFF1E
+        words[9] = 0xE12FFF1E
+        code = b"".join(word.to_bytes(4, "little") for word in words)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inventory, audit = self._inputs(
+                root,
+                [
+                    (0x1000, 0x10, "complementary_dispatch"),
+                    (0x1020, 0x04, "first_tail"),
+                    (0x1024, 0x04, "second_tail"),
+                ],
+            )
+            program = build_program(
+                code,
+                inventory,
+                audit,
+                base=BASE,
+                executable_size=len(code),
+            )
+
+        functions = {function.entry: function for function in program.functions}
+        dispatch = functions[0x1000]
+        self.assertTrue(dispatch.closed_static_cfg)
+        self.assertEqual(
+            dispatch.tail_calls,
+            ((0x1004, 0x1020), (0x100C, 0x1024)),
+        )
+        second = next(block for block in program.blocks if block.pc == 0x1008)
+        self.assertEqual(len(second.successors), 1)
+        self.assertEqual(second.successors[0].kind, "branch")
+        self.assertIsNone(second.successors[0].condition)
+
+    def test_promotes_address_taken_code_to_a_function(self) -> None:
+        words = [0] * 18
+        words[0] = 0xE12FFF1E
+        words[8] = 0x1040  # exact code pointer in an unreachable table
+        words[16] = 0xE3A00002
+        words[17] = 0xE12FFF1E
+        code = b"".join(word.to_bytes(4, "little") for word in words)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inventory, audit = self._inputs(root, [(0x1000, 0x04, "root")])
+            program = build_program(
+                code,
+                inventory,
+                audit,
+                base=BASE,
+                executable_size=len(code),
+            )
+
+        functions = {function.entry: function for function in program.functions}
+        self.assertIn(0x1040, program.pointer_roots)
+        self.assertEqual(functions[0x1040].origin, "address_taken")
+        self.assertTrue(functions[0x1040].closed_static_cfg)
+        self.assertEqual(program.unclaimed_blocks, ())
+
+
+    def test_data_pointer_into_thumb_range_is_not_an_a32_root(self) -> None:
+        words = [0] * 18
+        words[0] = 0xE12FFF1E
+        words[8] = 0x1040  # pointer word naming 0x1040
+        # The Thumb range holds Thumb code (BX lr) the Thumb decoder accepts.
+        words[12:16] = [0x47704770] * 4
+        words[16] = 0xE0039001  # decodes as A32 "and r9, r3, r1"
+        words[17] = 0xE12FFF1E
+        code = b"".join(word.to_bytes(4, "little") for word in words)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inventory, audit = self._inputs(root, [(0x1000, 0x04, "root")])
+            ranges = root / "thumb.csv"
+            ranges.write_text("kind,start,end" + chr(10) + "range,0x1030,0x1047" + chr(10),
+                              encoding="utf-8")
+            thumb = load_thumb_ranges(ranges)
+            excluded = build_program(code, inventory, audit, base=BASE,
+                                     executable_size=len(code), thumb_ranges=thumb)
+            # Negative: without the Thumb fact the pointer promotes 0x1040.
+            plain = build_program(code, inventory, audit, base=BASE,
+                                  executable_size=len(code))
+        self.assertEqual(thumb, ((0x1030, 0x1048),))
+        self.assertNotIn(0x1040, excluded.pointer_roots)
+        self.assertNotIn(0x1040, {f.entry for f in excluded.functions})
+        self.assertIn(0x1040, plain.pointer_roots)
+
+    def test_audited_dispatch_entries_become_block_starts_and_roots(self) -> None:
+        # 0x1000 mov r0,#1; 0x1004 mov r1,#2 (a return slot inside linear
+        # flow); 0x1008 bx lr; 0x100C mov r0,#7 (no static edge); 0x1010 bx lr.
+        words = [0xE3A00001, 0xE3A01002, 0xE12FFF1E, 0xE3A00007, 0xE12FFF1E]
+        code = b"".join(word.to_bytes(4, "little") for word in words)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inventory, audit = self._inputs(
+                root, [(BASE, 12, "f"), (BASE + 4, 4, "slot"), (BASE + 12, 4, "dead")])
+            plain_audit = root / "plain.csv"
+            plain_audit.write_text(
+                "entry,classification\n0x1004,switch_owned_case\n0x100C,switch_owned_case\n",
+                encoding="utf-8")
+            plain = build_program(code, inventory, plain_audit, base=BASE)
+            audit.write_text(
+                "entry,classification\n0x1004,multi_return_slot\n0x100C,unreferenced_code\n",
+                encoding="utf-8")
+            audited = build_program(code, inventory, audit, base=BASE)
+        # Negative: an already reachable switch-case row does not split the
+        # block, so pc 0x1004 would miss the dispatch.
+        self.assertNotIn(BASE + 4, {block.pc for block in plain.blocks})
+        pcs = {block.pc for block in audited.blocks}
+        self.assertTrue({BASE + 4, BASE + 12} <= pcs)
+        functions = {function.entry: function for function in audited.functions}
+        self.assertEqual(functions[BASE + 4].origin, "audited_dispatch_entry")
+        self.assertEqual(functions[BASE + 12].origin, "audited_dispatch_entry")
+
+    def test_thumb_range_guards_are_checked(self) -> None:
+        code = bytes.fromhex("10b5") + bytes(30)
+        with tempfile.TemporaryDirectory() as temporary:
+            facts = Path(temporary) / "thumb.csv"
+            facts.write_text(
+                "kind,start,end,size,name,guard\n"
+                "range,0x1000,0x1001,2,a,0xB510\nrange,0x1002,0x1003,2,b,\n",
+                encoding="utf-8")
+            self.assertEqual(check_thumb_range_guards(facts, code, BASE), 1)
+            facts.write_text(
+                "kind,start,end,size,name,guard\nrange,0x1000,0x1001,2,a,0xB500\n",
+                encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "guard at 0x00001000"):
+                check_thumb_range_guards(facts, code, BASE)
+
+
+if __name__ == "__main__":
+    unittest.main()

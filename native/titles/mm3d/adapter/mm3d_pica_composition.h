@@ -1,0 +1,244 @@
+#pragma once
+#include "../dekui/host_interfaces.h"
+
+#include "oot3d_native_pica_frontend.h"
+#include "mm3d_native_a32_lighting.h"
+
+#include <array>
+#include <cstdint>
+#include <map>
+#include <memory>
+#include <optional>
+#include <span>
+#include <string>
+#include <vector>
+
+namespace oot3d::recomp::a32 {
+class MemoryBus;
+struct GuestState;
+struct Registry;
+} // namespace oot3d::recomp::a32
+
+namespace Oot3dNativeGame {
+
+// Majora's Mask 3D's native draw passes (code.bin 6eec27b1..., v1.1),
+// recovered by tracing one frame's function entries against the command
+// list cursor and the PICA draws they produced, and read against Play_Draw in
+// the N64 decompilation (zeldaret/mm src/code/z_play.c):
+//
+//   0x001109F8 draws a frame. It binds command list 9 and calls the sky
+//   (0x005B51D0, Skybox_Draw's place), binds list 7 and calls the scene,
+//   0x0011EF14, then 0x0011EF60, then the 2D layers through 0x0011EFAC.
+//   0x0011EF14 visits the scene's two render lists with 0x005EF054: the opaque
+//   list (scene+4, returning to 0x0011EF3C) and the translucent list
+//   (scene+4+0x408, returning to 0x0011EF58). 0x0011EF60 visits the same two
+//   lists again with another visitor (returning to 0x0011EF88 and
+//   0x0011EFA4): blended draws without depth writes, after translucency.
+//   0x0011EFAC visits the 2D scene (scene+8) the same way (0x0011EFD4,
+//   0x0011EFF4). 0x001267E8 draws one 2D layout queue (r1): for each
+//   enqueued owner it calls 0x00126294 (owner in r1; returning to 0x00126998
+//   or, in its second loop, 0x00126A64), then 0x001262E0 (returning to
+//   0x001269DC, or 0x00126AA8) finishes the queue. HUD, menus and dialogue
+//   are these layouts. After the 2D scene pass the frame draw also draws
+//   the quad manager's (0x00175A88) sprite queues 4 and 5 with 0x0012C6A8
+//   (manager, queue), returning to 0x00110D88 and 0x00110DB8: HUD sprites,
+//   among them the map and radar quads mm3d-dekui moves to the top screen.
+//
+// Each pass writes its commands through the cursor at 0x006A3A88 into the
+// bound list; prebuilt model buffers are called from there through
+// GPUREG_CMDBUF_JUMP, and the frontend attributes their draws to the call.
+inline constexpr uint32_t kMm3dCommandListCursorAddress = 0x006A3A88U;
+inline constexpr uint32_t kMm3dRenderListVisitEntry = 0x005EF054U;
+inline constexpr uint32_t kMm3dSkyboxDrawEntry = 0x005B51D0U;
+inline constexpr uint32_t kMm3dLayoutDrawEntry = 0x001262E0U;
+inline constexpr uint32_t kMm3dLayoutOwnerDrawEntry = 0x00126294U;
+inline constexpr uint32_t kMm3dQuadQueueDrawEntry = 0x0012C6A8U;
+// The layout renderer batches quads (pending counts at renderer+0xC3C and
+// +0xC40) and flushes the batch with 0x00144B70 only when the NEXT owner's
+// setup runs (0x00135000: ldr [r4,#0xC3C] / ldreq [r0,#0xC40] / bl 0x00144B70,
+// returning to 0x00135044) or when the queue's finisher 0x001262E0 runs (same
+// test, bl 0x00144B70). The flushed draws belong to the owner that queued
+// them: the previous owner, not the span they are written in. Without this the
+// last batch of the Hud layout (the clock bar's day marker) is attributed to
+// the following owner or the finisher and survives Hide HUD (G6.04, r7/r8).
+inline constexpr uint32_t kMm3dLayoutBatchFlushReturn = 0x00135044U;
+
+std::span<const uint32_t> Mm3dNativePicaCompositionHookPcs() noexcept;
+
+struct Mm3dNativePicaCompositionStats {
+    uint64_t ScopeEntries = 0;
+    uint64_t ScopeExits = 0;
+    uint64_t RecordedSpans = 0;
+    uint64_t EmptyScopes = 0;
+    uint64_t InvalidRanges = 0;
+    uint64_t NestedScopeEntries = 0;
+    uint64_t ReplacedSpans = 0;
+    uint64_t ExpiredSpans = 0;
+    uint64_t SceneFrames = 0;
+    uint64_t ReadFailures = 0;
+    // Scene frames whose world passes carry the camera's world-to-view, and
+    // the environment's directional lights the last of them carried.
+    uint64_t LightBindings = 0;
+    uint32_t SceneDirectionalLights = 0;
+    uint64_t TemporalModelSpans = 0;
+    uint64_t IsolatedModelSpans = 0;
+    uint64_t AtmosphereModelSpans = 0;
+    uint64_t LifecycleInvalidations = 0;
+    // P17 owner dump: draws per layout resource name at the owner draw entry
+    // (bounded; later names count in LayoutOwnersDropped).
+    std::map<std::string, uint64_t> LayoutOwners;
+    uint64_t LayoutOwnersDropped = 0;
+    // Room slots observed at Play_Draw: changes of the (cur, prev) pair, room
+    // lifetime ends (a room left both slots), and the last valid pair (-1 = empty).
+    uint64_t RoomSlotChanges = 0, RoomLifetimeEnds = 0, DirectShadowSubmits = 0;
+    // Model spans carrying the native projected-shadow role (shadow-only:
+    // never actor geometry, isolated lighting or atmosphere).
+    uint64_t ProjectedShadowSpans = 0;
+    int32_t LastCurrentRoom = -1, LastPreviousRoom = -1;
+    uint64_t PrimitiveEntries = 0, PrimitiveSpans = 0, TemporalPrimitiveSpans = 0;
+    uint64_t UnownedPrimitives = 0, InvalidPrimitives = 0;
+    uint64_t AtmosphereQuadSpans = 0, UiQuadSpans = 0, InvalidQuadOwners = 0;
+    uint64_t QuadQueueMoves = 0, NativeUiQuadMoves = 0;
+    std::array<uint64_t, 8> UnknownQuadSpans{};
+    std::array<uint64_t, 8> PrimitiveCallerEntries{};
+    // P17b: objects in the quad queues 4/5 at the queue draw entry, keyed by
+    // queue, vtable, quad count and first-quad position (bounded likewise).
+    std::map<std::string, uint64_t> QuadObjects;
+    uint64_t QuadObjectsDropped = 0;
+    // Flushed batches attributed to the owner that queued them: at the next
+    // owner's setup, and the finisher spans.
+    uint64_t CarriedBatchSpans = 0;
+    uint64_t CarriedFinisherSpans = 0;
+};
+
+// Records the command-list byte range each native pass writes, with its
+// layer, and with the world passes, the scene's lighting: the current View's
+// world-to-view and the environment's directional lights still linked in the
+// play state's LightContext (mm3d_title_contracts.h). A list is built one guest frame before the GPU runs it, and the GPU
+// reaches it through jumps from the submitted list, so the recorded ranges
+// are offered with every submission until a later frame writes the same
+// bytes again or they are two scene frames old.
+class Mm3dNativePicaCompositionTracker final
+    : public Oot3dPicaCommandListCompositionProvider {
+  public:
+    enum class Event : uint8_t { None, OpaqueWorldBegins };
+
+    // Called after mount/registry verification; false fails adapter setup.
+    bool VerifyHooks(oot3d::recomp::a32::MemoryBus& memory,
+                     const oot3d::recomp::a32::Registry* registry = nullptr);
+    void SetSupplementalPublication(bool points, bool water) noexcept {
+        mLighting.SetSupplementalPublication(points, water);
+    }
+    Event ObserveBlockEntry(uint32_t pc,
+                            const oot3d::recomp::a32::GuestState& state,
+                            oot3d::recomp::a32::MemoryBus& memory);
+
+    bool TakeCommandListCompositionSpans(
+        uint32_t commandListAddress, uint32_t commandListSize,
+        std::vector<Oot3dPicaCommandListCompositionSpan>& spans,
+        std::string* error = nullptr) override;
+
+    void CommitQuadQueueMoves(std::span<const Mm3dDekui::NativeQuadQueueMove> moves,
+        oot3d::recomp::a32::MemoryBus& memory);
+    void Reset() noexcept;
+    [[nodiscard]] const Mm3dNativePicaCompositionStats& Stats() const noexcept;
+    // The environment group latched for this play visit (Unknown = nullopt).
+    [[nodiscard]] std::optional<SceneEnvironmentGroup> EnvironmentGroup(uint32_t play, uint16_t scene) const noexcept {
+        return mLighting.EnvironmentGroup(play, scene);
+    }
+
+  private:
+    void RecordQuadObjects(oot3d::recomp::a32::MemoryBus& memory, uint32_t queue);
+    struct QueueOwner {
+        uint32_t Model = 0; uint64_t Generation = 0;
+        uint64_t Actor = 0; bool Shadow = false;
+        uint32_t List = 0;
+        uint64_t Lifetime = 0;
+        bool Isolated = false, Atmosphere = false;
+    };
+    struct QuadOwner {
+        uint32_t Model = 0;
+        uint64_t Generation = 0;
+        Oot3dPicaCompositionAttribution Attribution;
+    };
+    struct EnvironmentProducer { uint32_t Entry = 0, Return = 0; };
+    struct PrimitiveScope {
+        uint32_t Context = 0, Begin = 0, OuterReturn = 0;
+        Oot3dPicaCompositionAttribution Attribution;
+        Fast::Renderer3ds::PicaNativeLightBinding Lighting;
+    };
+    struct ActorLifetime { uint64_t Identity = 0, Lifetime = 0; };
+    struct ModelLifetime {
+        uint64_t Owner = 0, OwnerEpoch = 0, Lifetime = 0;
+        // Handles released by the guarded CMB model destructor, +90..+A8.
+        std::array<uint32_t, 7> Resources{};
+    };
+    struct ModelSubmit { uint32_t Model = 0, ReturnPc = 0; bool Shadow = false; };
+    struct OverlaySubmit { uint32_t Model = 0, List = 0, ReturnPc = 0; };
+    struct ModelScope {
+        uint32_t ReturnPc = 0, Slot = 0, Begin = 0;
+        Oot3dPicaCompositionAttribution Attribution;
+        Fast::Renderer3ds::PicaNativeLightBinding Lighting;
+    };
+    struct ActiveScope {
+        uint32_t ReturnPc = 0;
+        uint32_t BeginAddress = 0;
+        Oot3dPicaCompositionAttribution Attribution;
+        Fast::Renderer3ds::PicaNativeLightBinding LightBinding;
+    };
+    struct RecordedSpan {
+        Oot3dPicaCommandListCompositionSpan Span;
+        uint64_t SceneFrame = 0;
+    };
+
+    void Record(uint32_t begin, uint32_t end,
+                const Oot3dPicaCompositionAttribution& attribution,
+                const Fast::Renderer3ds::PicaNativeLightBinding& lightBinding);
+    void CaptureSceneLighting(oot3d::recomp::a32::MemoryBus& memory);
+    bool ObservePrimitive(uint32_t pc, const oot3d::recomp::a32::GuestState& state,
+                          oot3d::recomp::a32::MemoryBus& memory);
+    void FlushPrimitives(oot3d::recomp::a32::MemoryBus& memory);
+    void ValidateTemporalAttribution(Oot3dPicaCompositionAttribution& attribution,
+                                    oot3d::recomp::a32::MemoryBus& memory);
+    bool ObserveQuads(uint32_t pc, const oot3d::recomp::a32::GuestState& state,
+                      oot3d::recomp::a32::MemoryBus& memory);
+
+    uint64_t NextLifetime() noexcept;
+    void InvalidateActor(uint32_t actor);
+    bool mHooksVerified = false, mFineSuppressed = false;
+    uint64_t mNextLifetime = 0;
+    uint32_t mPlay = 0, mPlayFrame = 0;
+    uint16_t mScene = 0;
+    struct RoomSlots { bool Valid = false; int8_t Current = -1, Previous = -1; };
+    RoomSlots mRooms;
+    std::unordered_map<uint32_t, ActorLifetime> mActorLifetimes;
+    std::unordered_map<uint32_t, ModelLifetime> mModelLifetimes;
+    // CMB resource tuples (model+0x90..0xA8) of models proved to be shadows by
+    // the shared shadow routines' submit LRs. Scene-scoped.
+    std::vector<std::array<uint32_t, 7>> mShadowResources;
+    uint64_t mQueueGeneration = 0;
+    std::vector<uint64_t> mActorDrawStack;
+    std::unordered_map<uint32_t, QueueOwner> mQueueOwners;
+    std::optional<ModelSubmit> mModelSubmit;
+    std::optional<OverlaySubmit> mOverlaySubmit;
+    std::optional<ModelScope> mModelScope;
+    std::vector<EnvironmentProducer> mEnvironmentProducers;
+    std::unordered_map<uint32_t, QuadOwner> mQuadOwners;
+    std::optional<ModelScope> mQuadScope;
+    uint32_t mQuadQueue = 0;
+    uint64_t mQuadGeneration = 0;
+    std::vector<Mm3dDekui::NativeQuadQueueMove> mQuadSortMoves;
+    std::optional<PrimitiveScope> mPrimitiveScope;
+    std::vector<Oot3dPicaCommandListCompositionSpan> mPendingPrimitives;
+    Mm3dNativeA32LightingProbe mLighting;
+    std::optional<ActiveScope> mActive;
+    // The last tagged layout owner of the current queue (see
+    // kMm3dLayoutBatchFlushReturn); cleared by any non-layout scope.
+    std::optional<Oot3dPicaCompositionAttribution> mLayoutCarry;
+    // The scene frame's lighting, captured when its opaque pass begins.
+    Fast::Renderer3ds::PicaNativeLightBinding mSceneLighting;
+    std::vector<RecordedSpan> mSpans; // sorted by BeginAddress, disjoint
+    Mm3dNativePicaCompositionStats mStats;
+};
+
+} // namespace Oot3dNativeGame

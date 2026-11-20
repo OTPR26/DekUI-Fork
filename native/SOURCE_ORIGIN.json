@@ -1,0 +1,6 @@
+{
+  "upstream": "https://github.com/coccofresco/TriAevum",
+  "upstream_base": "672d13f15cb336bc7651c861d23cf45924a9f936",
+  "purpose": "Native mobile source preparation. Not a qualified release candidate.",
+  "excluded": "Local build caches, private title sources, original game payloads, user data and signing inputs are not part of this source tree."
+}

@@ -1,0 +1,251 @@
+#include "oot3d_native_render_command_stream.h"
+
+#include <atomic>
+#include <chrono>
+#include <cstdlib>
+#include <iostream>
+#include <stdexcept>
+#include <string>
+#include <thread>
+#include <vector>
+
+namespace {
+
+using Oot3dNativeGame::NativeRenderCommandStream;
+using Mode = NativeRenderCommandStream::Mode;
+
+void Require(bool condition, const char* message) {
+    if (!condition) {
+        std::cerr << "oot3d_native_render_command_stream_tests: " << message << '\n';
+        std::exit(1);
+    }
+}
+
+void TestInlineRunsAtSubmission() {
+    NativeRenderCommandStream stream(Mode::Inline);
+    int value = 0;
+    bool inside = false;
+    stream.Submit([&] { value = 1; inside = stream.InCommand(); });
+    Require(value == 1 && inside && !stream.InCommand(),
+            "inline command did not run at submission inside a command scope");
+    bool threw = false;
+    try {
+        stream.Submit([] { throw std::runtime_error("inline"); });
+    } catch (const std::runtime_error&) {
+        threw = true;
+    }
+    Require(threw, "inline command exception did not reach the submitter");
+}
+
+void TestWorkerKeepsProgramOrder() {
+    NativeRenderCommandStream stream(Mode::Worker, 2U);
+    std::vector<int> order;
+    const auto mainThread = std::this_thread::get_id();
+    std::atomic<bool> offThread{true};
+    for (int i = 0; i < 1000; ++i) {
+        stream.Submit([&, i] {
+            order.push_back(i);
+            if (std::this_thread::get_id() == mainThread) offThread = false;
+        }, i % 10 == 9);
+    }
+    int observed = -1;
+    stream.Run([&] { observed = static_cast<int>(order.size()); });
+    Require(observed == 1000, "Run did not execute after every earlier command");
+    for (int i = 0; i < 1000; ++i) {
+        Require(order[static_cast<size_t>(i)] == i, "worker changed command order");
+    }
+    Require(offThread.load(), "worker commands ran on the submitting thread");
+    stream.Drain();
+}
+
+void TestFramesInFlightBound() {
+    NativeRenderCommandStream stream(Mode::Worker, 1U);
+    std::atomic<bool> release{false};
+    std::atomic<bool> secondSubmitted{false};
+    stream.Submit([&] {
+        while (!release.load()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }, true);
+    std::thread producer([&] {
+        stream.Submit([] {}, true);
+        secondSubmitted = true;
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    Require(!secondSubmitted.load(),
+            "a second frame was accepted while the first was still in flight");
+    release = true;
+    producer.join();
+    Require(secondSubmitted.load(), "second frame was never accepted");
+    stream.Drain();
+}
+
+// Input admission: the producer waits until the previous frame has ended,
+// while commands that do not end a frame never hold it.
+void TestWaitForFramesInFlight() {
+    NativeRenderCommandStream inlineStream(Mode::Inline);
+    inlineStream.WaitForFramesInFlight(0U);
+    NativeRenderCommandStream stream(Mode::Worker, 1U);
+    std::atomic<bool> release{false};
+    std::atomic<bool> ended{false};
+    std::atomic<bool> admitted{false};
+    stream.Submit([&] {
+        while (!release.load()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    });
+    stream.Submit([&] { ended = true; }, true);
+    std::thread producer([&] {
+        stream.WaitForFramesInFlight(1U);
+        stream.WaitForFramesInFlight(0U);
+        admitted = true;
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    Require(!admitted.load(), "the producer was admitted before the previous frame ended");
+    release = true;
+    producer.join();
+    Require(admitted.load() && ended.load(), "admission did not follow the frame end");
+    stream.Submit([] { std::this_thread::sleep_for(std::chrono::milliseconds(20)); });
+    stream.WaitForFramesInFlight(0U);
+    stream.Drain();
+}
+
+void TestWorkerFailureIsRethrownOnce() {
+    NativeRenderCommandStream stream(Mode::Worker);
+    bool laterRan = false;
+    stream.Submit([] { throw std::runtime_error("render failed"); });
+    stream.Submit([&] { laterRan = true; });
+    bool rethrown = false;
+    try {
+        stream.Drain();
+    } catch (const std::runtime_error& error) {
+        rethrown = std::string(error.what()) == "render failed";
+    }
+    Require(rethrown, "worker exception was not rethrown by Drain");
+    Require(!laterRan, "commands after a failure still ran");
+    int value = 0;
+    stream.Run([&] { value = 7; });
+    Require(value == 7, "stream was not usable after reporting its failure");
+}
+
+void TestModeSwitchDrainsAndDestructorRunsPending() {
+    std::vector<int> order;
+    {
+        NativeRenderCommandStream stream(Mode::Worker);
+        for (int i = 0; i < 50; ++i) stream.Submit([&, i] { order.push_back(i); });
+        stream.SetMode(Mode::Inline);
+        Require(order.size() == 50U, "switching to inline did not drain the worker");
+        stream.Submit([&] { order.push_back(50); });
+        Require(order.size() == 51U, "inline mode did not run immediately after a switch");
+        stream.SetMode(Mode::Worker);
+        for (int i = 51; i < 60; ++i) stream.Submit([&, i] { order.push_back(i); });
+    }
+    Require(order.size() == 60U, "destruction discarded pending commands");
+    for (int i = 0; i < 60; ++i) {
+        Require(order[static_cast<size_t>(i)] == i, "order changed across mode switches");
+    }
+}
+
+// Only commands whose submitter waits for them may reach guest state.
+void TestSynchronousCommandsAreDistinguished() {
+    for (const Mode mode : {Mode::Inline, Mode::Worker}) {
+        NativeRenderCommandStream stream(mode);
+        bool submitted = true;
+        bool ran = false;
+        stream.Submit([&] { submitted = stream.InSynchronousCommand(); });
+        std::thread::id runThread;
+        stream.Run([&] {
+            ran = stream.InSynchronousCommand();
+            runThread = std::this_thread::get_id();
+        });
+        Require(runThread == std::this_thread::get_id(),
+                "Run did not execute on the calling thread");
+        Require(submitted == (mode == Mode::Inline) && ran &&
+                    !stream.InSynchronousCommand(),
+                "stream misreported a synchronous command");
+    }
+}
+
+// A long wait for the worker (a renderer blocked on a cold pipeline) keeps
+// calling the window pump on the waiting thread, with the stream unlocked;
+// short waits, other threads and an unset pump never call it.
+void TestLongWaitsPumpTheWindow() {
+    using namespace std::chrono_literals;
+    NativeRenderCommandStream stream(Mode::Worker, 1U);
+    std::atomic<int> pumps{0};
+    std::atomic<bool> wrongThread{false};
+    const auto owner = std::this_thread::get_id();
+    stream.SetWaitPump([&] {
+        if (std::this_thread::get_id() != owner) wrongThread = true;
+        ++pumps;
+    }, 20ms);
+    // Drain behind a 300 ms command.
+    stream.Submit([] { std::this_thread::sleep_for(300ms); });
+    stream.Drain();
+    Require(pumps.load() >= 5, "a long Drain did not pump the window");
+    Require(!wrongThread.load(), "the pump ran on another thread");
+    Require(stream.Waits().WaitPumps == static_cast<uint64_t>(pumps.load()), "wait pumps miscounted");
+    // Frame-end back pressure and WaitForFramesInFlight pump too.
+    pumps = 0;
+    stream.Submit([] { std::this_thread::sleep_for(200ms); }, true);
+    stream.Submit([] {}, true);
+    Require(pumps.load() >= 3, "frame-end back pressure did not pump the window");
+    stream.Submit([] { std::this_thread::sleep_for(200ms); }, true);
+    pumps = 0;
+    stream.WaitForFramesInFlight(0U);
+    Require(pumps.load() >= 3, "WaitForFramesInFlight did not pump the window");
+    // Run waits for the stream, then runs on this thread.
+    stream.Submit([] { std::this_thread::sleep_for(200ms); });
+    pumps = 0;
+    bool ran = false;
+    stream.Run([&] { ran = true; });
+    Require(ran && pumps.load() >= 3, "Run's wait did not pump the window");
+    // A short wait does not pump.
+    stream.Drain();
+    pumps = 0;
+    stream.Submit([] {});
+    stream.Drain();
+    Require(pumps.load() == 0, "a short wait pumped the window");
+    // Another thread's wait does not pump.
+    stream.Submit([] { std::this_thread::sleep_for(150ms); });
+    std::thread other([&] { stream.WaitForFramesInFlight(5U); stream.Drain(); });
+    other.join();
+    Require(pumps.load() == 0 && !wrongThread.load(), "another thread's wait pumped the window");
+    // Without a pump, waits are as before.
+    stream.SetWaitPump(nullptr, 20ms);
+    stream.Submit([] { std::this_thread::sleep_for(100ms); });
+    stream.Drain();
+    Require(pumps.load() == 0, "a removed pump was called");
+}
+
+// The pump may submit nothing, but the worker keeps running and a failure
+// still reaches the waiting thread.
+void TestPumpedWaitStillRethrows() {
+    using namespace std::chrono_literals;
+    NativeRenderCommandStream stream(Mode::Worker, 1U);
+    int pumps = 0;
+    stream.SetWaitPump([&] { ++pumps; }, 10ms);
+    stream.Submit([] {
+        std::this_thread::sleep_for(80ms);
+        throw std::runtime_error("cold pipeline failed");
+    });
+    bool rethrown = false;
+    try {
+        stream.Drain();
+    } catch (const std::runtime_error&) {
+        rethrown = true;
+    }
+    Require(rethrown && pumps >= 2, "a pumped wait lost the worker failure");
+}
+
+} // namespace
+
+int main() {
+    TestInlineRunsAtSubmission();
+    TestWorkerKeepsProgramOrder();
+    TestFramesInFlightBound();
+    TestWaitForFramesInFlight();
+    TestWorkerFailureIsRethrownOnce();
+    TestModeSwitchDrainsAndDestructorRunsPending();
+    TestSynchronousCommandsAreDistinguished();
+    TestLongWaitsPumpTheWindow();
+    TestPumpedWaitStillRethrows();
+    std::cout << "oot3d_native_render_command_stream_tests: ok\n";
+    return 0;
+}

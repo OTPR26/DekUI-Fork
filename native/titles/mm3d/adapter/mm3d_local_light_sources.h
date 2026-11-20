@@ -1,0 +1,136 @@
+#pragma once
+
+#include "recomp/a32_runtime.h"
+#include <array>
+#include <cstdint>
+
+namespace Oot3dNativeGame {
+
+// EUR v1.1, source/node ownership re-found from native colour/radius writers
+// and destructors. N64 supplies semantic names, never ids or field offsets.
+// Evidence: local analysis/parity/DL/{actor_disassembly,source_writer_guards,
+// native_initializers,destructor_light_proofs}.txt. Additional rows prove both
+// InsertLight's returned-node store and the destructor's matching RemoveLight.
+// These are native registered sources, not synthetic glow classifications.
+struct Mm3dLocalLightSource {
+    uint16_t Actor;
+    uint8_t Category;
+    uint32_t Info, Node, Update, Destroy;
+    std::array<std::array<uint32_t,2>,4> Guards;
+};
+inline constexpr std::array kMm3dLocalLightSources{
+    // Player/carried fire: wrapper callbacks dispatch through 6919AC. Native
+    // init 1F45DC tail-branches (B at 1F4600) to 1F5C78, whose BL at 1F6818
+    // inserts +9A4 and stores +9A0; destroy 1F6FDC removes it.
+    // Keep the title's active radius/RGB/limb-tip position, not a second stick.
+    Mm3dLocalLightSource{0,2,0x9A4,0x9A0,0x1F4E1C,0x43A8D4,{{
+        {0x1F6818,0xEBFFC3E9},{0x1F681C,0xE58409A0},
+        {0x1F7038,0xE59429A0},{0x1F7044,0xEBFFE811}}}},
+    Mm3dLocalLightSource{0x10,7,0x578,0x590,0x398120,0x31F844,{{
+        {0x31F854,0xE5902590},{0x31F864,0xEBFB4609},
+        {0x31F868,0xE59525AC},{0x31F874,0xEBFB4605}}}},
+    Mm3dLocalLightSource{0x10,7,0x594,0x5AC,0x398120,0x31F844,{{
+        {0x31F854,0xE5902590},{0x31F864,0xEBFB4609},
+        {0x31F868,0xE59525AC},{0x31F874,0xEBFB4605}}}},
+    Mm3dLocalLightSource{4,7,0x200,0x1FC,0x3FE1BC,0x39E1DC,{{
+        {0x39E1FC,0xE59421FC},{0x3FE270,0xE2840C02},
+        {0x3FE274,0xEBF855E2},{0x213A18,0xE1C041B6}}}},
+    Mm3dLocalLightSource{0x2E,6,0x2B0,0x2AC,0x4AA8D4,0x467A08,{{
+        {0x467A30,0xE59422AC},{0x4AA684,0xE2840E2B},
+        {0x4AA688,0xEBF5A4DD},{0x213A18,0xE1C041B6}}}},
+    Mm3dLocalLightSource{0x10,7,0x578,0x590,0x47B16C,0x31F844,{{
+        {0x31F854,0xE5902590},{0x31F864,0xEBFB4609},
+        {0x31F868,0xE59525AC},{0x31F874,0xEBFB4605}}}},
+    Mm3dLocalLightSource{0x10,7,0x594,0x5AC,0x47B16C,0x31F844,{{
+        {0x31F854,0xE5902590},{0x31F864,0xEBFB4609},
+        {0x31F868,0xE59525AC},{0x31F874,0xEBFB4605}}}},
+    Mm3dLocalLightSource{0x2B,7,0x254,0x250,0x5024DC,0x45B744,{{
+        {0x45B2B4,0xEBF63142},{0x45B2B8,0xE5840250},{0x45B79C,0xE5942250},{0x45B7A8,0xEBF65638}}}},
+    Mm3dLocalLightSource{0x2D,7,0x370,0x36C,0x4513AC,0x3F2BC0,{{
+        {0x3F22A4,0xEBF7D546},{0x3F22A8,0xE588036C},{0x3F2BCC,0xE590236C},{0x3F2BE0,0xEBF7F92A}}}},
+    Mm3dLocalLightSource{0x2D,7,0x38C,0x388,0x4513AC,0x3F2BC0,{{
+        {0x3F22D8,0xEBF7D539},{0x3F22DC,0xE5880388},{0x3F2BE4,0xE5942388},{0x3F2BF0,0xEBF7F926}}}},
+    Mm3dLocalLightSource{0x49,7,0x35C,0x358,0x3DB2F8,0x36F170,{{
+        {0x36EFDC,0xEBF9E1F8},{0x36EFE8,0xE5840358},{0x36F178,0xE5902358},{0x36F18C,0xEBFA07BF}}}},
+    Mm3dLocalLightSource{0x8C,7,0x1FC,0x1F8,0x467D28,0x1EAA88,{{
+        {0x40BFF0,0xEBF76DF3},{0x40BFF4,0xE58401F8},{0x1EAA94,0xE59021F8},{0x1EAAA8,0xEB001978}}}},
+    Mm3dLocalLightSource{0x8C,7,0x218,0x214,0x467D28,0x1EAA88,{{
+        {0x40C024,0xEBF76DE6},{0x40C030,0xE5840214},{0x1EAAAC,0xE5952214},{0x1EAAB8,0xEB001974}}}},
+    Mm3dLocalLightSource{0x161,7,0x274,0x270,0x406744,0x3B0C9C,{{
+        {0x3B0BB4,0xEBF8DB02},{0x3B0BB8,0xE5840270},{0x3B0CA4,0xE5902270},{0x3B0CB8,0xEBF900F4}}}},
+    // Round 2 (F02a, former N-ret): same affine init/destroy proof, reproduced
+    // by analysis/parity/DL/round2/nret_rows.py (it regenerates every existing
+    // row's Info/Node/Update/Destroy exactly). 0x117 = En_Dno (zelda2_dnj),
+    // 0x16E = Boss_Hakugin (zelda2_boss_hakugin), 0x194 = En_Ot (zelda2_ot).
+    Mm3dLocalLightSource{0x117,4,0xE1C,0xE18,0x396960,0x31E8BC,{{
+        {0x31E7C0,0xEBFB23FF},{0x31E7C4,0xE5840E18},{0x31E8D8,0xE5942E18},{0x31E8E4,0xEBFB49E9}}}},
+    Mm3dLocalLightSource{0x16E,9,0xFBC,0xFB8,0x497694,0x44FA9C,{{
+        {0x44F410,0xEBF660EB},{0x44F418,0xE5840FB8},{0x44FAA8,0xE5902FB8},{0x44FABC,0xEBF68573}}}},
+    Mm3dLocalLightSource{0x194,4,0x8DC,0x8D8,0x363B50,0x4D1908,{{
+        {0x2E5688,0xEBFC084D},{0x2E568C,0xE58408D8},{0x4D1928,0xE59428D8},{0x4D1934,0xEBF47DD5}}}},
+    // 0x197 = En_Bigpo (zelda2_bigpo, size 0x9B8): init 391108 loops i<3, InsertLight(+0x950+i*0x28)
+    // stored to +0x94C+i*0x28; destroy 3914BC loops LDR [+0x94C+i*0x28] -> RemoveLight. Same guards for all three.
+    Mm3dLocalLightSource{0x197,5,0x950,0x94C,0x3F6548,0x3914BC,{{{0x3912F4,0xEBF95932},{0x3912F8,0xE586000C},{0x391578,0xE590294C},{0x391580,0xEBF97EC2}}}},
+    Mm3dLocalLightSource{0x197,5,0x978,0x974,0x3F6548,0x3914BC,{{{0x3912F4,0xEBF95932},{0x3912F8,0xE586000C},{0x391578,0xE590294C},{0x391580,0xEBF97EC2}}}},
+    Mm3dLocalLightSource{0x197,5,0x9A0,0x99C,0x3F6548,0x3914BC,{{{0x3912F4,0xEBF95932},{0x3912F8,0xE586000C},{0x391578,0xE590294C},{0x391580,0xEBF97EC2}}}},
+    // Round 3: 0x15F (zelda2_keep, size 0x2F84; probable En_Fishing) - its
+    // destructor loads the node through a PC-literal offset (LDR r2,[r0,r4],
+    // literal 0x2F4C); round3/nret_rows3.py follows that and still regenerates
+    // every other row exactly.
+    // Round 5 (analysis round5/loop_rows_proof.py, every word asserted):
+    // 0x18F = En_Kgy (sole object_kgy profile): info +0xAFC, node +0xB14.
+    // 0x122 = En_Test6 (keep; SoTCsLight lights[2] = {node,info}, stride 0x1C).
+    // 0x17B = En_Hanabi (keep; LightInfo[3] stride 0x18 at +0x271C, LightNode*[3] at +0x2764).
+    Mm3dLocalLightSource{0x18F,4,0xAFC,0xB14,0x39D194,0x323C54,{{{0x323C00,0xEBFB0EEF},{0x323C08,0xE5840B14},{0x323C5C,0xE5902B14},{0x323C70,0xEBFB3506}}}},
+    Mm3dLocalLightSource{0x122,7,0x508,0x504,0x404C6C,0x3A9994,{{{0x3A94E8,0xEBF8F8B5},{0x3A94F4,0xE5880504},{0x3A9A10,0xE5902504},{0x3A9A18,0xEBF91D9C}}}},
+    Mm3dLocalLightSource{0x122,7,0x524,0x520,0x404C6C,0x3A9994,{{{0x3A94E8,0xEBF8F8B5},{0x3A94F4,0xE5880504},{0x3A9A10,0xE5902504},{0x3A9A18,0xEBF91D9C}}}},
+    Mm3dLocalLightSource{0x17B,7,0x271C,0x2764,0x427B30,0x3CF03C,{{{0x3CEFE8,0xEBF861F5},{0x3CEFFC,0xE5810764},{0x3CF060,0xE5902764},{0x3CF068,0xEBF88808}}}},
+    Mm3dLocalLightSource{0x17B,7,0x2734,0x2768,0x427B30,0x3CF03C,{{{0x3CEFE8,0xEBF861F5},{0x3CEFFC,0xE5810764},{0x3CF060,0xE5902764},{0x3CF068,0xEBF88808}}}},
+    Mm3dLocalLightSource{0x17B,7,0x274C,0x276C,0x427B30,0x3CF03C,{{{0x3CEFE8,0xEBF861F5},{0x3CEFFC,0xE5810764},{0x3CF060,0xE5902764},{0x3CF068,0xEBF88808}}}},
+    Mm3dLocalLightSource{0x15F,7,0x2F50,0x2F4C,0x4054F0,0x3A9DA8,{{
+        {0x3A9D40,0xEBF8F69F},{0x3A9D44,0xE5880F4C},{0x3A9DD4,0xE7902004},{0x3A9DDC,0xEBF91CAB}}}},
+    Mm3dLocalLightSource{0x178,5,0xAB8,0xAB4,0x4BB028,0x4811EC,{{
+        {0x480E6C,0xEBF59A54},{0x480E70,0xE5840AB4},{0x4811F8,0xE5902AB4},{0x481208,0xEBF5BFA0}}}},
+    Mm3dLocalLightSource{0x183,5,0x79C,0x798,0x3A3AAC,0x3272B4,{{
+        {0x32716C,0xEBFB0194},{0x327170,0xE5840798},{0x3272BC,0xE5902798},{0x3272D0,0xEBFB276E}}}},
+    Mm3dLocalLightSource{0x1D6,7,0x388,0x384,0x4CC394,0x4A3070,{{
+        {0x4A2F00,0xEBF5122F},{0x4A2F04,0xE5840384},{0x4A3078,0xE5902384},{0x4A308C,0xEBF537FF}}}},
+    Mm3dLocalLightSource{0x222,6,0x258,0x254,0x4DC2EC,0x4BECEC,{{
+        {0x4BEC68,0xEBF4A2D5},{0x4BEC6C,0xE5840254},{0x4BED08,0xE5942254},{0x4BED14,0xEBF4C8DD}}}},
+    // Round 8 (analysis round8/r8_rows_proof.py, every word asserted): owners
+    // past actor-table index 0x22B and the engine FireObj light were missed.
+    // 0x247 = 3DS-only keep/ITEMACTION light actor (no draw; En_Light-style
+    // params 0x2000 glow switch): init 4A359C inserts +0x200, stores +0x1FC;
+    // destroy 1F1078 loads +0x1FC and falls into RemoveLight; update 4CC950
+    // sets colour/radius through the En_Light setter 213A04.
+    Mm3dLocalLightSource{0x247,7,0x200,0x1FC,0x4CC950,0x1F1078,{{
+        {0x4A3604,0xEBF5106E},{0x4A3608,0xE58401FC},{0x1F107C,0xE59021FC},{0x4CC9EC,0xEBF51C04}}}},
+    // 0xD9 = Bg_Numa_Hana (sole caller of FireObj light init 2E9E5C; FireObj
+    // embedded at +0x20C, node fire+0x88, info fire+0x8C). Destroy 44DFE8 ->
+    // FireObj destroy 2EA030 -> RemoveLight([fire+0x88]).
+    Mm3dLocalLightSource{0xD9,1,0x298,0x294,0x49614C,0x44DFE8,{{
+        {0x44DDE0,0xE2841F83},{0x2E9F24,0xE2847088},{0x2E9FAC,0xEBFBF604},{0x2EA048,0xE5942088}}}},
+};
+
+// Called only after current-frame LightNode -> LightInfo ownership has been
+// checked. A different image, reused actor, or unproved variant stays native.
+[[nodiscard]] inline bool Mm3dLocalLightSourceProved(oot3d::recomp::a32::MemoryBus& memory,
+    uint32_t actor, uint32_t infoOffset, uint32_t nodeOffset) {
+    uint16_t id = 0;
+    uint8_t category = 0;
+    uint32_t update = 0, destroy = 0;
+    if (!memory.Read16(actor,&id) || !memory.Read8(actor+2,&category) ||
+        !memory.Read32(actor+0x140,&update) || !memory.Read32(actor+0x13C,&destroy)) return false;
+    for (const auto& source : kMm3dLocalLightSources) {
+        if (id != source.Actor || category != source.Category || infoOffset != source.Info ||
+            nodeOffset != source.Node || update != source.Update || destroy != source.Destroy) continue;
+        for (const auto& guard : source.Guards) {
+            uint32_t word = 0;
+            if (!memory.Read32(guard[0],&word) || word != guard[1]) return false;
+        }
+        return true;
+    }
+    return false;
+}
+
+} // namespace Oot3dNativeGame

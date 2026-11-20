@@ -1,0 +1,289 @@
+#pragma once
+
+#include "fast/renderer3ds/pica_scene_water.h"
+#include "fast/renderer3ds/room_shadow_shell.h"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdint>
+#include <memory>
+#include <optional>
+
+namespace Fast::Renderer3ds {
+
+// Supplemental source data for the lights already selected by native code.
+// Slot order agrees with the captured vertex-light uniforms. It never adds a
+// light, replaces native enable flags, or refers back to live guest memory.
+// What a native light lights, decided by the title adapter from the light's
+// owner, never from scene IDs. Scene: the environment's sun/moon and ambient,
+// which a scene-wide lighting profile may replace. Local: every other light
+// (actor and room lights, lamps, companions, fixed object lights), which
+// stays native and additive. A light whose owner is not proved is Local.
+// Consumer: the native fragment-light balance (pica_fragment_balance.h), the
+// only path that replaces lights inside a title's native fragment lighting.
+// The vertex-lighting path keeps its own older contract: it replaces the
+// draw lights whose identity is one of the published environment records
+// (PicaSceneDirectionalLights), whatever their scope, so an adapter publishes
+// there only records it proved to be the environment's own. A title that
+// does not classify its lights leaves both scopes at the default, and traces
+// then show "local"/"unknown" for lights the vertex path replaces that way.
+enum class PicaNativeLightScope : uint8_t { Local, Scene };
+enum class PicaNativeLightOrigin : uint8_t {
+    Unknown,                // owner not proved (treated as Local)
+    EnvironmentDirectional, // the environment's sun/moon records
+    EnvironmentAmbient,     // the environment's ambient term
+    Actor,                  // a light an actor registers
+    AuthoredRoom,           // a light listed by the authored room/scene header
+};
+[[nodiscard]] constexpr const char* PicaNativeLightScopeName(PicaNativeLightScope scope) noexcept {
+    return scope == PicaNativeLightScope::Scene ? "scene" : "local";
+}
+[[nodiscard]] constexpr const char* PicaNativeLightOriginName(PicaNativeLightOrigin origin) noexcept {
+    switch (origin) {
+    case PicaNativeLightOrigin::EnvironmentDirectional: return "environment-directional";
+    case PicaNativeLightOrigin::EnvironmentAmbient: return "environment-ambient";
+    case PicaNativeLightOrigin::Actor: return "actor";
+    case PicaNativeLightOrigin::AuthoredRoom: return "authored-room";
+    case PicaNativeLightOrigin::Unknown: break;
+    }
+    return "unknown";
+}
+
+struct PicaNativeLightSource {
+    enum class Type : uint8_t { Unavailable, Directional, Point };
+
+    Type Kind = Type::Unavailable;
+    uint64_t SourceIdentity = 0;
+    std::array<float, 3> PositionWorld{};
+    std::array<float, 3> UnattenuatedColor{};
+    std::array<float, 3> ReferenceColor{};
+    float Radius = 0.0F;
+    // Function of the light (see PicaNativeLightScope). Defaults: Local, Unknown.
+    PicaNativeLightOrigin Origin = PicaNativeLightOrigin::Unknown;
+    PicaNativeLightScope Scope = PicaNativeLightScope::Local;
+
+    bool operator==(const PicaNativeLightSource&) const = default;
+};
+
+inline constexpr uint32_t kMaximumPicaScenePointLights = 32U;
+// Scene point-light groups: 0 Navi, 1 fairies, 2 flames (lights the title
+// draws as flames but never registers: torches, fire objects).
+// Navi, fairies, flames, and the architecture's light (room torches, lava,
+// windows, shafts, glows).
+inline constexpr uint32_t kPicaScenePointLightGroups = 4U;
+
+struct PicaScenePointLight {
+    uint64_t SourceIdentity = 0;
+    std::array<float, 3> PositionWorld{};
+    std::array<float, 3> Color{};
+    float Radius = 0.0F;
+    uint32_t Group = 0;
+    // Competes for a point-shadow cube map. Broad, soft sources (lava, windows,
+    // shafts) light without one.
+    bool CastsShadow = true;
+    // Title proof: this source replaces a native Local point with the same
+    // identity. Unmatched receivers may receive it; unproved matching slots
+    // must retain native lighting and omit this source instead of doubling it.
+    // False preserves the existing vertex-lit/supplemental source contract.
+    bool ReplacesNativeLocal = false;
+    // Separate positive title proof: an authored emitter has no native light
+    // counterpart (e.g. a room's fake-emissive window). Never infer this from
+    // ReplacesNativeLocal=false, a texture's brightness, or an unmatched slot.
+    bool IndependentEmission = false;
+    bool operator==(const PicaScenePointLight&) const = default;
+};
+
+// One immutable scene snapshot shared by all draws from a native frame.
+// Zero-radius records retain source identity so stale selected native slots
+// cannot restore a contribution after that source has been turned off.
+struct PicaScenePointLights {
+    std::array<PicaScenePointLight, kMaximumPicaScenePointLights> Lights{};
+    uint32_t Count = 0;
+    bool operator==(const PicaScenePointLights&) const = default;
+};
+
+inline constexpr uint32_t kMaximumPicaSceneDirectionalLights = 2U;
+
+struct PicaSceneDirectionalLight {
+    uint64_t SourceIdentity = 0;
+    std::array<float, 3> DirectionTowardSource{};
+    std::array<float, 3> Color{};
+    // A sky light (the title's sun or moon, driven by its clock): below the
+    // horizon it lights nothing directly. Other lights below the horizon,
+    // placed there by the scene, keep their light.
+    bool SkyLight = false;
+    bool operator==(const PicaSceneDirectionalLight&) const = default;
+};
+
+// Native environment sources, independent of each draw's selected lights.
+// Separate from moving points so unchanged environment snapshots stay shared.
+struct PicaSceneDirectionalLights {
+    std::array<PicaSceneDirectionalLight, kMaximumPicaSceneDirectionalLights> Lights{};
+    uint32_t Count = 0;
+    // The title's world up: every light's horizon.
+    std::array<float, 3> WorldUp{ 0.0F, 1.0F, 0.0F };
+    // Advances at every discontinuity (scene, environment, light mode, a
+    // jump of direction): presented samples never interpolate across it.
+    uint64_t ContinuityEpoch = 0;
+    // The shadow-casting light and its shadow strength (0-1), decided once
+    // per guest frame by PicaSceneShadowCasterTracker. Identity 0: no
+    // decision was published; FindPicaSceneMainDirectional's rule applies.
+    uint64_t ShadowCasterIdentity = 0;
+    float ShadowStrength = 1.0F;
+    // The title's room geometry outside is drawn with these lights already in
+    // its native colour, whether they follow the clock (sky lights) or the
+    // environment's fixed light settings. The adapter decides it from the
+    // authored room/scene headers; interiors and unknown rooms leave it off.
+    bool BakedOutdoorRoom = false;
+    // The records are the environment's own (Scene) when the adapter proved
+    // their owner. The fragment-light balance treats records without that
+    // proof as Local and keeps them native; the vertex-lighting path replaces
+    // any published record by identity (see PicaNativeLightScope).
+    PicaNativeLightScope Scope = PicaNativeLightScope::Local;
+    bool operator==(const PicaSceneDirectionalLights&) const = default;
+};
+
+// Rec. 709 luminance of a source's color.
+[[nodiscard]] inline float PicaSceneDirectionalEnergy(const PicaSceneDirectionalLight& light) noexcept {
+    return 0.2126F * std::max(light.Color[0], 0.0F) + 0.7152F * std::max(light.Color[1], 0.0F) +
+           0.0722F * std::max(light.Color[2], 0.0F);
+}
+
+// The unit direction of a source that emits light, if it has one.
+[[nodiscard]] inline std::optional<std::array<float, 3>> PicaSceneDirectionalDirection(
+    const PicaSceneDirectionalLight& light) noexcept {
+    constexpr float kMinimum = 1.0e-6F;
+    const float energy = PicaSceneDirectionalEnergy(light);
+    auto direction = light.DirectionTowardSource;
+    const float lengthSquared =
+        direction[0] * direction[0] + direction[1] * direction[1] + direction[2] * direction[2];
+    if (!std::isfinite(energy) || energy <= kMinimum || !std::isfinite(lengthSquared) ||
+        lengthSquared <= kMinimum)
+        return std::nullopt;
+    const float inverseLength = 1.0F / std::sqrt(lengthSquared);
+    for (float& component : direction) component *= inverseLength;
+    return direction;
+}
+
+// Sine of a unit direction's elevation above the horizon of `up`.
+[[nodiscard]] inline float PicaSceneElevationSine(const std::array<float, 3>& direction,
+                                                  const std::array<float, 3>& up) noexcept {
+    const float length = std::sqrt(up[0] * up[0] + up[1] * up[1] + up[2] * up[2]);
+    if (!std::isfinite(length) || length <= 1.0e-6F) return 1.0F;
+    return (direction[0] * up[0] + direction[1] * up[1] + direction[2] * up[2]) / length;
+}
+
+namespace PicaSceneHorizon {
+// Shadows: none up to 1 degree, full from 8. Direct sky light: full at and
+// above the horizon, as the title lights its sunrise, none from 4 degrees
+// below. sin(1), sin(8) and sin(-4) degrees.
+inline constexpr float kShadowStart = 0.0174524F;
+inline constexpr float kShadowFull = 0.1391731F;
+inline constexpr float kDirectStart = -0.0697565F;
+inline constexpr float kDirectFull = 0.0F;
+
+[[nodiscard]] inline float Smoothstep(float edge0, float edge1, float value) noexcept {
+    const float t = std::clamp((value - edge0) / (edge1 - edge0), 0.0F, 1.0F);
+    return t * t * (3.0F - 2.0F * t);
+}
+} // namespace PicaSceneHorizon
+
+// A caster's shadow strength at this elevation: none at or below the
+// horizon, fading in over its first degrees so shadows thin out instead of
+// ending as the light sets.
+[[nodiscard]] inline float PicaSceneShadowHorizon(float elevationSine) noexcept {
+    return PicaSceneHorizon::Smoothstep(PicaSceneHorizon::kShadowStart, PicaSceneHorizon::kShadowFull,
+                                        elevationSine);
+}
+
+// The share of a light's direct light that reaches the scene: a sky light
+// keeps all of it above the horizon and fades out within a few degrees
+// below; other lights keep all of it.
+[[nodiscard]] inline float PicaSceneDirectHorizon(const PicaSceneDirectionalLight& light,
+                                                  const std::array<float, 3>& up) noexcept {
+    if (!light.SkyLight) return 1.0F;
+    const auto direction = PicaSceneDirectionalDirection(light);
+    if (!direction) return 1.0F;
+    return PicaSceneHorizon::Smoothstep(PicaSceneHorizon::kDirectStart, PicaSceneHorizon::kDirectFull,
+                                        PicaSceneElevationSine(*direction, up));
+}
+
+// The energy a light competes with to cast the scene's shadow: its
+// luminance, after its direct light's horizon; none at or below the
+// horizon, where no light casts.
+[[nodiscard]] inline float PicaSceneShadowCandidateEnergy(const PicaSceneDirectionalLight& light,
+                                                          const std::array<float, 3>& up) noexcept {
+    const auto direction = PicaSceneDirectionalDirection(light);
+    if (!direction || PicaSceneElevationSine(*direction, up) <= 0.0F) return 0.0F;
+    return PicaSceneDirectionalEnergy(light) * PicaSceneDirectHorizon(light, up);
+}
+
+// The scene's main directional light, the one the directional shadows and a
+// scene-following key light use: the published caster; without a published
+// decision, the strongest candidate above the horizon (the lower identity on
+// a tie), or else the highest light with a direction.
+[[nodiscard]] inline const PicaSceneDirectionalLight* FindPicaSceneMainDirectional(
+    const PicaSceneDirectionalLights& lights) noexcept {
+    if (lights.Count > lights.Lights.size()) return nullptr;
+    if (lights.ShadowCasterIdentity != 0) {
+        for (uint32_t i = 0; i < lights.Count; ++i) {
+            const auto& light = lights.Lights[i];
+            if (light.SourceIdentity == lights.ShadowCasterIdentity && PicaSceneDirectionalDirection(light))
+                return &light;
+        }
+    }
+    const PicaSceneDirectionalLight* main = nullptr;
+    float best = 0.0F;
+    const PicaSceneDirectionalLight* highest = nullptr;
+    float highestElevation = 0.0F;
+    for (uint32_t i = 0; i < lights.Count; ++i) {
+        const auto& light = lights.Lights[i];
+        const auto direction = PicaSceneDirectionalDirection(light);
+        if (!direction) continue;
+        const float elevation = PicaSceneElevationSine(*direction, lights.WorldUp);
+        if (highest == nullptr || elevation > highestElevation) {
+            highest = &light;
+            highestElevation = elevation;
+        }
+        const float energy = PicaSceneShadowCandidateEnergy(light, lights.WorldUp);
+        if (energy <= 0.0F) continue;
+        if (energy > best || (energy == best && main != nullptr && light.SourceIdentity < main->SourceIdentity)) {
+            main = &light;
+            best = energy;
+        }
+    }
+    return main != nullptr ? main : highest;
+}
+
+// The shadow strength (0-1) of the main light: the published decision, or
+// without one, the main light's horizon.
+[[nodiscard]] inline float PicaSceneMainShadowStrength(const PicaSceneDirectionalLights& lights,
+                                                       const PicaSceneDirectionalLight& main) noexcept {
+    if (lights.ShadowCasterIdentity != 0 && main.SourceIdentity == lights.ShadowCasterIdentity)
+        return std::clamp(lights.ShadowStrength, 0.0F, 1.0F);
+    const auto direction = PicaSceneDirectionalDirection(main);
+    return direction ? PicaSceneShadowHorizon(PicaSceneElevationSine(*direction, lights.WorldUp)) : 0.0F;
+}
+
+struct PicaNativeLightBinding {
+    // OoT selects three; MM's native fragment-light owner selects four.
+    // Metadata capacity only: vertex-light UBO/layouts remain title-program derived.
+    std::array<PicaNativeLightSource, 4> Sources{};
+    // Column-major world-to-view captured with the native geometry commands.
+    // Replayed/interpolated with this draw, never read from a live camera.
+    std::optional<std::array<float, 16>> WorldToView;
+    // Bound on the rotation difference between WorldToView and the camera the
+    // title folded into the draw's model-view. 0 (the default) means the
+    // title captures that exact camera, as OoT3D does. MM3D's View matrix is
+    // not bit-identical to its render camera (PERF LINUX_r7 round 14).
+    float WorldToViewRotationError = 0.0F;
+    std::shared_ptr<const PicaScenePointLights> ScenePoints;
+    std::shared_ptr<const PicaSceneDirectionalLights> SceneDirectionals;
+    std::shared_ptr<const PicaSceneWaterBodies> Water;
+    std::shared_ptr<const RoomShadowShellScene> RoomShadows;
+
+    bool operator==(const PicaNativeLightBinding&) const = default;
+};
+
+} // namespace Fast::Renderer3ds

@@ -1,0 +1,482 @@
+#include "oot3d_n64_ui_renderer.h"
+
+#include "oot3d/renderer/ui_presentation_layout.h"
+
+#include <algorithm>
+#include <array>
+#include <cstdio>
+#include <utility>
+
+namespace oot3d::ui {
+namespace {
+
+constexpr float kWidescreenCanvasWidth = 1280.0F / 3.0F;
+constexpr float kNativeTopScreenCanvasWidth = 400.0F;
+constexpr float kCanvasHeight = 240.0F;
+
+constexpr std::array<std::pair<std::string_view, std::string_view>, 18>
+    kTexturePaths = {{
+        {"n64/file_select/title/select_file",
+         "__OTR__textures/title_static/gFileSelPleaseSelectAFileENGTex"},
+        {"n64/file_select/file_1",
+         "__OTR__textures/title_static/gFileSelFile1ButtonENGTex"},
+        {"n64/file_select/file_2",
+         "__OTR__textures/title_static/gFileSelFile2ButtonENGTex"},
+        {"n64/file_select/file_3",
+         "__OTR__textures/title_static/gFileSelFile3ButtonENGTex"},
+        {"n64/file_select/name_box",
+         "__OTR__textures/title_static/gFileSelNameBoxTex"},
+        {"n64/file_select/copy",
+         "__OTR__textures/title_static/gFileSelCopyButtonENGTex"},
+        {"n64/file_select/erase",
+         "__OTR__textures/title_static/gFileSelEraseButtonENGTex"},
+        {"n64/file_select/options",
+         "__OTR__textures/title_static/gFileSelOptionsButtonENGTex"},
+        {"n64/file_select/highlight",
+         "__OTR__textures/title_static/gFileSelBigButtonHighlightTex"},
+        {"n64/name_entry/title/name",
+         "__OTR__textures/title_static/gFileSelNameENGTex"},
+        {"n64/name_entry/backspace",
+         "__OTR__textures/title_static/gFileSelBackspaceButtonTex"},
+        {"n64/name_entry/end",
+         "__OTR__textures/title_static/gFileSelENDButtonENGTex"},
+        {"n64/name_entry/highlight/character",
+         "__OTR__textures/title_static/gFileSelCharHighlightTex"},
+        {"n64/name_entry/highlight/medium",
+         "__OTR__textures/title_static/gFileSelMediumButtonHighlightTex"},
+        {"n64/name_entry/highlight/small",
+         "__OTR__textures/title_static/gFileSelSmallButtonHighlightTex"},
+        {"n64/name_entry/confirm/prompt",
+         "__OTR__textures/title_static/gFileSelAreYouSureENGTex"},
+        {"n64/name_entry/confirm/yes",
+         "__OTR__textures/title_static/gFileSelYesButtonENGTex"},
+        {"n64/name_entry/confirm/quit",
+         "__OTR__textures/title_static/gFileSelQuitButtonENGTex"},
+    }};
+
+std::uint64_t PackShaderInput(std::uint32_t value, std::uint32_t cycle,
+                              std::uint32_t component,
+                              std::uint32_t term) noexcept {
+    return static_cast<std::uint64_t>(value)
+           << (cycle * 32U + component * 16U + term * 4U);
+}
+
+float ClipX(float x, float canvasWidth) noexcept {
+    return (x / canvasWidth) * 2.0F - 1.0F;
+}
+
+float ClipY(float y, float canvasHeight, bool invertY) noexcept {
+    const float clip = 1.0F - (y / canvasHeight) * 2.0F;
+    return invertY ? -clip : clip;
+}
+
+void AppendVertex(std::vector<Oot3d::Renderer::UiOverlayVertex>& output,
+                  float x, float y, float u, float v, const UiColor& color,
+                  float canvasWidth, float canvasHeight, bool invertY) {
+    output.push_back({
+        ClipX(x, canvasWidth),
+        ClipY(y, canvasHeight, invertY),
+        u,
+        v,
+        color.red,
+        color.green,
+        color.blue,
+        color.alpha,
+    });
+}
+
+std::vector<Oot3d::Renderer::UiOverlayVertex>
+BuildQuad(const UiPrimitive& primitive, float canvasWidth, float canvasHeight,
+          bool invertY) {
+    std::vector<Oot3d::Renderer::UiOverlayVertex> vertices;
+    vertices.reserve(6U);
+    if (primitive.corners.has_value()) {
+        const auto& corners = *primitive.corners;
+        for (const std::size_t index : {0U, 1U, 2U, 2U, 1U, 3U}) {
+            AppendVertex(vertices, corners[index].x, corners[index].y,
+                         corners[index].u, corners[index].v, primitive.color,
+                         canvasWidth, canvasHeight, invertY);
+        }
+        return vertices;
+    }
+    const float left = primitive.destination.x;
+    const float top = primitive.destination.y;
+    const float right = left + primitive.destination.width;
+    const float bottom = top + primitive.destination.height;
+    const float u0 = primitive.uv.x;
+    const float v0 = primitive.uv.y;
+    const float u1 = u0 + primitive.uv.width;
+    const float v1 = v0 + primitive.uv.height;
+    // Texture coordinates of the top-left, bottom-left, bottom-right and
+    // top-right corners.
+    struct Uv { float u, v; };
+    const std::array<Uv, 4> corners =
+        primitive.uv_quarter_turn
+            ? std::array<Uv, 4>{{{u0, v1}, {u1, v1}, {u1, v0}, {u0, v0}}}
+            : std::array<Uv, 4>{{{u0, v0}, {u0, v1}, {u1, v1}, {u1, v0}}};
+    AppendVertex(vertices, left, top, corners[0].u, corners[0].v, primitive.color,
+                 canvasWidth, canvasHeight, invertY);
+    AppendVertex(vertices, left, bottom, corners[1].u, corners[1].v, primitive.color,
+                 canvasWidth, canvasHeight, invertY);
+    AppendVertex(vertices, right, bottom, corners[2].u, corners[2].v, primitive.color,
+                 canvasWidth, canvasHeight, invertY);
+    AppendVertex(vertices, left, top, corners[0].u, corners[0].v, primitive.color,
+                 canvasWidth, canvasHeight, invertY);
+    AppendVertex(vertices, right, bottom, corners[2].u, corners[2].v, primitive.color,
+                 canvasWidth, canvasHeight, invertY);
+    AppendVertex(vertices, right, top, corners[3].u, corners[3].v, primitive.color,
+                 canvasWidth, canvasHeight, invertY);
+    return vertices;
+}
+
+} // namespace
+
+std::uint64_t N64UiSolidShaderId0() noexcept {
+    constexpr std::uint32_t kShaderInput1 = 1U;
+    return PackShaderInput(kShaderInput1, 0U, 0U, 3U) |
+           PackShaderInput(kShaderInput1, 0U, 1U, 3U);
+}
+
+std::uint64_t N64UiTexturedShaderId0() noexcept {
+    constexpr std::uint32_t kShaderZero = 0U;
+    constexpr std::uint32_t kShaderInput1 = 1U;
+    constexpr std::uint32_t kShaderTexel0 = 8U;
+    return PackShaderInput(kShaderTexel0, 0U, 0U, 0U) |
+           PackShaderInput(kShaderZero, 0U, 0U, 1U) |
+           PackShaderInput(kShaderInput1, 0U, 0U, 2U) |
+           PackShaderInput(kShaderZero, 0U, 0U, 3U) |
+           PackShaderInput(kShaderTexel0, 0U, 1U, 0U) |
+           PackShaderInput(kShaderZero, 0U, 1U, 1U) |
+           PackShaderInput(kShaderInput1, 0U, 1U, 2U) |
+           PackShaderInput(kShaderZero, 0U, 1U, 3U);
+}
+
+std::uint64_t N64UiShaderId1() noexcept {
+    return 1U;
+}
+
+std::string_view ResolveN64UiTexturePath(
+    std::string_view semanticName) noexcept {
+    const auto found = std::find_if(
+        kTexturePaths.begin(), kTexturePaths.end(),
+        [semanticName](const auto& entry) { return entry.first == semanticName; });
+    return found != kTexturePaths.end() ? found->second : std::string_view{};
+}
+
+std::string BuildUiTextureCacheKey(const UiTextureIdentity& identity) {
+    std::string key = identity.semantic_name;
+    if (identity.guest_resource_address == 0U &&
+        identity.guest_surface_address == 0U) {
+        return key;
+    }
+    std::array<char, 32> suffix{};
+    std::snprintf(suffix.data(), suffix.size(), "@%08X:%08X",
+                  identity.guest_resource_address,
+                  identity.guest_surface_address);
+    key.append(suffix.data());
+    return key;
+}
+
+std::string BuildUiPrimitiveTextureKey(const UiPrimitive& primitive) {
+    std::string key = BuildUiTextureCacheKey(primitive.texture);
+    if (primitive.texture_alpha_only) {
+        key.append("#alpha");
+    }
+    return key;
+}
+
+N64UiFast3dRenderer::N64UiFast3dRenderer(
+    Oot3d::Renderer::UiRenderBackend& renderingApi,
+    const UiTextureProvider* textureProvider) noexcept
+    : rendering_api_(renderingApi), texture_provider_(textureProvider) {}
+
+N64UiFast3dRenderer::~N64UiFast3dRenderer() {
+    Release();
+}
+
+void N64UiFast3dRenderer::Release() noexcept {
+    for (const auto& [name, texture] : textures_) {
+        (void)name;
+        if (texture.renderer_id != 0U) {
+            rendering_api_.DeleteUiTexture(texture.renderer_id);
+        }
+    }
+    textures_.clear();
+    failed_textures_.clear();
+    prepared_keys_.clear();
+    provisional_keys_.clear();
+    staged_textures_.clear();
+}
+
+void N64UiFast3dRenderer::SetTextureProvider(
+    const UiTextureProvider* textureProvider) noexcept {
+    if (texture_provider_ == textureProvider) {
+        return;
+    }
+    Release();
+    texture_provider_ = textureProvider;
+}
+
+const N64UiFast3dRenderer::ResidentTexture*
+N64UiFast3dRenderer::ResolveTexture(const std::string& semanticKey,
+                                    std::string* error) {
+    const auto resident = textures_.find(semanticKey);
+    if (resident != textures_.end()) {
+        ++stats_.texture_cache_hits;
+        return &resident->second;
+    }
+    if (failed_textures_.contains(semanticKey)) {
+        return nullptr;
+    }
+
+    const auto staged = staged_textures_.find(semanticKey);
+    if (staged == staged_textures_.end()) {
+        ++stats_.missing_texture_resources;
+        if (error != nullptr) {
+            *error = "UI texture was not prepared before rendering";
+        }
+        failed_textures_.insert(semanticKey);
+        return nullptr;
+    }
+    PreparedUiTexture prepared = std::move(staged->second);
+    staged_textures_.erase(staged);
+    if (prepared.status == PreparedUiTexture::Status::MissingProvider) {
+        ++stats_.missing_texture_resources;
+        if (error != nullptr) {
+            *error = "UI texture provider is unavailable";
+        }
+        failed_textures_.insert(semanticKey);
+        return nullptr;
+    }
+    const bool nativeTexture = prepared.native;
+    if (nativeTexture) {
+        ++stats_.native_texture_resolves;
+    }
+    if (prepared.status != PreparedUiTexture::Status::Resolved) {
+        if (nativeTexture) {
+            ++stats_.native_texture_failures;
+        }
+        ++stats_.unsupported_texture_resources;
+        if (error != nullptr) {
+            if (!prepared.error.empty()) {
+                *error = std::move(prepared.error);
+            } else if (error->empty()) {
+                *error = "UI texture payload is invalid";
+            }
+        }
+        failed_textures_.insert(semanticKey);
+        return nullptr;
+    }
+    const UiTexturePixels& pixels = prepared.pixels;
+
+    ResidentTexture uploaded;
+    uploaded.renderer_id = rendering_api_.CreateUiTexture(
+        pixels.rgba8, pixels.width, pixels.height, error);
+    if (uploaded.renderer_id == 0U) {
+        ++stats_.unsupported_texture_resources;
+        failed_textures_.insert(semanticKey);
+        return nullptr;
+    }
+    uploaded.width = pixels.width;
+    uploaded.height = pixels.height;
+    ++stats_.texture_uploads;
+    return &textures_.emplace(semanticKey, uploaded).first->second;
+}
+
+namespace {
+
+bool DrawsPrimitive(const UiPrimitive& primitive) {
+    return primitive.visible && primitive.color.alpha > 0.0F &&
+           (primitive.corners.has_value() ||
+            (primitive.destination.width > 0.0F &&
+             primitive.destination.height > 0.0F));
+}
+
+} // namespace
+
+void N64UiFast3dRenderer::Stage(PreparedUiTextures prepared) {
+    for (auto& texture : prepared) {
+        std::string key = texture.key;
+        // A payload prepared again (final pixels for a provisional one, or a
+        // new provider revision) supersedes the texture uploaded before.
+        if (const auto resident = textures_.find(key);
+            resident != textures_.end()) {
+            if (resident->second.renderer_id != 0U) {
+                rendering_api_.DeleteUiTexture(resident->second.renderer_id);
+            }
+            textures_.erase(resident);
+        }
+        failed_textures_.erase(key);
+        staged_textures_.insert_or_assign(std::move(key), std::move(texture));
+    }
+}
+
+PreparedUiTextures N64UiFast3dRenderer::PrepareTextures(
+    std::span<const UiPrimitive> primitives) {
+    PreparedUiTextures prepared;
+    if (texture_provider_ != nullptr &&
+        texture_provider_->Revision() != prepared_revision_) {
+        prepared_revision_ = texture_provider_->Revision();
+        prepared_keys_.clear();
+        provisional_keys_.clear();
+    }
+    std::unordered_set<std::string> seen;
+    for (const UiPrimitive& primitive : primitives) {
+        if (!DrawsPrimitive(primitive) ||
+            primitive.texture.semantic_name.empty()) {
+            continue;
+        }
+        std::string key = BuildUiPrimitiveTextureKey(primitive);
+        if (!seen.insert(key).second) {
+            continue;
+        }
+        const bool again = !prepared_keys_.insert(key).second;
+        if (again && !provisional_keys_.contains(key)) {
+            continue;
+        }
+        PreparedUiTexture texture;
+        texture.key = std::move(key);
+        texture.native = primitive.texture.semantic_name.starts_with("oot3d/");
+        if (texture_provider_ == nullptr) {
+            texture.status = PreparedUiTexture::Status::MissingProvider;
+        } else {
+            auto& pixels = texture.pixels;
+            const bool resolved =
+                texture_provider_->Resolve(primitive.texture, pixels,
+                                           &texture.error) &&
+                pixels.width != 0U && pixels.height != 0U &&
+                pixels.rgba8.size() ==
+                    static_cast<std::size_t>(pixels.width) * pixels.height * 4U;
+            texture.status = resolved ? PreparedUiTexture::Status::Resolved
+                                      : PreparedUiTexture::Status::Invalid;
+            if (resolved && primitive.texture_alpha_only) {
+                for (std::size_t texel = 0; texel < pixels.rgba8.size();
+                     texel += 4U) {
+                    pixels.rgba8[texel] = 0xFFU;
+                    pixels.rgba8[texel + 1U] = 0xFFU;
+                    pixels.rgba8[texel + 2U] = 0xFFU;
+                }
+            }
+            if (resolved && pixels.provisional) {
+                provisional_keys_.insert(texture.key);
+                // The provisional pixels handed earlier are still current.
+                if (again) {
+                    continue;
+                }
+            } else {
+                provisional_keys_.erase(texture.key);
+            }
+        }
+        prepared.push_back(std::move(texture));
+    }
+    return prepared;
+}
+
+bool N64UiFast3dRenderer::Render(std::span<const UiPrimitive> primitives,
+                                std::uint32_t framebufferWidth,
+                                std::uint32_t framebufferHeight,
+                                N64UiCanvasMode canvasMode,
+                                std::string* error) {
+    return Render(primitives, framebufferWidth, framebufferHeight, canvasMode,
+                  PrepareTextures(primitives), error);
+}
+
+bool N64UiFast3dRenderer::Render(std::span<const UiPrimitive> primitives,
+                                std::uint32_t framebufferWidth,
+                                std::uint32_t framebufferHeight,
+                                N64UiCanvasMode canvasMode,
+                                PreparedUiTextures prepared,
+                                std::string* error) {
+    return Render(primitives,
+                  N64UiOutputRegion{0U, 0U, framebufferWidth, framebufferHeight},
+                  canvasMode, std::move(prepared), error);
+}
+
+bool N64UiFast3dRenderer::Render(std::span<const UiPrimitive> primitives,
+                                const N64UiOutputRegion& region,
+                                N64UiCanvasMode canvasMode,
+                                PreparedUiTextures prepared,
+                                std::string* error) {
+    Stage(std::move(prepared));
+    ++stats_.frames;
+    stats_.primitives_received += primitives.size();
+    if (primitives.empty()) {
+        return true;
+    }
+    ++stats_.frames_with_primitives;
+
+    std::vector<const UiPrimitive*> ordered;
+    ordered.reserve(primitives.size());
+    for (const UiPrimitive& primitive : primitives) {
+        ordered.push_back(&primitive);
+    }
+    std::stable_sort(ordered.begin(), ordered.end(),
+                     [](const UiPrimitive* left, const UiPrimitive* right) {
+                         return left->layer < right->layer;
+                     });
+
+    const std::uint32_t width = std::max<std::uint32_t>(1U, region.Width);
+    const std::uint32_t height = std::max<std::uint32_t>(1U, region.Height);
+    const float canvasWidth =
+        canvasMode == N64UiCanvasMode::NativeTopScreen400x240 ? kNativeTopScreenCanvasWidth
+        : canvasMode == N64UiCanvasMode::RegionShape
+            ? kCanvasHeight * static_cast<float>(width) / static_cast<float>(height)
+            : kWidescreenCanvasWidth;
+    // The canvas is fitted into the region, centred; the region itself is
+    // centred in the framebuffer (a letterbox), so the fit is the same seen
+    // from either end of the framebuffer's Y axis.
+    const auto viewport = Oot3d::Renderer::FitUiPresentationViewport(
+        width, height, canvasWidth, kCanvasHeight);
+    if (!rendering_api_.PrepareUiOverlay(
+            {region.X + viewport.X, region.Y + viewport.Y, viewport.Width,
+             viewport.Height},
+            error)) {
+        return false;
+    }
+    const bool invertY = rendering_api_.IsUiFramebufferYInverted();
+
+    bool success = true;
+    for (const UiPrimitive* primitive : ordered) {
+        if (!DrawsPrimitive(*primitive)) {
+            continue;
+        }
+        const bool textured = !primitive->texture.semantic_name.empty();
+        std::uint32_t textureId = 0U;
+        if (textured) {
+            const ResidentTexture* texture = ResolveTexture(
+                BuildUiPrimitiveTextureKey(*primitive), error);
+            if (texture == nullptr) {
+                success = false;
+                continue;
+            }
+            textureId = texture->renderer_id;
+        }
+        auto vertices =
+            BuildQuad(*primitive, canvasWidth, kCanvasHeight, invertY);
+        // A texture alpha scale rides on the vertex alpha through a
+        // saturating combiner: clamp(scale x texel x color alpha).
+        if (textured && primitive->texture_alpha_scale != 1.0F) {
+            for (auto& vertex : vertices) vertex.Alpha *= primitive->texture_alpha_scale;
+        }
+        const bool scaled = textured && primitive->texture_alpha_scale > 1.0F;
+        if (!(scaled ? rendering_api_.DrawUiTrianglesSaturated(vertices, textureId, error)
+                     : rendering_api_.DrawUiTriangles(vertices, textureId, error))) {
+            return false;
+        }
+        ++stats_.primitives_drawn;
+        ++stats_.draw_calls;
+        stats_.triangles += 2U;
+        if (textured) {
+            ++stats_.textured_draws;
+        } else {
+            ++stats_.solid_draws;
+        }
+    }
+    return success;
+}
+
+const N64UiRendererStats& N64UiFast3dRenderer::Stats() const noexcept {
+    return stats_;
+}
+
+} // namespace oot3d::ui

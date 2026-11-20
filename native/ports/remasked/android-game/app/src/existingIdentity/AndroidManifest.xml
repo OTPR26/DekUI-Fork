@@ -1,0 +1,37 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+ <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
+ <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29"/>
+ <uses-feature android:name="android.hardware.vulkan.level" android:version="1" android:required="true"/>
+ <application android:name="io.github.otpr26.remasked.nativegame.ReMaskedApplication" android:label="@string/remasked_app_name" android:icon="@mipmap/remasked_launcher" android:allowBackup="false" android:requestLegacyExternalStorage="true" android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen">
+  <activity android:name="io.github.otpr26.remasked.nativegame.ReMaskedLauncherActivity" android:exported="true" android:screenOrientation="sensorLandscape" android:configChanges="orientation|screenSize|uiMode">
+  </activity>
+  <activity-alias android:name="${applicationId}.LauncherIcon0" android:targetActivity="io.github.otpr26.remasked.nativegame.ReMaskedLauncherActivity" android:enabled="true" android:exported="true" android:icon="@mipmap/launcher_icon_0" android:label="@string/remasked_app_name">
+   <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+  </activity-alias>
+  <activity-alias android:name="${applicationId}.LauncherIcon1" android:targetActivity="io.github.otpr26.remasked.nativegame.ReMaskedLauncherActivity" android:enabled="false" android:exported="true" android:icon="@mipmap/launcher_icon_1" android:label="@string/remasked_app_name">
+   <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+  </activity-alias>
+  <activity-alias android:name="${applicationId}.LauncherIcon2" android:targetActivity="io.github.otpr26.remasked.nativegame.ReMaskedLauncherActivity" android:enabled="false" android:exported="true" android:icon="@mipmap/launcher_icon_2" android:label="@string/remasked_app_name">
+   <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+  </activity-alias>
+  <activity-alias android:name="${applicationId}.LauncherIcon3" android:targetActivity="io.github.otpr26.remasked.nativegame.ReMaskedLauncherActivity" android:enabled="false" android:exported="true" android:icon="@mipmap/launcher_icon_3" android:label="@string/remasked_app_name">
+   <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+  </activity-alias>
+  <activity-alias android:name="${applicationId}.LauncherIcon4" android:targetActivity="io.github.otpr26.remasked.nativegame.ReMaskedLauncherActivity" android:enabled="false" android:exported="true" android:icon="@mipmap/launcher_icon_4" android:label="@string/remasked_app_name">
+   <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+  </activity-alias>
+  <activity android:name="io.github.otpr26.remasked.nativegame.ReMaskedDataFolderActivity" android:exported="false" android:screenOrientation="sensorLandscape" android:configChanges="orientation|screenSize"/>
+  <activity android:name="io.github.otpr26.remasked.nativegame.ReMaskedSettingsActivity" android:process=":settings" android:exported="false" android:screenOrientation="sensorLandscape" android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|navigation|density|locale|layoutDirection"/>
+  <activity android:name="io.github.otpr26.remasked.nativegame.ReMaskedGameActivity" android:process=":game" android:exported="false" android:screenOrientation="sensorLandscape" android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|navigation|density|locale|layoutDirection"/>
+  <activity android:name="org.triaevum.android.GraphicsDriverPickerActivity" android:exported="false" android:process=":driverpicker" android:theme="@android:style/Theme.Translucent.NoTitleBar.Fullscreen"/>
+  <activity android:name="org.triaevum.android.GraphicsDriverRestartActivity" android:exported="false"/>
+  <activity android:name="org.triaevum.android.saves.SavesActivity" android:exported="false"/>
+  <service android:name="org.triaevum.android.GraphicsDriverProbeService" android:exported="false" android:process=":driverprobe"/>
+  <activity-alias android:name="org.citra.citra_emu.ui.main.MainActivity" android:targetActivity="io.github.otpr26.remasked.nativegame.ReMaskedLauncherActivity" android:exported="true"/>
+  <activity-alias android:name="org.citra.citra_emu.LauncherIcon0" android:targetActivity="io.github.otpr26.remasked.nativegame.ReMaskedLauncherActivity" android:exported="true"/>
+  <activity-alias android:name="org.citra.citra_emu.LauncherIcon1" android:targetActivity="io.github.otpr26.remasked.nativegame.ReMaskedLauncherActivity" android:exported="true"/>
+  <activity-alias android:name="org.citra.citra_emu.LauncherIcon2" android:targetActivity="io.github.otpr26.remasked.nativegame.ReMaskedLauncherActivity" android:exported="true"/>
+  <activity-alias android:name="org.citra.citra_emu.LauncherIcon3" android:targetActivity="io.github.otpr26.remasked.nativegame.ReMaskedLauncherActivity" android:exported="true"/>
+  <activity-alias android:name="org.citra.citra_emu.LauncherIcon4" android:targetActivity="io.github.otpr26.remasked.nativegame.ReMaskedLauncherActivity" android:exported="true"/>
+ </application>
+</manifest>

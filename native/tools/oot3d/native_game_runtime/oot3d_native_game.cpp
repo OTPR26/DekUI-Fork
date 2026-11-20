@@ -1,0 +1,551 @@
+#include "oot3d_interior_sun_prebuild.h"
+#include <cstdlib>
+#include "oot3d_game_language.h"
+#include "triaevum_forge_tool.h"
+#include <array>
+#include <charconv>
+#include <cstdint>
+#include <exception>
+#include <fstream>
+#include <iostream>
+#include <iterator>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#if defined(__SWITCH__) || defined(__ANDROID__) || defined(REMASKED_APPLE_GAME) || (defined(_WIN32) && !defined(_MSC_VER))
+// SDL2main renames the entry point on these targets.
+#include <SDL.h>
+#endif
+#include <filesystem>
+
+#include "oot3d_demo_host_context.h"
+#if defined(__ANDROID__)
+#include "android_host.h"
+#endif
+#include "oot3d_native_game_bootstrap.h"
+#include "oot3d_native_game_launch_profile.h"
+#if defined(REMASKED_APPLE_GAME)
+void InitializeReMaskedAppleGameHost();
+bool RunReMaskedAppleSavePreflight();
+#if defined(REMASKED_IOS_GAME)
+#include "ios/ios_host.h"
+#endif
+#endif
+#include "triaevum_console.h"
+#include "triaevum_early_log.h"
+#include "triaevum_fatal_report.h"
+#include "triaevum_game_session_lock.h"
+#include "triaevum_product_info.h"
+#include "oot3d_native_a32_window.h"
+#include "ship/Context.h"
+#if defined(OOT3D_REQUIRE_WHOLE_AOT_PLUGIN_V2)
+#include "oot3d_native_direct_aot.h"
+#include "triaevum_title_plugin_loader.h"
+#endif
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
+namespace {
+
+// The folder of the running executable (empty when unknown; only Windows
+// needs it).
+std::filesystem::path ExecutableDirectory() {
+#ifdef _WIN32
+    std::wstring executable(MAX_PATH, L'\0');
+    for (;;) {
+        const DWORD length = GetModuleFileNameW(nullptr, executable.data(), DWORD(executable.size()));
+        if (length == 0) return {};
+        if (length < executable.size()) {
+            executable.resize(length);
+            return std::filesystem::path(executable).parent_path();
+        }
+        executable.resize(executable.size() * 2);
+    }
+#else
+    return {};
+#endif
+}
+
+#ifdef _WIN32
+// The Windows package keeps every DLL in runtime/ beside the installed
+// TriAevum.exe. Libraries loaded by name (the delay-loaded shaderc and its
+// Visual C++ runtime, FidelityFX through NRI) are searched there too;
+// SetDllDirectoryW keeps the rest of the standard search (PATH included)
+// that drivers and Vulkan layers may rely on.
+void UseRuntimeLibraryDirectory() {
+    const auto directory = ExecutableDirectory();
+    if (directory.empty()) return;
+    const auto runtime = directory / "runtime";
+    std::error_code error;
+    if (std::filesystem::is_directory(runtime, error))
+        SetDllDirectoryW(runtime.c_str());
+}
+#endif
+
+#if defined(__SWITCH__)
+constexpr const char* kSwitchBootStatusPath =
+    "sdmc:/switch/oot3dre/boot-status.txt";
+
+void WriteSwitchBootStatus(const char* status, const std::string& detail = {}) {
+    std::ofstream stream(kSwitchBootStatusPath, std::ios::trunc);
+    if (!stream) {
+        return;
+    }
+    stream << "status=" << status << '\n'
+           << "whole_aot_functions=12419\n"
+           << "host_boundaries=3\n"
+           << "residual_a32=0\n";
+    if (!detail.empty()) {
+        stream << "detail=" << detail << '\n';
+    }
+}
+#endif
+
+void SetRendererEnvironment(const char* name,
+                            const std::filesystem::path& value) {
+    if (value.empty())
+        return;
+#ifdef _WIN32
+    if (_wputenv_s(std::filesystem::path(name).c_str(), value.c_str()) != 0)
+#else
+    if (setenv(name, value.string().c_str(), 1) != 0)
+#endif
+        throw std::runtime_error(std::string("could not set ") + name);
+}
+
+void ConfigurePicaAotShaders(const Oot3dNativeGameLaunch& launch) {
+    SetRendererEnvironment("TRIAEVUM_RENDERER_CACHE_DIR", launch.RendererCacheDirectory);
+    SetRendererEnvironment("TRIAEVUM_WATER_TEXTURE_CATALOG", launch.WaterTextureCatalogPath);
+    SetRendererEnvironment("TRIAEVUM_SCENE_LIGHT_CATALOG", launch.SceneLightCatalogPath);
+    SetRendererEnvironment("TRIAEVUM_TITLE_PROGRAM_PACK", launch.TitleProgramPackPath);
+    SetRendererEnvironment("OOT3D_PICA_AOT_SHADER_PACK",
+                           launch.PicaAotShaderPackPath);
+    SetRendererEnvironment("OOT3D_PICA_EFFECTIVE_SHADER_INVENTORY",
+                           launch.PicaEffectiveShaderInventoryPath);
+    SetRendererEnvironment("OOT3D_PICA_PIPELINE_INVENTORY",
+                           launch.PicaPipelineInventoryPath);
+    SetRendererEnvironment("OOT3D_PICA_PIPELINE_MANIFEST",
+                           launch.PicaPipelineManifestPath);
+    if (launch.PicaAotShaderStrict) {
+#ifdef _WIN32
+        if (_putenv_s("OOT3D_PICA_AOT_SHADER_STRICT", "1") != 0)
+#else
+        if (setenv("OOT3D_PICA_AOT_SHADER_STRICT", "1", 1) != 0)
+#endif
+            throw std::runtime_error(
+                "could not enable strict PICA AOT shaders");
+    }
+    if (launch.PicaPipelinePrewarm) {
+#ifdef _WIN32
+        if (_putenv_s("OOT3D_PICA_PIPELINE_PREWARM", "1") != 0)
+#else
+        if (setenv("OOT3D_PICA_PIPELINE_PREWARM", "1", 1) != 0)
+#endif
+            throw std::runtime_error(
+                "could not enable PICA pipeline prewarm");
+    }
+}
+
+struct NativeGameArguments {
+    std::vector<std::string> Storage;
+    std::vector<char*> Pointers;
+    // The launch profile the arguments came from; empty for explicit arguments.
+    std::filesystem::path ProfilePath;
+};
+
+// The launch profile the arguments select (the default one without
+// arguments, or --launch-profile's), and where the command line resumes.
+// Empty for explicit arguments.
+std::filesystem::path SelectedLaunchProfile(int argc, char** argv, int* commandLineStart = nullptr) {
+    if (commandLineStart != nullptr)
+        *commandLineStart = argc;
+    if (argc <= 1) {
+        return Oot3dNativeGame::DefaultNativeGameLaunchProfilePath(
+            argc > 0 ? argv[0] : "oot3d_native_game");
+    }
+    if (std::string_view(argv[1]) == "--launch-profile") {
+        if (argc <= 2) {
+            throw std::runtime_error("--launch-profile requires a path");
+        }
+        if (commandLineStart != nullptr)
+            *commandLineStart = 3;
+        return argv[2];
+    }
+    return {};
+}
+
+NativeGameArguments PrepareNativeGameArguments(int argc, char** argv) {
+    NativeGameArguments prepared;
+    int commandLineStart = argc;
+    const std::filesystem::path profilePath = SelectedLaunchProfile(argc, argv, &commandLineStart);
+    if (profilePath.empty()) {
+        return prepared;
+    }
+
+    prepared.Storage.emplace_back(
+        argc > 0 ? argv[0] : "oot3d_native_game");
+    auto profileArguments =
+        Oot3dNativeGame::LoadNativeGameLaunchProfile(profilePath);
+    prepared.Storage.insert(prepared.Storage.end(),
+                            std::make_move_iterator(profileArguments.begin()),
+                            std::make_move_iterator(profileArguments.end()));
+    for (int index = commandLineStart; index < argc; ++index) {
+        prepared.Storage.emplace_back(argv[index]);
+    }
+    prepared.Pointers.reserve(prepared.Storage.size());
+    for (auto& argument : prepared.Storage) {
+        prepared.Pointers.push_back(argument.data());
+    }
+    std::cout << "Using native game launch profile: "
+              << std::filesystem::absolute(profilePath).lexically_normal()
+              << '\n';
+    prepared.ProfilePath = profilePath;
+    return prepared;
+}
+
+// The quiescence contract (triaevum_game_session_lock.h): a game started
+// from an activated installation's profile holds the session lock for its
+// whole life, so Forge does not back up, restore or move files under it.
+void TakeGameSessionLock(const std::filesystem::path& profilePath,
+                         Oot3dNativeGame::GameSessionLock& lock) {
+    const auto path = Oot3dNativeGame::GameSessionLockPath(ExecutableDirectory(), profilePath);
+    if (path.empty())
+        return;
+    std::string error;
+    switch (lock.Acquire(path, &error)) {
+    case Oot3dNativeGame::GameSessionLock::Result::Held:
+        return;
+    case Oot3dNativeGame::GameSessionLock::Result::Busy:
+        throw std::runtime_error(
+            "TriAevum is already running from this installation, or Forge is changing its files. "
+            "Close the other game or wait for Forge to finish, then start the game again.");
+    case Oot3dNativeGame::GameSessionLock::Result::Unavailable:
+        std::cerr << "oot3d_native_game: running without the game session lock: " << error << '\n';
+        return;
+    }
+}
+
+// The update play guard (triaevum_game_session_lock.h): checked after the
+// session lock is held, so Forge's update helper (which needs that lock to
+// start replacing files) cannot begin between the check and the game.
+void RefusePendingUpdate(const std::filesystem::path& profilePath) {
+    const auto journal = Oot3dNativeGame::PendingUpdateJournal(ExecutableDirectory(), profilePath);
+    if (!journal.empty())
+        throw std::runtime_error("An update is in progress; open Forge");
+}
+
+// Where messages before the log folder is known are spooled
+// (triaevum_early_log.h): the installation's writable state folder (Windows
+// <exe>/data, elsewhere the launch profile's folder), never the package.
+std::filesystem::path EarlyStateDirectory(int argc, char** argv) {
+    std::error_code error;
+#ifdef _WIN32
+    if (const auto directory = ExecutableDirectory();
+        !directory.empty() && std::filesystem::is_directory(directory / "data", error))
+        return directory / "data";
+#endif
+    try {
+        const auto profile = SelectedLaunchProfile(argc, argv);
+        if (!profile.empty()) {
+            const auto folder = std::filesystem::absolute(profile, error).parent_path();
+            if (!error && std::filesystem::is_directory(folder, error))
+                return folder;
+        }
+    } catch (...) {
+    }
+    return {};
+}
+
+// The log folder, routed before the logger starts (UX plan WP-05C): the
+// profile's --log-directory, else the earlier logs/ in the application
+// directory. A folder that cannot be written (a read-only package or working
+// directory) falls back to <temp>/TriAevum/logs. The early spool is then
+// handed over to it. Returns the folder in use, or empty.
+std::filesystem::path PrepareLogDirectory(const Oot3dNativeGameLaunch& launch,
+                                          const std::filesystem::path& stateDirectory) {
+    std::filesystem::path directory = launch.Host.LogDirectory;
+    if (directory.empty())
+        directory = std::filesystem::path(Ship::Context::GetLogDirectory());
+    std::error_code status;
+    directory = std::filesystem::absolute(directory, status).lexically_normal();
+    std::string error;
+    if (!TriAevum::PrepareWritableDirectory(directory, &error)) {
+        const auto fallback = TriAevum::TemporaryDiagnosticDirectory() / "logs";
+        TriAevum::EarlyLog("the log folder cannot be written (" + error + "); logs go to " +
+                           fallback.string());
+        if (!TriAevum::PrepareWritableDirectory(fallback, &error))
+            return {};
+        directory = fallback;
+    }
+    try {
+        Ship::Context::SetLogDirectory(directory.string());
+    } catch (const std::exception&) {
+        // A name the system's narrow encoding cannot spell: keep logs/.
+        return {};
+    }
+    const auto temporary = TriAevum::TemporaryDiagnosticDirectory();
+    for (const auto& spool : {stateDirectory.empty() ? std::filesystem::path{}
+                                                     : stateDirectory / TriAevum::kEarlyLogSpoolName,
+                              temporary.empty() ? std::filesystem::path{}
+                                                : temporary / TriAevum::kEarlyLogSpoolName}) {
+        if (spool.empty() || !std::filesystem::exists(spool, status))
+            continue;
+        if (!TriAevum::HandOffEarlyLog(spool, directory, &error))
+            std::cerr << "oot3d_native_game: the early log stays in " << spool << ": " << error << '\n';
+    }
+    return directory;
+}
+
+struct GameLanguageInfoRequest {
+    const char* RomFs = nullptr;
+    Oot3dNativeGame::TitleAdapter Title = Oot3dNativeGame::TitleAdapter::Oot3dEur;
+    uint64_t Offset = 0;
+    uint64_t Size = 0;
+};
+
+uint64_t ParseRomFsExtent(std::string_view text) {
+    uint64_t value = 0;
+    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+    if (text.empty() || error != std::errc{} || end != text.data() + text.size())
+        throw std::runtime_error("Invalid RomFS extent: " + std::string(text));
+    return value;
+}
+
+// --game-language-info ROMFS [CODE_BIN_SHA256] [--romfs-offset N --romfs-size N].
+// Without the hash the RomFS is read as OoT3D's; with the extent, ROMFS is a
+// cartridge image read in place (Forge recognizes a ROM before extracting it).
+GameLanguageInfoRequest ParseGameLanguageInfo(int argc, char** argv) {
+    constexpr const char* kUsage =
+        "Usage: --game-language-info ROMFS [CODE_BIN_SHA256] [--romfs-offset N --romfs-size N]";
+    GameLanguageInfoRequest request{argv[2]};
+    int index = 3;
+    if (index < argc && !std::string_view(argv[index]).starts_with("--"))
+        request.Title = Oot3dNativeGame::ResolveTitleAdapter(argv[index++]);
+    if (index == argc)
+        return request;
+    if (argc - index != 4 || std::string_view(argv[index]) != "--romfs-offset" ||
+        std::string_view(argv[index + 2]) != "--romfs-size")
+        throw std::runtime_error(kUsage);
+    request.Offset = ParseRomFsExtent(argv[index + 1]);
+    request.Size = ParseRomFsExtent(argv[index + 3]);
+    if (!request.Size)
+        throw std::runtime_error(kUsage);
+    return request;
+}
+
+} // namespace
+
+std::optional<int> RunTriAevumToolMode(int argc, char** argv) {
+    if (argc >= 2 && std::string_view(argv[1]) == "--prebuild-interior-sun")
+        return Oot3dNativeGame::InteriorSunToolMain(argc, argv);
+#if defined(OOT3D_REQUIRE_WHOLE_AOT_PLUGIN_V2)
+    if (argc == 3 && std::string_view(argv[1]) == "--verify-title-plugin") {
+        Oot3dNativeGame::ConfigureTitlePlugin(argv[2]);
+        if (!Oot3dNativeGame::Oot3dWholeAotPluginV2Available())
+            throw std::runtime_error("Selected title plugin does not expose a valid whole-AOT ABI v2");
+        WriteTriAevumProductInfo(std::cout);
+        return 0;
+    }
+#endif
+    if (argc >= 3 && std::string_view(argv[1]) == "--game-language-info") {
+        const auto request = ParseGameLanguageInfo(argc, argv);
+        std::cout << Oot3dNativeGame::GameLanguageDocument(Oot3dNativeGame::DetectGameLanguages(
+            request.RomFs, request.Offset, request.Size, request.Title)).dump() << '\n';
+        return 0;
+    }
+    if (argc == 2 && std::string_view(argv[1]) == "--product-info") {
+        WriteTriAevumProductInfo(std::cout);
+        return 0;
+    }
+#if defined(TRIAEVUM_RUNTIME_PIPELINE_PREPARE)
+    // Forge's device pipeline job, run by the game executable itself: the
+    // driver's own per-application pipeline cache then serves the game's
+    // first launch (the separate helper warms only the helper's). The rest of
+    // the command line is the helper's (triaevum_nri_pipeline_prepare).
+    if (argc >= 2 && std::string_view(argv[1]) == "--pipeline-prepare")
+        return TriAevumPipelinePrepareMain(argc - 1, argv + 1);
+#endif
+    return std::nullopt;
+}
+
+int main(int argc, char** argv) {
+#ifdef _WIN32
+    TriAevum::AttachDeveloperConsole(argc, argv);
+    UseRuntimeLibraryDirectory();
+#endif
+    // Re-evaluated once the launch profile has supplied the arguments.
+    bool fatalDialog = TriAevum::FatalDialogWanted(argc, argv);
+    // Held for the game's life, past the context teardown below.
+    Oot3dNativeGame::GameSessionLock sessionLock;
+    // The log folder once validated (PrepareLogDirectory); before that, an
+    // error goes to the early spool (triaevum_early_log.h).
+    std::filesystem::path logDirectory;
+    try {
+#if defined(REMASKED_APPLE_GAME)
+        InitializeReMaskedAppleGameHost();
+        if (RunReMaskedAppleSavePreflight()) return 0;
+#if defined(REMASKED_IOS_GAME)
+        ReMaskedIOSLaunch();
+#endif
+#endif
+        if (const auto status = RunTriAevumToolMode(argc, argv))
+            return *status;
+#if defined(__ANDROID__)
+        InitializeAndroidGameHost();
+#endif
+        const auto earlyStateDirectory = EarlyStateDirectory(argc, argv);
+        TriAevum::SetEarlyLogStateDirectory(earlyStateDirectory);
+        Oot3dNativeGameLaunch launch;
+        NativeGameArguments preparedArguments;
+#if defined(__SWITCH__)
+        // SDL's positional face-button convention is useful for portable PC
+        // layouts, but the Switch build should follow the labels printed on
+        // Joy-Con and Pro Controllers: A is A, B is B, and so on.
+        SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, "1");
+        launch.ControlConfig = Oot3dNativeGame::NativeControlPreset(
+            Oot3dNativeGame::NativeControlProfile::Controller);
+        std::array<char*, 21> homebrewArguments{
+            argc > 0 ? argv[0] : const_cast<char*>("oot3d_native_game.nro"),
+            const_cast<char*>("--a32-process-manifest"),
+            const_cast<char*>(
+                "sdmc:/switch/oot3dre/game/oot3d_native_process_manifest.json"),
+            const_cast<char*>("--resource-root"),
+            const_cast<char*>("sdmc:/switch/oot3dre/resources.o2r"),
+            const_cast<char*>("--renderer"),
+            const_cast<char*>("opengl"),
+            const_cast<char*>("--save-data"),
+            const_cast<char*>("sdmc:/switch/oot3dre/savedata"),
+            const_cast<char*>("--ui-profile"),
+            const_cast<char*>("topscreen"),
+            const_cast<char*>("--topscreen-config"),
+            const_cast<char*>(
+                "sdmc:/switch/oot3dre/config/topscreen_ui.json"),
+            const_cast<char*>("--topscreen-texture-overrides"),
+            const_cast<char*>(
+                "sdmc:/switch/oot3dre/config/atlas_overrides.o3tu"),
+            const_cast<char*>("--controls-config"),
+            const_cast<char*>(
+                "sdmc:/switch/oot3dre/config/oot3d_controls.json"),
+            const_cast<char*>("--gameplay-timing"),
+            const_cast<char*>("native30_no_interpolation"),
+            const_cast<char*>("--presentation-rate"),
+            const_cast<char*>("30"),
+        };
+        if (argc <= 1) {
+            argc = static_cast<int>(homebrewArguments.size());
+            argv = homebrewArguments.data();
+        }
+#else
+        preparedArguments = PrepareNativeGameArguments(argc, argv);
+        if (!preparedArguments.Pointers.empty()) {
+            argc = static_cast<int>(preparedArguments.Pointers.size());
+            argv = preparedArguments.Pointers.data();
+        }
+        // Before anything writes the user's files; released on return.
+        TakeGameSessionLock(preparedArguments.ProfilePath, sessionLock);
+        RefusePendingUpdate(preparedArguments.ProfilePath);
+#endif
+#if defined(OOT3D_REQUIRE_WHOLE_AOT_PLUGIN_V2)
+        std::vector<char*> runtimeArguments;
+        bool pluginSelected = false;
+        for (int index = 0; index < argc; ++index) {
+            if (std::string_view(argv[index]) == "--title-plugin") {
+                if (pluginSelected || index + 1 == argc)
+                    throw std::runtime_error("--title-plugin requires exactly one path");
+                Oot3dNativeGame::ConfigureTitlePlugin(argv[++index]);
+                pluginSelected = true;
+            } else {
+                runtimeArguments.push_back(argv[index]);
+            }
+        }
+        argc = static_cast<int>(runtimeArguments.size());
+        argv = runtimeArguments.data();
+#endif
+        fatalDialog = TriAevum::FatalDialogWanted(argc, argv);
+        if (!ParseOot3dNativeGameArgs(argc, argv, launch)) {
+            TriAevum::EarlyLog("the launch arguments are invalid (an unknown option or a missing value)");
+            PrintOot3dNativeGameUsage();
+            return 2;
+        }
+#if !defined(__SWITCH__)
+        logDirectory = PrepareLogDirectory(launch, earlyStateDirectory);
+#endif
+
+#if defined(OOT3D_REQUIRE_WHOLE_AOT_PLUGIN_V2)
+        if (!Oot3dNativeGame::Oot3dWholeAotPluginV2Available()) {
+            throw std::runtime_error(
+                "the packaged whole-AOT ABI-v2 title module is missing or incompatible "
+                "(memory visibility ABI 2 required); install a matching runtime/title package");
+        }
+#endif
+#if defined(__SWITCH__)
+        WriteSwitchBootStatus("launching");
+#endif
+        if (launch.InitializeProductConfig) {
+            if (launch.Host.ConfigurationPath.empty()) {
+                throw std::runtime_error("--initialize-config product requires --config");
+            }
+            bool written = false;
+            std::string configError;
+            if (!InitializeTriAevumProductConfig(launch.Host.ConfigurationPath, &written,
+                                                 &configError)) {
+                throw std::runtime_error(configError);
+            }
+            if (written) {
+                std::fprintf(stderr, "TRIAEVUM_CONFIG initialized product defaults in %s\n",
+                             launch.Host.ConfigurationPath.c_str());
+            }
+        }
+        ConfigurePicaAotShaders(launch);
+#ifdef OOT3D_NATIVE_A32_WINDOW_AVAILABLE
+        RunOot3dNativeA32Window(launch);
+        ClearLaunchMarkerForDemo();
+        // The A32 window owns objects that refer back to the host context.
+        // Destroy those locals on return before tearing the context down.
+        DestroyContextForDemo();
+#if defined(__SWITCH__)
+        WriteSwitchBootStatus("completed");
+#endif
+        return 0;
+#else
+        throw std::runtime_error(
+            "native A32 window runtime is unavailable in this build");
+#endif
+    } catch (const std::exception& ex) {
+        std::cerr << "oot3d_native_game: " << ex.what() << '\n'
+                  << TriAevum::FatalLine(ex.what()) << std::endl;
+#if defined(__SWITCH__)
+        WriteSwitchBootStatus("failed", ex.what());
+#endif
+        const bool logged = LogFatalErrorForDemo(ex.what());
+        std::string reportDirectory = logged ? FatalLogDirectoryForDemo() : std::string();
+        if (!logged) {
+            // Before the runtime log: the validated log folder's early log,
+            // else the spool, which the next launch hands over to D/logs.
+            const auto earlyLog = !logDirectory.empty() ? logDirectory / TriAevum::kEarlyLogName
+                                                        : TriAevum::EarlyLogSpool();
+            if (!earlyLog.empty() && TriAevum::AppendEarlyLog(earlyLog, ex.what())) {
+                const auto folder = earlyLog.parent_path().u8string();
+                reportDirectory.assign(folder.begin(), folder.end());
+            }
+        }
+        // The error ends the process: teardown must not wait for the
+        // startup preparation still queued (Q-INTEG-R10-2).
+        AbandonBackgroundWorkForDemo();
+        DestroyContextForDemo();
+        // After the window is gone, so the dialog is not hidden behind it.
+        if (fatalDialog)
+            ShowFatalErrorForDemo(TriAevum::kFatalDialogTitle, TriAevum::FatalDialogText(ex.what(), reportDirectory));
+        return 1;
+    }
+}

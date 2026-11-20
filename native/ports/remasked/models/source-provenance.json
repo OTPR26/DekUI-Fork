@@ -1,0 +1,32 @@
+{
+  "source_revision": "42f3010e0f7d4403640a5b4bc160a6baf3d7aa99",
+  "source": "Majora ReMasked 0.4.4 tools/mm3d",
+  "sha256": {
+    "zobj_import/cmb_writer.py": "1a17a4ecf089cffe3c2a45d3e1b39c2c2007234058f22b9477aad8d67cd2a72b",
+    "zobj_import/convert.py": "b502ccafc14462d4950adcd33e9adfe9aeb327cfdd5a3599c11d1cee191fb350",
+    "zobj_import/__init__.py": "98b6b5e708b3b19b3664752a81d067908d26076d3c33fc2ea19891f746b3429e",
+    "zobj_import/reader.py": "fd4234293e4138a378b870459e4cd37f9f522d8c119431034c61e99daefafaf1",
+    "zobj_import/android.py": "ae80e7e527be2a9f974e2e4fa7d83c367cec35d9676c6eb9c9ec95e3446a5190",
+    "zobj_import/install.py": "49f412619aa91a3c94cd97e40a812a34f452fc8689115624f1bc40190a412e20",
+    "zobj_import/errors.py": "a8a3e7263012bd17723b6615cc53c3ad987738652b3c524b9533d69e1f8ca065",
+    "zobj_import/vendor/n64texture.py": "4f8dbbf5090d89463a421e5c7af2e60ac008fc407279ec3de7371afc4a3a83a6",
+    "zobj_import/vendor/LICENSE": "0b1ba670e5a65e753360b63347ea1708746db1261fac888bd0dffbdb731a0248",
+    "zobj_import/vendor/__init__.py": "c9c55799dc56ed4c6769f28bb8c1fa41c87e4331a4c978b69195d46e514843d8",
+    "zobj_import/vendor/NOTICE.txt": "33a28b4b03da986808b07ce471cdd0cd9f417eabfc77e198d370f2f4c67114e5",
+    "zobj_import/vendor/gbi.py": "7c807c0d4221cfca61dc165c893707f720a386c297e0546f32d794ebf6efb0ef",
+    "tp_import/binary.py": "d374b5d0def59d10ff70f4313895ac0d5e9538f97ab5dbe2c6a5f529f552730a",
+    "tp_import/generate.py": "fb3650b3ebe418bd5dc915380618d6623f4a646612ac2ac0660e54eb5b5e0a20",
+    "tp_import/j3d.py": "82ed760bd76876b4a9ace552129e9db7dbfc30264e2d8c428d832760e61b238f",
+    "tp_import/replacements.py": "9e2f2b733d02e3ba594beae8efcad432ec9495d011fbad7576662088c6457edd",
+    "tp_import/__init__.py": "6cdb4e20a8a6bff2029491762857df408ae7c15ee2fda7b28b7c5b4996b0fa34",
+    "tp_import/disc.py": "47038e8543732de5259b1268726e218f565b5cba73ce60819aecd6057e48b36f",
+    "tp_import/model.py": "7b69bc1b62617c2ef47aefad7823469e8d8161320a8c43a47f6dd71158a9cbc0",
+    "tp_import/voices.py": "860b4d1b8c917af2705444301f46207f2bacb166865c067f8eb50c1a70f7a31b",
+    "tp_import/android.py": "969054f2726a9628eade983fee47e9c6873d2439cba970f743cc9c18602ac96b",
+    "tp_import/packing.py": "22bdd932612018d3b91cd1a256a09aa64222bc140ec288ceed61b07fae1c2daf",
+    "tp_import/cmb.py": "25582ad0fa4a6be368c13d1d30f922619cae9318d195923065fa189d48b8f5c7",
+    "tp_import/textures.py": "da8d4d942b80f56085bf6db1d518f188c9c383722de7ccba93f38d25842cb3a2",
+    "tp_import/hashes.py": "bd2a010d0410ab3f5e0daa45865355f7f36c2e287f0bea8abd7814d8fa713553",
+    "tp_import/sound_archive.py": "cfd0f66bd451aaf56e7b0230cdcf304de90c285b4b80f078f4cd8a2e5ea97511"
+  }
+}

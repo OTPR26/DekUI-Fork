@@ -1,0 +1,37 @@
+{
+  "format": "oot3d_native_game_launch_profile_v1",
+  "variables": {
+    "source_root": "@CMAKE_CURRENT_SOURCE_DIR@",
+    "workspace_root": "@OOT3D_NATIVE_GAME_WORKSPACE_ROOT@"
+  },
+  "arguments": [
+    "--resource-root",
+    "${source_root}/runtime/three_ds_recomp/src/fast",
+    "--a32-process-manifest",
+    "${profile_dir}/oot3d_native_process_manifest.json",
+    "--renderer",
+    "nri",
+    "--ui-profile",
+    "topscreen",
+    "--config",
+    "${profile_dir}/oot3d_native_game.json",
+    "--topscreen-texture-overrides",
+    "${source_root}/tools/oot3d/ui_topscreen/assets/atlas_overrides.o3tu",
+    "--topscreen-config",
+    "${source_root}/config/topscreen_ui.example.json",
+    "--pica-aot-shader-pack",
+    "${profile_dir}/oot3d_pica_default.o3ps",
+    "--gameplay-timing",
+    "native30_interpolated",
+    "--presentation-rate",
+    "60",
+    "--output",
+    "${workspace_root}/native_game/kokiri_native_game.json",
+    "--save-data",
+    "${workspace_root}/native_game/oot3d_native_savedata",
+    "--width",
+    "1280",
+    "--height",
+    "720"
+  ]
+}

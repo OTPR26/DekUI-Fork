@@ -1,0 +1,99 @@
+"""Shared, dependency-free helpers for TriAevum release tools."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import tempfile
+from pathlib import Path, PurePosixPath
+from typing import Any
+
+
+def load_json_object(path: Path) -> dict[str, Any]:
+    value = json.loads(path.read_text(encoding="utf-8-sig"))
+    if not isinstance(value, dict):
+        raise ValueError(f"{path} does not contain a JSON object")
+    return value
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(4 * 1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def normalize_relative_path(value: str) -> str:
+    normalized = value.replace("\\", "/")
+    path = PurePosixPath(normalized)
+    if (
+        not normalized
+        or path.is_absolute()
+        or ":" in normalized
+        or any(part in ("", ".", "..") for part in path.parts)
+    ):
+        raise ValueError(f"unsafe relative path: {value!r}")
+    return path.as_posix()
+
+
+def atomic_write_json(path: Path, value: object) -> None:
+    payload = (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    atomic_write_bytes(path, payload)
+
+
+def atomic_write_bytes(path: Path, payload: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Keep the temporary name shorter than the destination. Content-addressed
+    # destinations already sit close to the legacy Win32 path limit inside a
+    # deep installation root, where a longer temporary name turns a legal write
+    # into a misleading "No such file or directory" failure (issue 53).
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=".", suffix=".tmp", dir=path.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as output:
+            output.write(payload)
+            output.flush()
+            os.fsync(output.fileno())
+        temporary.replace(path)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+# The package's release manifest: in docs/ in the Windows package (its root
+# holds only TriAevumForge.exe, README.md and LICENSE), in the root elsewhere.
+RELEASE_MANIFEST_PATHS = ("release-manifest.json", "docs/release-manifest.json")
+
+
+def release_manifest_relative(target: str) -> str:
+    return RELEASE_MANIFEST_PATHS[1] if target in ("x86_64-pc-windows-msvc", "x86_64-w64-windows-gnu") \
+        else RELEASE_MANIFEST_PATHS[0]
+
+
+def release_inventory(package, manifest: dict) -> list[dict]:
+    """The files a bundle copies from an audited package: the manifest's files,
+    the manifest, and the publisher signature beside it when the package is
+    signed (release_signature; the bundle's copy audit verifies it)."""
+    from pathlib import Path
+    manifest_path = release_manifest_path(Path(package))
+    entries = [*manifest["files"], {"path": manifest_path.relative_to(package).as_posix(), "role": "manifest"}]
+    signature = manifest_path.with_name("release-signature.json")
+    if signature.is_file():
+        entries.append({"path": signature.relative_to(package).as_posix(), "role": "release_signature"})
+    return entries
+
+
+def release_manifest_path(package: Path) -> Path:
+    for relative in RELEASE_MANIFEST_PATHS:
+        candidate = package / relative
+        if candidate.is_file():
+            return candidate
+    return package / RELEASE_MANIFEST_PATHS[0]

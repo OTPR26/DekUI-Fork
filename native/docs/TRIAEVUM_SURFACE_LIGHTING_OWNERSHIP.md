@@ -1,0 +1,481 @@
+# Surface lighting ownership and brightness preservation
+
+## Contract
+
+Per-pixel lighting replaces surface illumination, not the authored appearance of
+sky, backgrounds, atmosphere or UI. Native, NativeMemory and Authentic remain
+canonical. F2 retains its existing native-presentation mask and suspends the
+authored environment; it does not force configured Per-pixel modes to Native.
+Native gameplay/environment updates continue: disabling native light
+contributions is a presentation decision, not a guest-state mutation.
+
+The implementation separates:
+
+- native appearance and native alpha/coverage;
+- material reflectance and baked vertex/texture tint;
+- a scene-brightness reference independent of enabled native direct sources;
+- effective direct illumination, shadows and ambient occlusion.
+
+Classification comes from typed native composition ownership. It must not use
+texture names, material hashes, screen position, draw distance or scene-specific
+corrections. Distant world geometry remains a surface, not a background exemption.
+Unknown ownership must not be silently promoted to a relightable surface.
+
+## Implementation sequence
+
+1. Carry composition-layer ownership into shader admission. Preserve atmospheric
+   appearance instead of applying the world surface-lighting replacement. Verify
+   shared-program cache transitions between world and atmosphere.
+2. Add an explicit brightness-reference policy to the scene Environment owner.
+   Native source gains may all be zero without discarding the reference. Resolve
+   the low-frequency lighting budget on the CPU, not with framebuffer readback or
+   camera-dependent automatic exposure. Version and document persistence.
+3. Use the same resolved lighting inputs for Per-pixel, PBR and Grass. Keep
+   reflectance application single-owned, specialize inactive source work, and
+   avoid repeated preparation/upload of unchanged illumination.
+4. Qualify with deterministic scene captures, native regression captures,
+   production GPU lighting probes, real F1 widgets and structural diagnostics.
+
+Each implementation increment records its verification here and is committed
+separately. Pre-existing worktree changes are excluded from these commits.
+
+## Brightness interpretation
+
+Preservation means maintaining the environment's reference light level and
+palette while allowing new light directions and shadows. It cannot promise
+pixel-identical world shading after replacing those directions. Sky/background
+appearance has a stricter invariant: changing surface-light settings must not
+change it at the same atmosphere state and presentation settings.
+
+Do not multiply already-lit native RGB by another complete lighting result, add
+an arbitrary minimum brightness, bake modified textures, or use global exposure
+to conceal a missing sky contribution. Authored dark channels remain dark.
+
+## Acceptance and evidence
+
+- Original direct-light gains zero: sky/background retain their authored color.
+- Brightness reference remains usable without evaluating original direct lights.
+- Key/fill, dynamic point groups and material controls remain independent.
+- Atmosphere, alpha, depth/stencil, native draw order and UI remain protected.
+- Native and native-memory outputs remain unchanged. F2 retains its existing
+  suppression policy; its sky correction is qualified separately below.
+- Room/time/environment transitions update the reference without camera pumping.
+- Performance claims require steady-state measurements, not capture wall time.
+
+Initial read-only investigation: `<work>/lighting-rationalization/`.
+The archived Kokiri traces contain 17 atmospheric draws in the Scene domain;
+world-lighting admission previously tested only that domain. A fixed sky region
+in the archived Native capture has mean linear luminance 0.744; the authored-key
+capture has zero there while its terrain receives light. The Native capture is
+at a different frame, so this is diagnostic evidence, not an exact parity test.
+
+## Development record
+
+2026-09-26: implementation scoped; baseline worktree snapshots retained privately
+for selective commits. No implementation or new runtime qualification is claimed
+by this initial record.
+
+### Appearance increment
+
+Surface replacement now requires an explicit OpaqueWorld or TransparentWorld
+owner, both when preparing lighting and when resolving the pipeline variant.
+Atmosphere and unknown ownership keep their native appearance.
+
+The first runtime probe exposed a second, upstream defect: the configured sky
+producer queues models rather than emitting their CMB packets immediately.
+Native CMB pass 0/1 alone consequently mislabeled those later packets as world.
+The title adapter now carries the producer attribution on the exact eight-byte
+native queue slot. It observes `0031487C` (model in r2, slot in r1); the native
+`002FAD2C`, `002FAE10` and `003FE374` consumers identify that slot with r8+r4*8
+at their CMB calls. These registers were verified against the native ARM code
+and the read-only reconstructed producer. Model identity is deliberately not
+the key: another queue can submit the same model without inheriting its role.
+Slot replacement and a new gameplay frame invalidate old ownership.
+
+Verification:
+
+- 42 shader-pipeline/instrumentation tests passed, including world/atmosphere/
+  unknown admission using the same program contract.
+- Native composition regression passed, including deferred opaque/transparent
+  consumption, the same renderer in another slot, slot overwrite and frame reuse.
+- Deterministic Kokiri source sample 111550, host frame 30, 1280x720:
+  sky ROI `(620,5)-(780,30)` changed from black to the exact Native RGB values
+  with every native light gain zero and the authored key enabled. All 4,000
+  ROI pixels match; mean linear luminance is 0.7385199023.
+- Native framebuffer SHA-256 remains
+  `a12f2ecfc6bc30d7e5f2d78be74b309f3f0d92b5c177745edb6a79a836ac3f89`
+  before and after both the admission and deferred-ownership changes.
+- These are renderer framebuffer readbacks, not desktop screenshots. Grass
+  remained enabled in both captures. World brightness is intentionally not
+  claimed fixed by this increment; its independent reference is the next step.
+
+### Independent brightness reference
+
+F1 Environment now owns **Preserve scene brightness**. It retains the native
+ambient/material reference independently of all three native source gains.
+For sky-lit baked surfaces, the later [outdoor calibration](BAKED_SURFACE_LIGHTING.md)
+distributes this reference by orientation and visibility instead of adding
+another full-strength sky contribution. The baseline-only semantics and
+historical measurements below otherwise describe the earlier implementation.
+Authored unlit primary color also remains a base appearance, not a light gain.
+Added ambient, key/fill and point lights remain additive and independently
+controllable. This deliberately preserves a baseline, not total irradiance:
+there is no image histogram, guessed light direction, automatic exposure,
+arbitrary minimum RGB or promise of identical world pixels.
+
+The CPU resolves direction-independent vertex ambient, including material
+reflectance and the authored ambient policy, once per surface input. Per-pixel,
+vertex-lit PBR and the Grass surface-lighting atlas consume the shared
+`ResolvedAmbient` value directly. Fragment-lit PBR retains its native global
+ambient without running the attenuated original-light loop when preservation
+owns the baseline; its ambient gain is resolved on the CPU.
+No original direct source is required to recover either baseline. Disabling
+preservation restores authored-only lighting, including intentional black.
+
+Environment schema 4 persists `preserveSceneBrightness`. New profiles enable
+it. Versions 1–3 keep their authored-only choices and are not rewritten on load.
+The native ambient slider is inactive while the reference owns that baseline;
+its saved gain is retained. Native/Native+PBR, Authentic and F2 continue to bypass
+the authored profile.
+
+Verification:
+
+- 24 production GPU source/reference cases pass, including all native gains
+  zero, retained unlit appearance, authored-light response on that appearance,
+  dark material channels, updated native ambient and disabled point groups.
+- Production PBR GPU probes pass for triangle lists, indexed strips, alpha/base
+  invariance, tangent frames, normal/ORM/emission/height and seam boundaries.
+- 42 pipeline/instrumentation tests and 6,648 real F1 widget assertions pass.
+- At sample 111550, the fixed `(0,0)-(800,650)` framebuffer region measures
+  mean linear luminance 0.302808 Native versus 0.304710 with native gains,
+  authored ambient and key/fill all zero and the reference enabled. With the
+  authored key enabled it measures 0.322381. These regions are manual probes,
+  not semantic world masks or a claim of brightness parity in every scene.
+- Sky remains exact in both reference captures. All runs use private profiles;
+  textures, material packs, active profiles and the running user session are
+  untouched.
+
+### Shared evaluation increment
+
+- Vertex-native ambient is no longer uploaded separately for each selected
+  light or accumulated again per fragment. The shared std140 block shrinks
+  from 1,472 to 1,440 bytes.
+- A validated camera snapshot owns the forward rows and inverse linear
+  transform. The renderer reuses it only when the captured matrix is equal;
+  no camera-independent or previous-frame illumination is cached.
+- Disabled selected-native sources are discarded only after extracting their
+  independent ambient. Zero-intensity authored sources skip preparation and
+  evaluation; PBR skips zero-radiance scene sources before the BRDF.
+- Identical adjacent surface blocks reuse their uniform allocation. A bounded
+  CPU snapshot avoids reading potentially write-combined upload memory.
+  Frame reuse and uniform-arena replacement invalidate the cached offset.
+  Grass keeps the same declared block and lifetime as its source draw.
+- Fragment-lit PBR with zero active native lights is not mistaken for authored
+  unlit appearance. Its global ambient follows the same policy.
+
+Verification:
+
+- The exact staged headers, evaluator and 22-case committed fixture also pass
+  on the GPU; pre-existing working-tree material tests remain separate.
+- 42 pipeline/instrumentation tests and native composition regressions pass.
+- All 24 working-tree GPU source cases pass. Additional throwaway production
+  PBR vertex/fragment probes verify the reference with original gains zero,
+  intentional black with reference Off, a changed native ambient snapshot and
+  unchanged alpha. The pre-existing untracked material fixture is not adopted
+  into this change.
+- Native, reference-only Per-pixel, authored Per-pixel and authored Per-pixel+PBR
+  framebuffer SHA-256 values are exactly unchanged by this optimization.
+- Native savestates before/after are semantically equal, with zero differing
+  guest bytes; even the normally ignored memory write generation is equal.
+- Steady-state timing qualification is recorded separately below. Reduced
+  arithmetic and block size alone are not an FPS claim.
+
+### CPU-resolved ambient policy
+
+The final increment also folds the reference/native gain and authored ambient
+addition into the CPU's `ResolvedAmbient`. Vertex-lit Per-pixel, PBR and Grass
+no longer branch on the environment policy or combine constant ambient RGB
+per pixel. Native-fragment PBR still accumulates pixel-dependent native ambient
+when requested, then applies the CPU-resolved gain and authored ambient once.
+An inactive environment supplies unit gain; preservation does not overwrite
+the profile's saved native-ambient strength.
+
+The production builder and vertex/fragment PBR shaders were exercised together
+with native gains zero, reference Off, environment disabled, changed native
+ambient, and mixed half-strength native plus authored ambient. The mixed case
+checks that the policy is not applied twice. Both shader paths preserve the
+tested material alpha. All 24 working-tree GPU cases, 42 pipeline/instrumentation
+tests and native composition regressions pass after this increment.
+
+Final runtime verification of this increment:
+
+- Eight framebuffer SHA-256 values match their pre-increment baselines exactly:
+  Native, reference-only Per-pixel, authored Per-pixel, authored Per-pixel+PBR,
+  Authentic, F2, and Link's House with the reference On and Off.
+- The Native serialized state is entirely equal before/after this increment.
+  Native frontend and submission state also match across the three qualified
+  non-native surface-lighting modes.
+- The exact staged headers/evaluator and committed 22-case GPU fixture pass.
+  The actual-widget F1 smoke passes again with 6,648 assertions.
+
+## Deterministic qualification
+
+Qualification uses the actual Windows/Vulkan runtime on an RTX 3060 and
+i5-12400F, private environment profiles, framebuffer readback, serialized PICA
+targets and native submission diagnostics. It does not use desktop screenshots
+as fidelity evidence. No game-derived captures or checkpoints are committed.
+
+### Outdoor scene and canonical boundaries
+
+Kokiri scene `0x55` uses `fairies-visible.oot3dsav`, source sample 111550,
+host capture frame 30, at 1280×720. Native is byte-identical to the original
+pre-change runtime:
+
+`a12f2ecfc6bc30d7e5f2d78be74b309f3f0d92b5c177745edb6a79a836ac3f89`
+
+Native, reference-only Per-pixel, authored Per-pixel and authored Per-pixel+PBR
+retain identical native-memory target payloads and presentation depth. Guest
+memory, native PICA frontend and native submission state also remain unchanged.
+Across the four structural traces, all 3,484 native draws retain their order,
+raw output-merger registers and raster state. The trace digest is:
+
+`a173d058edf5a2506b345fe2d0d21883b8906c7b1a25ae96495726b3855cd8c4`
+
+The trace contains 589 atmosphere, 1,547 opaque-world, 775 transparent-world,
+476 UI and 97 unknown draws. The bottom-screen UI target is unchanged.
+Stencil is inactive in this scenario: zero enabled draws and zero serialized
+stencil bytes. This proves unchanged disabled stencil state, not live stencil
+output under an unexercised scene.
+
+The 4,000-pixel sky probe `(620,5)-(780,30)` is exact Native under all qualified
+surface-lighting variants. Its mean linear luminance is 0.738520. World shading
+is deliberately not pixel-identical: the wall probe changes from 0.180393 Native
+to 0.126651 with only the ambient reference, then 0.133034 with the authored key.
+Preservation is an ambient/material baseline, not normalized total irradiance.
+
+### Authentic and F2
+
+Authentic and F2 framebuffers are byte-identical across the shared-evaluation
+optimization. F2 retains its existing extension suppression mask and suspends
+the authored environment; it does not convert Per-pixel modes to Native.
+
+Compared with the original pre-change F2 runtime, 31,969 pixels intentionally
+change, all inside the half-open bounding rectangle `(0,0)-(1098,77)`.
+The sky probe changes from linear luminance 0.783748 to exact Native 0.738520.
+The qualified wall and ground probes are unchanged. Guest memory, native
+frontend/submission and native-memory target payloads are unchanged. Thus the
+whole original F2 framebuffer is **not** claimed identical: it inherits the
+sky-attribution correction.
+
+### Interior and explicit darkness
+
+Link's House, scene `0x34`, uses `timing_link_house_11800.oot3dsav` with an
+explicit private scene-`0x34` profile. All native source gains, authored ambient
+and key/fill intensities are zero:
+
+| Manual framebuffer region | Native | Reference On | Reference Off |
+| --- | ---: | ---: | ---: |
+| Room `(0,270)-(1280,720)` | 0.072517 | 0.065982 | 0.001604 |
+| Bed `(430,570)-(920,650)` | 0.255480 | 0.255523 | 0 |
+
+Values are mean linear luminance, not semantic masks. Reference On keeps the
+room visible; Off permits intentional black. Native-memory targets and
+presentation depth remain exact. The earlier `house-PerPixel` capture had no
+scene-`0x34` profile and is only an unprofiled baseline, not reference-On proof.
+Changed native ambient is also exercised directly through the production
+builder and both PBR shader paths; a live day/night traversal is not claimed.
+
+### Timing limits
+
+The shared-evaluation increment was measured with four before/four after
+throughput runs, 120 warmup plus 240 measured frames each, pacing and VSync
+disabled, without screenshot or semantic-trace capture. Trial order was A/B,
+A/B, B/A, B/A. No pipeline was created in the measured windows.
+
+| Trial | Before mean frame, ms | After mean frame, ms | Before backend CPU median, ms | After backend CPU median, ms |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 30.6091 | 29.1280 | 9.6216 | 7.5743 |
+| 2 | 29.4482 | 29.3918 | 9.0876 | 7.6947 |
+| 3 | 28.0692 | 28.7416 | 6.1783 | 6.2345 |
+| 4 | 27.9103 | 28.0027 | 6.0697 | 5.9552 |
+
+GPU-frame medians span 4.5376–5.2578 ms before and 5.2494–5.6574 ms after.
+These runs do **not** establish a stable FPS gain. The user's running session
+was left alone, so the machine was not isolated; neither the apparent early
+CPU improvement nor the GPU timing difference is assigned a causal speedup
+or regression. The later CPU-ambient increment removes constant per-pixel
+policy work, but arithmetic reduction alone is not a throughput guarantee.
+
+Two additional final-build throughput runs used 120 warmup plus 120 measured
+frames each, under the same non-isolated conditions:
+
+| Trial | Mean frame, ms | Backend CPU median, ms | Upload median, ms | GPU-frame median, ms |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 29.0004 | 6.0836 | 0.4129 | 6.2469 |
+| 2 | 30.9292 | 6.4024 | 0.4370 | 5.8146 |
+
+Neither window created a pipeline. These shorter, later runs are not paired
+controls and do not establish an FPS improvement for the final increment.
+
+### Profile migration and evidence location
+
+For an existing schema-1–3 profile, enable **F1 → Environment → Preserve scene
+brightness** explicitly. Migration preserves the old authored-only choice;
+it does not silently edit the user's profile. New profiles default to On.
+Turning it Off restores intentional-dark workflows and the saved native
+ambient gain.
+
+Private evidence is retained under
+`<work>/lighting-rationalization/`: `qualification-report.json`,
+per-capture receipts/configurations/framebuffers/diagnostics, and the final
+CPU-ambient parity and qualification reports. Temporary analysis sources are
+removed after verification; captures and recovery baselines remain private.
+
+### Filter composition (2026-10-28)
+
+Owner report: in Hyrule Castle's courtyard, the cutscene where Link and Zelda
+look through the window at Ganondorf rendered almost entirely white under
+Enhanced, with only MXAO visible. Authentic and Native surface lighting were
+correct; PerPixel and PerPixelPBR were both white, with AO on or off.
+
+Cause, from a `TRIAEVUM_SURFACE_TRACE` of the frame: the window glass is a
+vertex-lit transparent room draw (12 vertices, one 64x64 texture) blended
+`SourceColor` / `OneMinusSourceAlpha`. The glass's colour is the filter
+applied to the throne room behind it (colour x itself + destination x
+(1 - alpha)), not radiance. The per-pixel model relit it as a surface; with
+Navi's point light right at the glass the colour saturated, and the filter
+turned the whole view white. AO composited afterwards still darkened the
+geometry behind it.
+
+`ClassifyPicaSurfaceAppearance` (`pica_surface_appearance.h`) now has a
+fourth class, `FilterComposition`: an enabled blend whose source or
+destination RGB factor reads the source colour, or whose source factor reads
+the destination colour (multiplicative tints). These draws keep their native
+appearance, like additive light: no per-pixel/PBR replacement and no
+received shadows. One exception is water: a filter draw that is
+catalogued whole water or that reaches a water body (the courtyard moat is
+drawn `SourceColor` / `ConstantAlpha`) stays on the water path, which
+already keeps native colour and adds optics. The guard courtyard's channel
+surfaces (same blend; not catalogued and reaching no body) now keep their
+native colour where they used to be relit, so they look slightly less
+bright. That is the expected effect of the rule. The rule
+reads only the typed native blend state. No scene, texture or material keys
+are used.
+
+Verification (developer launch; owner's play config, Vanilla+ RomFS overlay;
+1920x1080, fixed delta; checkpoint
+`courtyard-oct28/states/state-2026-10-28_14-31-28.oot3dsav`):
+
+- `pica_surface_appearance_tests` 45 checks; `oot3d_pica_shader_pipeline_cache_tests` 64/64.
+- Window view under Enhanced: white before, green-tinted glass over the relit
+  throne room after (`runs/n_owner`, `runs/n_perpixel`).
+- Authentic and Native surface lighting: byte-identical before/after.
+- Enhanced with AO off, before/after byte-identical in Kokiri Forest
+  (2 states), Mido's house (dev warp) and the courtyard with its moat. Hyrule
+  Field by the river varies run to run (the before exe twice gave two hashes:
+  the river's wave phase), so it is not an identity gate.
+
+### Native fragment lights: initial transfer contract (2026-11-06, historical)
+
+Superseded by [Environment profiles on native fragment lighting](NATIVE_FRAGMENT_ENVIRONMENT_PROFILES.md).
+All valid profile shapes now apply, including added ambient, key/fill/offsets,
+rim, fog and placed lights. Preservation retains ambient (not an extra opposite
+fill). Local-only draws accept ambient/rim/placed controls without acquiring the
+actor's scene-following key. The following records the initial restricted path,
+not the current F1 availability.
+
+A title whose scene is lit per pixel by native fragment lights
+(`TitleSession::NativeFragmentLighting`) takes a scene profile only in the
+transfer shape of `PicaFragmentBalanceProfileSupported`: a white 1x key that
+follows the main scene light, native scene direct 0, no added ambient, fill or
+placed lights, native ambient and local gains in [0, 1].
+
+- **Light function.** The title adapter classifies each native light slot
+  (`PicaNativeLightSource::Scope`). The balance builder replaces only Scene
+  slots that are one of the environment's own directionals
+  (`PicaSceneDirectionalLights::Scope` Scene): the main one becomes the key and
+  casts the shadow, the others follow the native direct policy (removed, or
+  retained as reference fill when brightness is preserved). Local and Unknown
+  slots (lamps, actor and room lights, unproved owners) keep their whole
+  native light (diffuse, specular and the light's own ambient) at the
+  profile's local gain; at local gain 1 they are bit-identical to native. A
+  Scene slot without such a record, or a draw without a Scene key, keeps its
+  native lighting. The scene ambient is the draw's native global ambient (and
+  the Scene slots' own ambient), scaled by the native ambient gain: a relative
+  gain that keeps the title's own room/actor balance.
+- **Scope consumers.** Only the balance reads the scope. The vertex-lighting
+  path keeps its older contract: it replaces the draw lights whose identity is
+  a published environment record, whatever their scope, so an adapter
+  publishes there only records it proved (MM3D: the environment's still-linked
+  sun/moon records, published with Scope Scene). OoT3D does not classify its
+  lights, so its traces show "local"/"unknown" for the environment records the
+  vertex path does replace; enforcing the scope there needs the OoT3D adapter
+  (and the visual-replay format) to carry it first.
+- **Per-vertex information.** The balance recomposes only the fragment primary
+  colour before the native clamp and TEV, so a vertex colour the TEV combiner
+  multiplies later (baked shading, fake AO, tint) is unchanged. Draws of such a
+  title without native fragment lighting take the profile through the ordinary
+  vertex-lighting equations, including the baked-reference path
+  (`BAKED_SURFACE_LIGHTING.md`), in the full scene-lighting model; with the
+  Native model they stay native as before.
+- **Draw routing.** `PicaFragmentLitTitleDrawKeepsNative` decides which draws
+  of such a title keep the no-profile native reference: a fragment-lit draw the
+  balance refused (unproved slot, water) in every model, and every draw outside
+  the full scene-lighting model.
+- **Rim and fog.** The contract has no rim light or fog contribution. In the
+  supported shape `PicaFragmentLitFrameEnvironment` turns both off for the
+  whole frame (rim disabled, fog contribution 1), so they reach no draw of the
+  title, including the draws without native fragment lighting, as F1 says.
+- **Unsupported shapes.** `PicaFragmentLitFrameEnvironment` turns any other
+  shape into the profile-Off inputs for the whole frame (scope, scene
+  point-light groups and caster faces stay). The shadow light, caster
+  selection, receiver matching, rim and placed lights then follow the native
+  environment exactly as with the profile Off, instead of a key no fragment-lit
+  receiver can match (shadows that vanished under an authored shape) or a
+  native moon shadow subtracted under a profile that changes nothing else
+  (darker moonlit surfaces).
+- **F1.** For such a title the Scene lights panel says whether the profile is
+  applied, from the environment the runtime published (both day/night slots
+  blended at the applied weight, `SceneEnvironmentSnapshot::Published`), and
+  separately whether the edited slot has the supported shape. It marks the controls the contract does not apply (added ambient,
+  native scene direct, fog contribution, rim, key tint/intensity/offsets,
+  fill, fallback directions, placed lights) as unavailable with the reason.
+  A control holding an unsupported value stays editable so it can be set back
+  (capability-safe Off), and "Use the supported shape" sets them back at once.
+- **Titles without native fragment lighting** are unchanged: the frame
+  environment, the builder's inputs and every shader source are the same.
+
+Tests: `oot3d_pica_shader_pipeline_cache_tests` (light function, unproved
+owners, Local gain including the light's own ambient, draw routing, rim and
+fog off, unsupported shapes leave the frame native), `triaevum_environment_tests` (a title's base per environment
+group), `triaevum_f1_settings_smoke` (the marks on the actual widgets).
+
+### Identity-proved native Local points
+
+Historical first-increment description below. Current group Off/zero ownership
+is specified in [Scene point-light settings](TRIAEVUM_SCENE_POINT_LIGHT_SETTINGS.md):
+proved native direct/specular is suppressed, not restored. Native ambient stays
+independent. Later native-reference/GGX work also supersedes the approximation
+and GGX limitation recorded below.
+
+`PicaScenePointLight::ReplacesNativeLocal` is an explicit title proof, off
+by default. `BuildPicaNativePointReplacement` admits these sources by exact
+captured hardware-slot identity. Matching Unknown, Scene, unavailable or
+ambiguous slots keep their native light and omit the candidate. A native point
+without a tracked identity refuses conversion rather than guessing it is
+unrelated. Disabled groups keep native lighting, not darkness.
+
+The captured balance variant removes the matched native direct/specular term
+before clamp/TEV and adds the existing scene-point Lambert/cube-shadow term,
+with material diffuse exactly once. Native light ambient and native alpha stay
+native. A draw without a proved Scene key can convert Local points without
+acquiring a profile's scene ambient. Scene profile transfer remains separate.
+The shadow pass excludes raw native-fragment point maps the Lambert receiver
+cannot sample and admits converted candidates through the same ledger.
+
+This covers plain PerPixel and PerPixelPBR without an installed GGX material.
+Actual native-fragment GGX still keeps native Local light and omits replacement;
+that evaluator is **not yet qualified** for conversion. Legacy titles do not
+set the proof flag and retain their old shader sources and lighting behaviour.
+Numeric GPU probes exercise the production admission/uniform/recomposition
+path for replacement, shadows, authored black channels, alpha and Off.

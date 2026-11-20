@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Name=TriAevum — Echoes of Time
+Comment=Prepare your personal ROM with Forge and play TriAevum
+Exec=triaevum
+Icon=io.github.coccofresco.TriAevum
+Terminal=false
+Categories=Game;
+Actions=Play;Forge;
+
+[Desktop Action Play]
+Name=Play
+Exec=triaevum
+
+[Desktop Action Forge]
+Name=Prepare or repair game
+Exec=triaevum --forge
+Icon=io.github.coccofresco.TriAevum.Forge

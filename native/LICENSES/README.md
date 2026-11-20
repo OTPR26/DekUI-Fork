@@ -1,0 +1,39 @@
+# License inventory
+
+This directory is the release-facing index for third-party licenses. Until
+dependency vendoring is normalized, authoritative copies also remain beside
+their imported source.
+
+| Component | License | Authoritative repository copy |
+| --- | --- | --- |
+| Original TriAevum contributions | GPL-3.0-or-later | Root `LICENSE` and `LICENSE_SCOPE.md` |
+| Azahar PICA subset | GPL-2.0-or-later | File headers and `tools/oot3d/third_party/azahar_audio/LICENSE.txt` |
+| Azahar audio subset | GPL-2.0-or-later | `tools/oot3d/third_party/azahar_audio/LICENSE.txt` |
+| nihstro subset | BSD-3-Clause | `tools/oot3d/third_party/azahar_pica/NIHSTRO_LICENSE.txt` |
+| libultraship | MIT | Upstream submodule `runtime/three_ds_recomp/LICENSE` |
+| NVIDIA NRI | MIT | `LICENSES/NRI-MIT.txt` and pinned upstream source |
+| TriAevum DLSS module (separately licensed) | MIT for its integration code; NVIDIA's NGX SDK library linked into it under NVIDIA's terms | `runtime/three_ds_recomp/src/fast/dlss/LICENSE.md` |
+| NVIDIA DLSS SDK (NGX library, `nvngx_dlss` runtime) | NVIDIA RTX SDKs licence | `LICENSES/NVIDIA-DLSS-SDK-LICENSE.txt`, copied by the packager from the SDK |
+| AMD FidelityFX SDK FSR runtime (`amd_fidelityfx_vk.dll`) | MIT | `LICENSES/FidelityFX-SDK-MIT.txt` |
+| Godot Engine contact shadows port | MIT | `LICENSES/Godot-MIT.txt` and the ported file headers |
+| SDL2 2.32.10 (statically linked) | zlib | `LICENSES/SDL2-zlib.txt` |
+| SDL_GameControllerDB mappings | zlib | `LICENSES/SDL-GameControllerDB-zlib.txt` |
+| Zstandard 1.5.6 (statically linked) | BSD-3-Clause (upstream is dual BSD/GPL-2.0; used under BSD) | `LICENSES/zstd-BSD-3-Clause.txt` |
+| Microsoft Visual C++ runtime for shaderc | Microsoft runtime redistribution terms | `LICENSES/Microsoft-Visual-Cpp-Runtime.md` |
+| NXVK probe | GPL-2.0-or-later | `ports/switch_vulkan_probe/COPYING` |
+| shaderc shared runtime | Apache-2.0 | `LICENSES/shaderc-Apache-2.0.txt` |
+| Rust crates statically linked by the Rust Forge (beta 1.3 and later) | Per crate (MIT, Apache-2.0, BSD, ISC, Zlib, BSL-1.0, Unicode-3.0 and others), listed with their texts | `LICENSES/Rust-Forge-crates.md`, generated from `tools/triaevum_forge/Cargo.lock` |
+| CPython 3.13 runtime embedded by the PyInstaller Forge (packages before beta 1.3) | Python Software Foundation License | `LICENSES/Python-3.13.txt` |
+| Capstone 5.0.7 embedded by the PyInstaller Forge | BSD-style | `LICENSES/Capstone-BSD.txt` |
+| PyInstaller 6.16.0 bootloader (PyInstaller Forge) | GPL-2.0-or-later with bootloader exception | `LICENSES/PyInstaller-GPL-2.0-or-later-with-bootloader-exception.txt` |
+| LLVM 22 Forge tools (`llc`, `lld-link`) | Apache-2.0 WITH LLVM-exception | `LICENSES/shaderc-Apache-2.0.txt` plus `LICENSES/LLVM-exception.txt` |
+| LLVM libc++, libc++abi and libunwind (`libc++.dll`, `libunwind.dll`; statically linked libunwind and compiler-rt) of the llvm-mingw Windows build | Apache-2.0 WITH LLVM-exception | `LICENSES/LLVM-Apache-2.0-WITH-LLVM-exception.txt` (the llvm-mingw toolchain's `LICENSE.TXT`) |
+| mingw-w64 runtime (startup code statically linked into the executables and libraries of the llvm-mingw Windows build) | ZPL-2.1 and public domain, with notices | `LICENSES/mingw-w64.txt` (`COPYING.MinGW-w64-runtime.txt`) |
+| Fira Sans Condensed (in-game menu font atlases, compiled into the runtime) | SIL OFL 1.1 | `LICENSES/FiraSans-OFL.txt` and `tools/oot3d/ui_menu/font/OFL.txt` |
+| mm3d-dekui (Moonfall Curse only: the single-screen interface, its options and fixes, ported into the title code) | GPL-2.0 as distributed upstream | `LICENSES/mm3d-dekui.md` and `LICENSES/GPL-2.0-or-later.txt` |
+| Project Restoration (Moonfall Curse only: HD HUD layout recipe, BPS patches and the Restoration-original layout members; the game members are rebuilt from the user's dump at install) | GPL-2.0-or-later; Nintendo material in the layouts is not covered and is not shipped | `LICENSES/Project-Restoration.md` and `LICENSES/GPL-2.0-or-later.txt` |
+| TriAevum artwork (game and Forge icons, Forge background; compiled into the executables, installed as launcher icons) | Supplied by the project owner; no rights in Nintendo trademarks | `LICENSES/TriAevum-artwork.md` and `tools/triaevum_release/branding/README.md` |
+
+The public packager must include the root `LICENSE` and copy applicable donor
+texts into its own `LICENSES` directory. This index does not replace any
+license text.

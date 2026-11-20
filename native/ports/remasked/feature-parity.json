@@ -1,0 +1,299 @@
+{
+  "baseline_version": "0.4.4",
+  "baseline_revision": "42f3010e0f7d4403640a5b4bc160a6baf3d7aa99",
+  "native_revision": "672d13f15cb336bc7651c861d23cf45924a9f936",
+  "presentation_sha256": "84d538ed010eae110d475e46449ba6ba78cae7dd8f2ff18f205baa513fee7809",
+  "required_features": [
+    {
+      "id": "hud",
+      "requirement": "Custom Wii U HUD: ten element groups, six action buttons, diamond/spacing/rotation, three presets, minimap and opacity",
+      "status": "HUD controls and three presets are integrated into the native menu alongside camera/movement, Player and advanced touch settings. Atomic partial writes preserve canonical/runtime unknown fields. Physical Odin native callback, preset and persistence tests pass; complete gameplay layout qualification remains required.",
+      "remasked_sources": [
+        "src/mm3d/hud_adjustments.h",
+        "src/mm3d/hud_buttons.h",
+        "src/mm3d/player_hud.h"
+      ],
+      "native_evidence": "titles/mm3d/dekui/{hud_adjustments,hud_buttons,player_hud}.h",
+      "promotion_status": "required, not yet gameplay-qualified"
+    },
+    {
+      "id": "single_screen",
+      "requirement": "Gear, masks, items, maps, notebook, file select, dialogue and ocarina",
+      "status": "upstream foundation present; gear photo/backdrop and some input/equip features explicitly deferred",
+      "remasked_sources": [
+        "src/mm3d/native_inventory.h",
+        "src/mm3d/native_notebook.h"
+      ],
+      "native_evidence": "titles/mm3d/releases/0.5.0-alpha.1.md",
+      "promotion_status": "required, not yet gameplay-qualified"
+    },
+    {
+      "id": "models",
+      "requirement": "Adult, Dark, Twilight Princess and PAK models; tunics, swords, voices and textures",
+      "status": "Built-in/PAK selections, variants, voice and texture layers are connected. Built-in and imported adult draw height and Ocarina framing are device-qualified; adult and child conversion/classification tests pass. Broader appearance and in-game torch-contact qualification remain open.",
+      "remasked_sources": [
+        "tools/mm3d/mod_import",
+        "tools/mm3d/generate_tp_mod.py",
+        "tools/mm3d/import_pak.py",
+        "src/mm3d/model_mod.h",
+        "src/mm3d/tunic_color.h",
+        "src/mm3d/player_model_scale.h",
+        "src/mm3d/mounted_player.h",
+        "src/mm3d/adult_stick_contact.h"
+      ],
+      "native_evidence": "titles/mm3d/adapter/mm3d_title_session.cpp",
+      "promotion_status": "required, not yet gameplay-qualified",
+      "android_native": {
+        "pak_loader": "Built-in SAF picker, same data-only PAK converter, atomic install, original-model restore and native RomFS actor layer",
+        "existing_models": "Adult/Dark/Twilight actors copied read-only into isolated app; selected actor layer observed in native boot log",
+        "tests": "Physical Odin full ARM64 adult PAK conversion and classification checks passed. Active actor and saves unchanged. Real child Malon host conversion retains child stature.",
+        "qualification": "Signed original-ID 0.5.0-rc.2 on Odin: user confirmed imported adult height and Ocarina camera correct. Other appearance variants and torch-contact gameplay still need their own checks.",
+        "stature": "Package age metadata is retained; legacy adult source_form=0 imports use the shared tall draw, camera and contact hooks without reimporting. Child rigs retain child stature."
+      }
+    },
+    {
+      "id": "camera_movement",
+      "requirement": "Independent FOV and camera distance; walk, climb, swim speed",
+      "status": "Camera distance and walk/climb/swim are wired into guarded native hooks, live settings and a private matching AOT title. Original behavior fixtures pass against the owned code image; actual boot enabled all 358 patch sites. Native renderer FOV exists; canonical FOV parity remains unqualified.",
+      "remasked_sources": [
+        "src/mm3d/camera_distance.h",
+        "src/mm3d/movement_speed.h",
+        "src/mm3d/settings.h"
+      ],
+      "native_evidence": "titles/mm3d/adapter/mm3d_presentation_settings.h",
+      "promotion_status": "required, not yet gameplay-qualified"
+    },
+    {
+      "id": "input",
+      "requirement": "Remapping, R3 Pictograph, Select, visibility, scale, touch and hotplug",
+      "status": "Original ReMasked Android touch view and vector assets ported into the private native app; donor overlay disabled. Native bumper I/II and trigger target/shield mapping retained; R3 Pictograph restored with a short-lived guest input request.",
+      "remasked_sources": [
+        "src/android/app/src/main/java/org/citra/citra_emu/overlay/ReMaskedTouchControls.java",
+        "src/mm3d/pictograph.h"
+      ],
+      "native_evidence": "ports/android/README.md",
+      "promotion_status": "required, not yet gameplay-qualified",
+      "native_item_bumpers": {
+        "layout": "L/R bumpers use I/II; ZL/ZR triggers target/shield",
+        "migration": "Only the complete original default shoulder map is migrated; custom bindings remain",
+        "tests": "Direct item use/assignment, usability, release and instrument-note fixtures pass",
+        "device_qualification": "tvOS and Android native libraries compiled; pending physical item-use check"
+      },
+      "android_touch": {
+        "source": "0.4.4 ReMaskedTouchControls.java and ten original vector drawables",
+        "features": [
+          "neutral gameplay glyphs",
+          "Start and Select",
+          "item I/II bumpers and target/shield triggers",
+          "floating movement and camera sticks",
+          "three face layouts",
+          "per-control visibility",
+          "opacity and size",
+          "orientation-specific saved placement and reset",
+          "controller auto-hide",
+          "native HUD item anchors",
+          "cancellation on pause/focus loss",
+          "individual control size sliders",
+          "idle-controller filtering",
+          "native D-pad item relocation"
+        ],
+        "tests": "Physical Odin instrumentation passed vector drawing/transparency, anchors, gestures, releases, editing/reset, visibility, saved appearance routing, PAK priority and idle-controller filtering. Original vector View in a transparent non-focusable application panel renders over SDL Vulkan title/intro; touch Start, settings access and gamepad auto-hide observed. Full gameplay HUD placement remains unqualified."
+      }
+    },
+    {
+      "id": "assets",
+      "requirement": "Custom texture packs including nested matching, generated assets and importers",
+      "status": "validate Azahar texture replacement plus native RomFS overlay and correct order",
+      "remasked_sources": [
+        "tools/mm3d/generate_tp_mod.py",
+        "src/mm3d/texture_picker.cpp"
+      ],
+      "native_evidence": "docs/MOONFALL_CURSE.md",
+      "promotion_status": "required, not yet gameplay-qualified"
+    },
+    {
+      "id": "saves",
+      "requirement": "Preserve original files; prove native save import, region mapping and rollback",
+      "status": "Private native app uses copies; three Android saves backed up and hashes checked across updates. Classic saving, classic Song of Double Time and sword-only owl activation are enabled in the old profile but remain incomplete native ports. Full cycle/rollback qualification remains required.",
+      "remasked_sources": [
+        "src/mm3d/classic_save_store.h",
+        "src/mm3d/game_folder.h"
+      ],
+      "native_evidence": "docs/TRIAEVUM_USER_DATA.md",
+      "promotion_status": "required, not yet gameplay-qualified"
+    },
+    {
+      "id": "platforms",
+      "requirement": "Windows, Linux, macOS arm64 and Android arm64 with existing app identity",
+      "status": "Physical Android and tvOS native game boot/rendering achieved in isolated prototypes. Desktop native migration remains unqualified; 0.4.4 source and releases retained.",
+      "remasked_sources": [
+        "README.md"
+      ],
+      "native_evidence": "ports/macos/runtime/CMakeLists.txt",
+      "promotion_status": "required, not yet gameplay-qualified"
+    },
+    {
+      "id": "region",
+      "requirement": "Existing USA Rev1 support and English/French/Spanish selection",
+      "status": "MM3D native release accepts EUR only; byte-identical code claim is not input compatibility",
+      "remasked_sources": [
+        "resources/mm3d/supported-rom.json"
+      ],
+      "native_evidence": "tools/triaevum_release/title_release.py",
+      "promotion_status": "required, not yet gameplay-qualified"
+    },
+    {
+      "id": "timing_audio",
+      "requirement": "30 Hz gameplay with 60 Hz presentation, correct menus, audio, camera and effects",
+      "status": "native integration and full-cycle gameplay comparisons required",
+      "remasked_sources": [
+        "src/mm3d/interpolation_timeline.h",
+        "src/mm3d/settings.h"
+      ],
+      "native_evidence": "titles/mm3d/adapter/mm3d_frame_pacing.md",
+      "promotion_status": "required, not yet gameplay-qualified"
+    },
+    {
+      "id": "branding",
+      "requirement": "Majora ReMasked menus, chosen icons and Android signing continuity",
+      "status": "Android uses the original ReMasked mask artwork, fonts, backdrop, purple focus styling and Start game / Settings / About / Exit launcher. Startup Settings opens the native settings menu. Production identity/data unchanged; Apple TV untouched by this update.",
+      "remasked_sources": [
+        "src/citra_qt/launcher_icon.cpp"
+      ],
+      "native_evidence": "titles/mm3d/product.json",
+      "promotion_status": "required, not yet gameplay-qualified"
+    }
+  ],
+  "promotion_gates": [
+    "Native Windows/Linux build/boot from an owned supported input in isolated data directory.",
+    "Prove existing USA Rev1 input and save compatibility; keep original data and emulator fallback.",
+    "Port all ReMasked-specific settings, HUD and mod pipelines through explicit backend APIs; no raw address copy.",
+    "Compare HUD captures and controls across gameplay, menus, transformations and aspect ratios.",
+    "Validate every model, voice, sword and texture path; settings roundtrip and save/reload without loss.",
+    "Qualify Android and macOS MM3D before replacing those releases; preserve Android package ID/certificate.",
+    "Full three-day-cycle progression, dungeons, bosses, time reset, owl saves, input hotplug, audio and performance.",
+    "Repeat privacy, archive, original-dialogue and game-data distribution audits."
+  ],
+  "distribution_gates": [
+    "Do not redistribute iMMERSE/MXAO under upstream project-only permission; keep disabled unless separately authorized by its owner.",
+    "Current upstream packaging ships translated game-title modules/source. Existing ReMasked policy excludes unapproved game-derived payloads; decide an acceptable title-generation/distribution approach before packaging.",
+    "Preserve component licenses, attributions, exact source and pinned dependencies."
+  ],
+  "android_promotion_requirements": {
+    "branding": "Majora ReMasked naming and existing ReMasked icon; Apple TV name/artwork are TV-only",
+    "pak_model_loader": "Required built-in PAK selection, conversion, atomic install and native actor application; not optional",
+    "production_isolation": "Native testing uses a separate app ID and copied inputs; preserve 0.4.4",
+    "qualification": "Actual game boot, rendering, controls, model import and saves require device checks"
+  },
+  "android_native_milestone": {
+    "application_id": "io.github.otpr26.remasked.nativegame",
+    "display_name": "Majora ReMasked",
+    "branding": "Existing ReMasked launcher_icon_0; Apple TV-only artwork/name excluded",
+    "game_boot": "Real MM3D 3D intro rendered on physical Odin 2 Portal with app-local Mesa Turnip at approximately 30 FPS",
+    "renderer": "Vulkan/NRI and statically linked matching MM3D AOT title; original Adreno driver rejects one pipeline",
+    "models": "PAK loader and original/Adult/Dark/Twilight selection retained; saved sword/tunic variants, voices and texture layers connected. Valid PAK gameplay and all appearance options still require device qualification.",
+    "original_app": "Original production app and its data remain installed and untouched; observed Odin production version was 0.4.3. Published 0.4.4 source/release remain intact.",
+    "status": "prototype; full gameplay, controls and feature parity still require qualification",
+    "touch_controls": "Original ReMasked controls replace the donor Android overlay; device instrumentation passed. Broader native feature parity remains incomplete.",
+    "menu_alignment": {
+      "categories": [
+        "General",
+        "Controls",
+        "Touch",
+        "Graphics",
+        "Audio",
+        "HUD",
+        "Quality of life",
+        "Models",
+        "Saves",
+        "About"
+      ],
+      "photo_mode": "Removed from Android menu, advanced panel registration and free-camera shortcuts; game Pictograph retained",
+      "locations": {
+        "App icon": "General",
+        "Menu size": "General",
+        "Camera distance": "Graphics",
+        "Movement speeds": "Quality of life",
+        "Audio": "Audio",
+        "Touch input": "Touch",
+        "PAK Model Loader": "Models"
+      },
+      "qol": [
+        "Walking/climbing/swimming speed",
+        "Quick put away",
+        "Roll dash",
+        "Tatl reminders",
+        "Bomber interruptions",
+        "Low-health beep",
+        "Damage multiplier",
+        "Enhanced defense",
+        "Heart/rupee/fairy/magic/ammo drops",
+        "Death penalties",
+        "Bottle healing",
+        "Double shop prices (next launch)"
+      ],
+      "touch": [
+        "Fixed/floating movement",
+        "Camera stick/drag-to-look",
+        "Shoulder labels",
+        "Equipped item artwork opacity",
+        "Per-control size/visibility/placement"
+      ],
+      "saves": "Native GameContent/saves; on-device route observed all three slots; isolated ZIP roundtrip and CRC rejection passed",
+      "compatibility_fields_not_implemented_or_exposed": [
+        "classic_saving",
+        "classic_double_time",
+        "sword_activate_owls",
+        "fast_time",
+        "advance_six_hours_on_death",
+        "price_multiplier (arbitrary values)"
+      ],
+      "navigation": "ReTuned two-region settings: left categories, single inline settings page, switches/sliders/dropdowns and collapsible groups; purple palette",
+      "default_menu_size": "1.00x with ReTuned Android density and overlay-to-viewport scaling; adjustable 0.50x\u20131.25x",
+      "custom_textures": "On enables bundled HD/world textures; Off disables them; required HUD/model layers retained",
+      "punctuation": "Fira regular, bold and condensed atlases cover typographic apostrophes, quotes, dashes and ellipsis",
+      "font_rasterization": "Nearby baked Fira sizes preserve small glyph strokes; native Android output separates interface resolution from game render scale",
+      "output_resolution": "Native display by default; 720p/1080p options apply next launch; game render scale adjustable independently in 1% steps",
+      "startup_settings": "Independent file-backed GLES settings host; shared view/owners, no game process or shader preparation. Live game uses existing pause menu.",
+      "data_menu": "Replaces Saves: direct native save ZIP/raw-slot import, save ZIP export, current data root, verified custom-folder move and app-folder return",
+      "graphics_driver": "Inline selected driver, Use system driver and Choose driver ZIP; Android document picker opens directly, selection applies next game launch",
+      "data_folder": "Local device/SD directory, explicit Android file access; verified staging, JSON-path relocation, atomic selection, original cleanup and failure rollback"
+    }
+  },
+  "platform_graphics_policy": {
+    "android": "Only build-supported controls are exposed. Conditional choices use the current renderer report or a private report keyed to driver and OS. Opening startup Settings never initializes the game renderer.",
+    "desktop_requirement": "Android menu exclusions are platform policy, not removal requests. Retain and qualify supported desktop window modes, upscalers, GI, CACAO, MXAO, SSSR and advanced renderer controls against each desktop build and GPU. Do not apply Android filtering to desktop ports.",
+    "evidence": [
+      "ports/remasked/runtime/android_graphics_policy.h",
+      "ports/remasked/runtime/android_graphics_support.h"
+    ],
+    "desktop_qualification": "pending per platform; presence upstream does not establish compiled or working support"
+  },
+  "android_dual_screen": {
+    "selection": "General > Screen mode: Single Screen (default) or Dual Screen. Saved choice survives missing display; effective mode falls back to single.",
+    "implementation": "Android Presentation and a second Vulkan swapchain on the existing device/queue, adapted from ReTuned. Native 320x240 lower-screen touch mapped inside a centered 4:3 picture; release on lifecycle/display changes. No CPU framebuffer readback.",
+    "mm3d_mapping": "Recognize the aligned lower-image alias inside the shared 512x400 GPU attachment; preserve native lower viewport coordinates; use secondary dimensions and guest aspect for scanout. Single-screen relocation is suspended between complete layout scopes while Dual is active.",
+    "hardware_verification": "AYN Thor: lower title, file selection, loaded save and Items page visible; lower touch selected the save and opened Items. Live Single-to-Dual and Dual-to-Single while Items open, plus Settings pause/resume, verified.",
+    "tests": "Nine framebuffer/display-transfer host tests, responsive settings host tests, and Thor instrumentation covering actual lower touch mapping plus existing touch/controller/menu/PAK/data checks passed.",
+    "limits": "Long-session performance and physical removal/reconnection of a second screen still require broader hardware testing. Existing ReMasked branding, controller mapping, HUD and PAK loader retained."
+  },
+  "ios_duo": {
+    "template": "ReTuned UIKit hinge/reserved-region observer and safe-area display policy; no device-name or midpoint detection.",
+    "selection": "General > Screen mode on hinge-capable phones; persist requested Single/Dual mode across folding and temporary fallback.",
+    "implementation": "Single Vulkan/Metal swapchain with distinct opaque native LCD viewports; lower-screen touch maps to native 320x240 and rejects gutters/active occlusions. Native menu placement/backing, neutral lower item glyphs and mobile Start/Select routing reused.",
+    "build": "Separate Majora ReMasked iOS identity and approved combined icon. Static current title AOT, immutable owner assets, no dynamic game-code generation. Simulator index rebasing precedes scene/shadow capture; physical-device indexed draws are unchanged. Full simulator and physical-device iOS app bundles now compile, link and stage successfully; device bundle reports IOS/minimum17/SDK27.2. Development-signed with the dedicated ReMasked CloudKit profile and installed as Majora ReMasked on the owner iPhone 17 Pro Max (iOS 27.3).",
+    "verification": "Geometry/touch mapping, index rebasing and iOS/Android pause-navigation fixtures pass. Simulator and physical-device app builds pass. Simulator: loaded gameplay, live portrait/landscape rotation, Items/Masks both directions, native item selection and Return verified using UIKit taps after scripted boot handed off. Latest build closes to Single and reopens to Dual while Items stays open, without an unwanted OS keyboard. Physical iPhone: install and normal launch succeeded; Apple A19 Pro Metal/Vulkan initialization, guest frames and stored pipeline cache observed, process remained live during initial smoke check. No gameplay/controller/gyro qualification claimed. Build 3 adds passing SDL scene/motion patch tests, lifecycle duplicate/missed-background tests and responsive shared-settings tests. Native launcher/settings/import actions and Single landscape guest rendering verified in simulator. Latest physical launcher verified without GPU preparation.",
+    "remaining": "User check of final physical iPhone gameplay and touch response; physical Duo installation, performance/controller/gyro qualification; hardware background/resume and quit/restart; external Files-folder and save import/export flows; alternate Home Screen icon changes. Existing Android/tvOS apps are unchanged.",
+    "startup_and_settings": "Native purple ReMasked launcher runs on the UIKit application loop before SDL/game renderer initialization. Startup and in-game settings use the shared Android ten-category document through native UIKit controls, with supported iOS filtering, touch layout/preferences, inline app icons, language, models and save import/export. Physical iPhone build 3 installed; launcher visually verified and logs confirm renderer remains stopped until Start game.",
+    "prepared_models": "Builtin Adult/Dark/TP assets staged with a verified private manifest. PAK Model Loader imports prepared model folders preloaded into app Documents or chosen through Files; raw PAK conversion remains on Android/desktop. Simulator valid import and model-layer streaming passed; invalid symlink folder rejected without replacing the active model.",
+    "touch_controls": "ReTuned UIKit touch implementation adapted to ReMasked input owners and Android geometry: neutral ABXY, item I/II bumpers, target/shield triggers, D-pad, Start/Select/Settings, fixed/floating movement, hidden camera stick, opacity/size/layout and HUD anchors. Compiled for simulator and hardware; final physical gameplay/touch verification pending. Physical user confirmed game rendering and working controls in build 3; icon alignment defect traced to output-versus-picture coordinates and corrected in build 4 (physical landscape visual check passed for equipped items and D-pad; A verb not active in observed frame).",
+    "ordinary_iphone_portrait": "Build 7 installed and physical portrait gameplay visually verified: safe-area game picture above neutral controls, normal native HUD retained in game. Landscape retains anchored touch-art path; live portrait-to-landscape-to-portrait geometry/control-mode switching verified in device log. Unknown UIHinge placeholder no longer misclassifies ordinary iPhone as hinged; real hinge evidence and transient-state fixtures passed. Portrait control-layout preferences are separate. Physical Duo requalification remains pending. Build 8 removes side margins, uses the full lower safe region with aligned thumb rows and explicit ABXY/system-row clearance, and removes duplicate touch Select while retaining physical-controller Select. Physical picture width, row spacing and two-button system row visually verified; portrait/Retina/spacing fixtures pass.",
+    "portrait_artwork_comparison": "Build 10 installed: Touch > Portrait item artwork on controls, default off. Separate full-window host UI pass captures final native item/glyph geometry and per-pane atlas UV transforms, with HD texture lookup. Native geometry bound to GSP submissions/presented frames. Off/hidden controls/texture failure restore normal HUD. Capture/frame/texture/UV regression fixtures pass; user confirmed correct icons and Off restoration. Longer play, A-action/counter scenarios and physical Duo requalification remain open."
+  },
+  "pak_stature_regression": {
+    "android_odin": "Installed 0.5.0-rc.2; full ARM64 adult conversion, active actor/save preservation and user height/camera check passed",
+    "ios": "Shared metadata classification and per-session stature handling built and signed as build 15; not installed",
+    "legacy_imports": "Existing adult rig reports work without reimport",
+    "child_models": "Actual child PAK conversion retained child classification"
+  }
+}

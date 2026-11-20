@@ -1,0 +1,37 @@
+[package]
+name = "forge-mods"
+description = "TriAevum Forge: optional hd ui texture pack and romfs mods with verified downloads"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[features]
+default = ["https"]
+# The rustls-based blocking HTTP client. Without it callers supply a `Downloader`.
+https = ["dep:ureq", "dep:rustls"]
+# Python's zipfile also reads bzip2 and lzma members. The pack reader enables
+# only stored and deflate by default; turn these on if the real archive needs them.
+zip-bzip2 = ["zip/bzip2"]
+zip-lzma = ["zip/lzma"]
+
+[dependencies]
+forge-base = { path = "../forge-base" }
+serde_json.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"], optional = true }
+
+# Desktop trusts the operating system's verifier. Android reads the system
+# certificate folders itself (http.rs), so the platform verifier and its
+# Java component stay out of libtriaevum_forge.so.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+ureq = { version = "3", default-features = false, features = ["rustls-no-provider", "platform-verifier"], optional = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+ureq = { version = "3", default-features = false, features = ["rustls-no-provider"], optional = true }
+
+[dev-dependencies]
+tempfile.workspace = true

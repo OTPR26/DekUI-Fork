@@ -1,0 +1,368 @@
+// Developer diagnostic (TRIAEVUM_RASTER_STATS=1): what the draws of the guided
+// native PICA scene target cost the rasterizer. Per 300 frames it prints the
+// draw-state mix of those draws and, when the device enables
+// pipelineStatisticsQuery, the fragment-shader invocations of every guided
+// native scope against the target's pixel count (overdraw). Zero cost when off.
+#pragma once
+#ifdef ENABLE_OOT3D_VULKAN
+
+#include <vulkan/vulkan.h>
+
+#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <string_view>
+#include <map>
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace Fast::RasterStats {
+
+// 1: one query per guided scope. 2: one query per guided draw, split by draw
+// class (opaque, opaque with discard, blended, other) instead.
+[[nodiscard]] inline int Level() noexcept {
+    static const int level = [] {
+        const char* value = std::getenv("TRIAEVUM_RASTER_STATS");
+        if (value == nullptr)
+            return 0;
+        const std::string_view text(value);
+        return text == "1" ? 1 : text == "2" ? 2 : 0;
+    }();
+    return level;
+}
+[[nodiscard]] inline bool Enabled() noexcept { return Level() != 0; }
+[[nodiscard]] inline bool PerDraw() noexcept { return Level() == 2; }
+
+// Developer experiment (TRIAEVUM_RASTER_SKIP=<hex pipeline id>[,<hex>...]): guided
+// draws whose canonical pipeline id is listed are not recorded. Changes the image.
+// Also accepts "all", "opaque" (depth test + write, not blended), "blended" and "ui" (UI domain).
+[[nodiscard]] inline bool SkipPipeline(uint64_t id, bool blended = false, bool opaque = false,
+                                       bool ui = false) noexcept {
+    static const std::string list = [] {
+        const char* value = std::getenv("TRIAEVUM_RASTER_SKIP");
+        return value == nullptr ? std::string() : "," + std::string(value) + ",";
+    }();
+    if (list.empty())
+        return false;
+    if (list.find(",all,") != std::string::npos || (blended && list.find(",blended,") != std::string::npos) ||
+        (opaque && list.find(",opaque,") != std::string::npos) || (ui && list.find(",ui,") != std::string::npos))
+        return true;
+    char text[24];
+    std::snprintf(text, sizeof(text), ",%llx,", static_cast<unsigned long long>(id));
+    return list.find(text) != std::string::npos;
+}
+
+// Level 2 draw key: class (bits 0-1), depth test (2), depth write (3), discard (4),
+// stencil enabled (5), stencil writes (6), explicit depth (7), blend source RGB (8-11),
+// destination RGB (12-15), RGB equation (16-19), composition domain (20-23).
+[[nodiscard]] inline uint32_t PackDrawKey(uint32_t drawClass, bool depthTest, bool depthWrite, bool discard,
+                                          bool stencil, bool stencilWrites, bool explicitDepth, uint32_t sourceRgb,
+                                          uint32_t destRgb, uint32_t equation, uint32_t domain) noexcept {
+    return (drawClass & 3U) | (depthTest ? 4U : 0U) | (depthWrite ? 8U : 0U) | (discard ? 16U : 0U) |
+           (stencil ? 32U : 0U) | (stencilWrites ? 64U : 0U) | (explicitDepth ? 128U : 0U) | ((sourceRgb & 15U) << 8) |
+           ((destRgb & 15U) << 12) | ((equation & 15U) << 16) | ((domain & 15U) << 20);
+}
+
+enum DrawClass : uint32_t { kOpaque = 0, kOpaqueDiscard = 1, kBlended = 2, kOther = 3, kClasses = 4 };
+
+// Set by device creation when the feature was enabled for this diagnostic.
+inline bool gPipelineStatisticsEnabled = false;
+
+struct DrawState {
+    bool ExplicitDepth = false;
+    bool Discard = false;
+    bool DepthTest = false;
+    bool DepthWrite = false;
+    bool Blend = false;
+    bool OpaqueWorld = false;
+    uint32_t Attachments = 0;
+};
+
+class Collector {
+public:
+    static Collector& Instance() {
+        static Collector collector;
+        return collector;
+    }
+
+    // Outside any rendering scope, before the native scope begins: resets the
+    // query this scope will use. Returns false when no query is recorded.
+    bool PrepareScope(VkDevice device, VkCommandBuffer commandBuffer, uint32_t slot, uint32_t frame,
+                      bool guided, uint32_t width, uint32_t height) {
+        AdvanceFrame(device, slot, frame);
+        if (!guided)
+            return false;
+        ++mScopes;
+        mFramePixels = std::max<uint64_t>(mFramePixels, uint64_t{ width } * height);
+        if (PerDraw() || !gPipelineStatisticsEnabled || slot >= kSlots || mSlots[slot].Used >= kQueriesPerSlot ||
+            !EnsurePool(device))
+            return false;
+        mPendingQuery = slot * kQueriesPerSlot + mSlots[slot].Used++;
+        vkCmdResetQueryPool(commandBuffer, mPool, mPendingQuery, 1);
+        return true;
+    }
+
+    // Inside the scope, right after it began.
+    void BeginQuery(VkCommandBuffer commandBuffer) {
+        vkCmdBeginQuery(commandBuffer, mPool, mPendingQuery, 0);
+        mQueryActive = true;
+    }
+
+    // Inside the scope, before it ends.
+    void EndQuery(VkCommandBuffer commandBuffer) {
+        if (!mQueryActive)
+            return;
+        vkCmdEndQuery(commandBuffer, mPool, mPendingQuery);
+        mQueryActive = false;
+    }
+
+    // Level 2: outside any rendering scope, before a guided scope begins.
+    void ResetDrawQueries(VkDevice device, VkCommandBuffer commandBuffer, uint32_t slot, uint32_t frame) {
+        AdvanceFrame(device, slot, frame);
+        if (!gPipelineStatisticsEnabled || slot >= kSlots || mSlots[slot].DrawReset || !EnsureDrawPool(device))
+            return;
+        vkCmdResetQueryPool(commandBuffer, mDrawPool, slot * kDrawQueriesPerSlot, kDrawQueriesPerSlot);
+        vkCmdResetQueryPool(commandBuffer, mOcclusionPool, slot * kDrawQueriesPerSlot, kDrawQueriesPerSlot);
+        mSlots[slot].DrawReset = true;
+    }
+
+    // Level 2: around one guided draw's commands, inside the scope.
+    // Every 600 frames, draws of more than 1 M invocations (TRIAEVUM_RASTER_TRACE_MIN) are printed with this text.
+    [[nodiscard]] bool TraceFrame() const noexcept { return mFrame % 600U == 5U; }
+    // Guided draws recorded so far in this slot's frame (the order of the next one).
+    [[nodiscard]] uint32_t DrawOrder(uint32_t slot) const noexcept {
+        return slot < kSlots ? mSlots[slot].DrawUsed : 0U;
+    }
+
+    bool BeginDraw(VkDevice device, VkCommandBuffer commandBuffer, uint32_t slot, uint32_t frame, uint32_t drawKey,
+                   std::string trace = {}) {
+        AdvanceFrame(device, slot, frame);
+        if (!gPipelineStatisticsEnabled || slot >= kSlots || !mSlots[slot].DrawReset ||
+            mSlots[slot].DrawUsed >= kDrawQueriesPerSlot || mDrawPool == VK_NULL_HANDLE)
+            return false;
+        // Traced draws carry their order in the frame: the index among this
+        // slot's guided draws and how many opaque draws preceded them.
+        if (!trace.empty())
+            trace = "order=" + std::to_string(mSlots[slot].DrawUsed) + " opaque_before=" +
+                    std::to_string(mSlots[slot].OpaqueUsed) + " " + trace;
+        if ((drawKey & 3U) == kOpaque || (drawKey & 3U) == kOpaqueDiscard)
+            ++mSlots[slot].OpaqueUsed;
+        const uint32_t index = slot * kDrawQueriesPerSlot + mSlots[slot].DrawUsed++;
+        mDrawClasses[index] = drawKey;
+        mTraces[index] = std::move(trace);
+        vkCmdBeginQuery(commandBuffer, mDrawPool, index, 0);
+        vkCmdBeginQuery(commandBuffer, mOcclusionPool, index, 0);
+        mPendingDrawQuery = index;
+        return true;
+    }
+    void EndDraw(VkCommandBuffer commandBuffer) {
+        vkCmdEndQuery(commandBuffer, mOcclusionPool, mPendingDrawQuery);
+        vkCmdEndQuery(commandBuffer, mDrawPool, mPendingDrawQuery);
+    }
+
+    void RecordDraw(const DrawState& draw) {
+        ++mDraws;
+        mExplicitDepth += draw.ExplicitDepth ? 1U : 0U;
+        mDiscard += draw.Discard ? 1U : 0U;
+        mDepthTestOff += draw.DepthTest ? 0U : 1U;
+        mDepthWriteOff += draw.DepthWrite ? 0U : 1U;
+        mBlend += draw.Blend ? 1U : 0U;
+        mOpaqueWorld += draw.OpaqueWorld ? 1U : 0U;
+        mAttachments += draw.Attachments;
+    }
+
+private:
+    static constexpr uint32_t kSlots = 2;
+    static constexpr uint32_t kQueriesPerSlot = 32;
+    static constexpr uint32_t kDrawQueriesPerSlot = 1024;
+    static constexpr uint64_t kReportFrames = 300;
+
+    struct Slot {
+        uint32_t Frame = UINT32_MAX;
+        uint32_t Used = 0;
+        uint32_t DrawUsed = 0;
+        uint32_t OpaqueUsed = 0;
+        bool DrawReset = false;
+    };
+
+    bool EnsureDrawPool(VkDevice device) {
+        if (mDrawPool != VK_NULL_HANDLE)
+            return true;
+        if (mDrawPoolFailed)
+            return false;
+        VkQueryPoolCreateInfo info{ VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO };
+        info.queryType = VK_QUERY_TYPE_PIPELINE_STATISTICS;
+        info.queryCount = kSlots * kDrawQueriesPerSlot;
+        info.pipelineStatistics = VK_QUERY_PIPELINE_STATISTIC_FRAGMENT_SHADER_INVOCATIONS_BIT;
+        VkQueryPoolCreateInfo occlusion{ VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO };
+        occlusion.queryType = VK_QUERY_TYPE_OCCLUSION;
+        occlusion.queryCount = kSlots * kDrawQueriesPerSlot;
+        if (vkCreateQueryPool(device, &occlusion, nullptr, &mOcclusionPool) != VK_SUCCESS ||
+            vkCreateQueryPool(device, &info, nullptr, &mDrawPool) != VK_SUCCESS) {
+            mDrawPool = VK_NULL_HANDLE;
+            mDrawPoolFailed = true;
+            return false;
+        }
+        return true;
+    }
+
+    bool EnsurePool(VkDevice device) {
+        if (mPool != VK_NULL_HANDLE)
+            return true;
+        if (mPoolFailed)
+            return false;
+        VkQueryPoolCreateInfo info{ VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO };
+        info.queryType = VK_QUERY_TYPE_PIPELINE_STATISTICS;
+        info.queryCount = kSlots * kQueriesPerSlot;
+        info.pipelineStatistics = VK_QUERY_PIPELINE_STATISTIC_FRAGMENT_SHADER_INVOCATIONS_BIT;
+        if (vkCreateQueryPool(device, &info, nullptr, &mPool) != VK_SUCCESS) {
+            mPool = VK_NULL_HANDLE;
+            mPoolFailed = true;
+            std::fprintf(stderr, "[raster-stats] pipeline statistics query pool unavailable\n");
+            return false;
+        }
+        return true;
+    }
+
+    // A slot is recorded again only after its previous submission completed,
+    // so its queries are read without waiting.
+    void AdvanceFrame(VkDevice device, uint32_t slot, uint32_t frame) {
+        if (frame == mFrame)
+            return;
+        mFrame = frame;
+        mPixels += mFramePixels;
+        mFramePixels = 0;
+        if (++mFrames >= kReportFrames)
+            Report();
+        if (slot >= kSlots || mSlots[slot].Frame == frame)
+            return;
+        auto& state = mSlots[slot];
+        if (state.Used != 0U && mPool != VK_NULL_HANDLE) {
+            std::array<uint64_t, kQueriesPerSlot> results{};
+            if (vkGetQueryPoolResults(device, mPool, slot * kQueriesPerSlot, state.Used,
+                                      sizeof(uint64_t) * state.Used, results.data(), sizeof(uint64_t),
+                                      VK_QUERY_RESULT_64_BIT) == VK_SUCCESS) {
+                for (uint32_t index = 0; index < state.Used; ++index)
+                    mInvocations += results[index];
+                ++mQueriedFrames;
+            }
+        }
+        if (state.DrawUsed != 0U && mDrawPool != VK_NULL_HANDLE) {
+            std::array<uint64_t, kDrawQueriesPerSlot> results{};
+            std::array<uint64_t, kDrawQueriesPerSlot> passed{};
+            if (vkGetQueryPoolResults(device, mDrawPool, slot * kDrawQueriesPerSlot, state.DrawUsed,
+                                      sizeof(uint64_t) * state.DrawUsed, results.data(), sizeof(uint64_t),
+                                      VK_QUERY_RESULT_64_BIT) == VK_SUCCESS &&
+                vkGetQueryPoolResults(device, mOcclusionPool, slot * kDrawQueriesPerSlot, state.DrawUsed,
+                                      sizeof(uint64_t) * state.DrawUsed, passed.data(), sizeof(uint64_t),
+                                      VK_QUERY_RESULT_64_BIT) == VK_SUCCESS) {
+                for (uint32_t index = 0; index < state.DrawUsed; ++index) {
+                    const uint32_t key = mDrawClasses[slot * kDrawQueriesPerSlot + index];
+                    mClassInvocations[key & 3U] += results[index];
+                    auto& entry = mKeys[key];
+                    entry.Invocations += results[index];
+                    entry.Passed += passed[index];
+                    ++entry.Draws;
+                    auto& trace = mTraces[slot * kDrawQueriesPerSlot + index];
+                    // TRIAEVUM_RASTER_TRACE_MIN=n: print traced draws above n invocations (default 1 M).
+                    static const uint64_t traceMinimum = [] {
+                        const char* value = std::getenv("TRIAEVUM_RASTER_TRACE_MIN");
+                        return value != nullptr ? std::strtoull(value, nullptr, 10) : 1000000ULL;
+                    }();
+                    if (!trace.empty() && results[index] >= traceMinimum)
+                        std::fprintf(stderr, "[raster-draw] key=%x invocations=%llu passed=%llu %s\n", key,
+                                     static_cast<unsigned long long>(results[index]),
+                                     static_cast<unsigned long long>(passed[index]), trace.c_str());
+                    trace.clear();
+                }
+                ++mDrawQueriedFrames;
+            }
+        }
+        state.Frame = frame;
+        state.Used = 0;
+        state.DrawUsed = 0;
+        state.OpaqueUsed = 0;
+        state.DrawReset = false;
+    }
+
+    void Report() {
+        const double frames = static_cast<double>(mFrames);
+        const double pixelsPerFrame = static_cast<double>(mPixels) / frames;
+        const double invocationsPerFrame =
+            mQueriedFrames == 0U ? 0.0 : static_cast<double>(mInvocations) / static_cast<double>(mQueriedFrames);
+        std::fprintf(stderr,
+                     "[raster-stats] frames=%llu scopes=%llu draws=%llu explicit_depth=%llu discard=%llu "
+                     "depth_write_off=%llu depth_test_off=%llu blend=%llu opaque_world=%llu "
+                     "attachments_mean=%.2f fs_invocations_per_frame=%.0f pixels=%.0f overdraw=%.2f%s\n",
+                     static_cast<unsigned long long>(mFrames), static_cast<unsigned long long>(mScopes),
+                     static_cast<unsigned long long>(mDraws), static_cast<unsigned long long>(mExplicitDepth),
+                     static_cast<unsigned long long>(mDiscard), static_cast<unsigned long long>(mDepthWriteOff),
+                     static_cast<unsigned long long>(mDepthTestOff), static_cast<unsigned long long>(mBlend),
+                     static_cast<unsigned long long>(mOpaqueWorld),
+                     mDraws == 0U ? 0.0 : static_cast<double>(mAttachments) / static_cast<double>(mDraws),
+                     invocationsPerFrame, pixelsPerFrame,
+                     pixelsPerFrame > 0.0 ? invocationsPerFrame / pixelsPerFrame : 0.0,
+                     gPipelineStatisticsEnabled ? "" : " (no pipeline statistics)");
+        if (PerDraw() && mDrawQueriedFrames != 0U) {
+            const double n = static_cast<double>(mDrawQueriedFrames);
+            std::fprintf(stderr,
+                         "[raster-stats] per-draw fs_invocations_per_frame opaque=%.0f opaque_discard=%.0f "
+                         "blended=%.0f other=%.0f pixels=%.0f\n",
+                         mClassInvocations[kOpaque] / n, mClassInvocations[kOpaqueDiscard] / n,
+                         mClassInvocations[kBlended] / n, mClassInvocations[kOther] / n, pixelsPerFrame);
+        }
+        if (PerDraw() && mDrawQueriedFrames != 0U) {
+            const double n = static_cast<double>(mDrawQueriedFrames);
+            std::vector<std::pair<uint32_t, KeyStats>> keys(mKeys.begin(), mKeys.end());
+            std::sort(keys.begin(), keys.end(),
+                      [](const auto& a, const auto& b) { return a.second.Invocations > b.second.Invocations; });
+            for (size_t i = 0; i < keys.size() && i < 14; ++i) {
+                const uint32_t k = keys[i].first;
+                std::fprintf(stderr,
+                             "[raster-stats] key class=%u dt=%u dw=%u discard=%u stencil=%u stencil_write=%u "
+                             "frag_depth=%u blend=%u/%u/%u domain=%u draws_per_frame=%.1f invocations=%.0f "
+                             "passed_samples=%.0f\n",
+                             k & 3U, (k >> 2) & 1U, (k >> 3) & 1U, (k >> 4) & 1U, (k >> 5) & 1U, (k >> 6) & 1U,
+                             (k >> 7) & 1U, (k >> 8) & 15U, (k >> 12) & 15U, (k >> 16) & 15U, (k >> 20) & 15U,
+                             keys[i].second.Draws / n, keys[i].second.Invocations / n, keys[i].second.Passed / n);
+            }
+        }
+        mKeys.clear();
+        mClassInvocations = {};
+        mDrawQueriedFrames = 0;
+        mFrames = mQueriedFrames = mScopes = mDraws = mExplicitDepth = mDiscard = 0;
+        mDepthWriteOff = mDepthTestOff = mBlend = mOpaqueWorld = mAttachments = 0;
+        mInvocations = mPixels = 0;
+    }
+
+    VkQueryPool mPool = VK_NULL_HANDLE;
+    VkQueryPool mDrawPool = VK_NULL_HANDLE;
+    VkQueryPool mOcclusionPool = VK_NULL_HANDLE;
+    struct KeyStats {
+        uint64_t Invocations = 0, Passed = 0, Draws = 0;
+    };
+    std::map<uint32_t, KeyStats> mKeys;
+    bool mDrawPoolFailed = false;
+    uint32_t mPendingDrawQuery = 0;
+    std::array<uint32_t, kSlots * kDrawQueriesPerSlot> mDrawClasses{};
+    std::array<std::string, kSlots * kDrawQueriesPerSlot> mTraces{};
+    std::array<uint64_t, kClasses> mClassInvocations{};
+    uint64_t mDrawQueriedFrames = 0;
+    bool mPoolFailed = false;
+    bool mQueryActive = false;
+    uint32_t mPendingQuery = 0;
+    uint32_t mFrame = UINT32_MAX;
+    std::array<Slot, kSlots> mSlots{};
+    uint64_t mFramePixels = 0;
+    uint64_t mFrames = 0, mQueriedFrames = 0, mScopes = 0, mDraws = 0;
+    uint64_t mExplicitDepth = 0, mDiscard = 0, mDepthWriteOff = 0, mDepthTestOff = 0;
+    uint64_t mBlend = 0, mOpaqueWorld = 0, mAttachments = 0;
+    uint64_t mInvocations = 0, mPixels = 0;
+};
+
+} // namespace Fast::RasterStats
+
+#endif

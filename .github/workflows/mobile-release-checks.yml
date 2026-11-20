@@ -3,10 +3,7 @@ on:
   push:
     branches: [mobile-release-preparation]
     paths:
-      - 'ports/remasked/runtime/ios/drive_data.*'
-      - 'ports/remasked/tests/drive_data.mm'
-      - 'ports/remasked/tools/audit_public_mobile.py'
-      - 'ports/remasked/tests/test_public_mobile.py'
+      - 'native/**'
       - '.github/workflows/mobile-release-checks.yml'
 permissions:
   contents: read
@@ -26,8 +23,8 @@ jobs:
           set -euo pipefail
           clang++ -std=c++20 -fobjc-arc -Wno-deprecated-declarations \
             -framework Foundation \
-            ports/remasked/runtime/ios/drive_data.mm \
-            ports/remasked/tests/drive_data.mm \
+            native/ports/remasked/runtime/ios/drive_data.mm \
+            native/ports/remasked/tests/drive_data.mm \
             -o "$RUNNER_TEMP/drive-data-tests"
           "$RUNNER_TEMP/drive-data-tests"
       - name: Check the same implementation against the iOS SDK
@@ -36,6 +33,19 @@ jobs:
           set -euo pipefail
           xcrun --sdk iphoneos clang++ -std=c++20 -fobjc-arc \
             -target arm64-apple-ios16.0 -Wno-deprecated-declarations \
-            -fsyntax-only ports/remasked/runtime/ios/drive_data.mm
+            -fsyntax-only native/ports/remasked/runtime/ios/drive_data.mm
       - name: Test public mobile package privacy gates
-        run: python3 -m unittest discover -s ports/remasked/tests -p test_public_mobile.py -v
+        run: python3 -m unittest discover -s native/ports/remasked/tests -p test_public_mobile.py -v
+      - name: Build and test native mobile settings and input core
+        run: |
+          cmake -S native/ports/remasked -B "$RUNNER_TEMP/mobile-core" -DCMAKE_BUILD_TYPE=Release
+          cmake --build "$RUNNER_TEMP/mobile-core" --parallel 3
+          ctest --test-dir "$RUNNER_TEMP/mobile-core" --output-on-failure
+      - name: Check actual iOS launcher and Data-menu integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init "$RUNNER_TEMP/sdl-headers"
+          git -C "$RUNNER_TEMP/sdl-headers" fetch --depth 1 https://github.com/libsdl-org/SDL.git 98d1f3a45aae568ccd6ed5fec179330f47d4d356
+          git -C "$RUNNER_TEMP/sdl-headers" checkout --detach FETCH_HEAD
+          python3 native/ports/remasked/tools/check_ios_menu.py --core-build "$RUNNER_TEMP/mobile-core" --sdl "$RUNNER_TEMP/sdl-headers"

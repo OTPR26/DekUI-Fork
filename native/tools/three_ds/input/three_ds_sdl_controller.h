@@ -1,0 +1,213 @@
+#pragma once
+
+#include "three_ds_input.h"
+#include <SDL2/SDL.h>
+#include <algorithm>
+#include <unordered_map>
+#include <vector>
+
+namespace ThreeDsRecomp::Input {
+
+// Borrow handles from the host's sole SDL device owner. No event pump, open,
+// close or second controller database belongs in a title input consumer.
+struct SdlControllerSelection {
+    SDL_GameController* Controller = nullptr;
+    std::int32_t InstanceId = -1;
+    std::vector<DeviceDescriptor> Devices;
+};
+
+inline ControllerType ControllerTypeFromSdl(int sdlType) noexcept {
+    // ControllerType follows SDL_GameControllerType's order.
+    return sdlType >= 0 && sdlType <= static_cast<int>(ControllerType::NintendoJoyConPair)
+        ? static_cast<ControllerType>(sdlType) : ControllerType::Unknown;
+}
+
+// The pad's prompt family from what SDL reports about it.
+inline PromptSet SdlControllerPromptSet(SDL_GameController* controller, std::string_view name,
+                                        ControllerType* type = nullptr) {
+    ControllerIdentity identity;
+    identity.Name = name;
+#if SDL_VERSION_ATLEAST(2, 0, 12)
+    identity.Type = ControllerTypeFromSdl(static_cast<int>(SDL_GameControllerGetType(controller)));
+#endif
+#if SDL_VERSION_ATLEAST(2, 0, 6)
+    identity.Vendor = SDL_GameControllerGetVendor(controller);
+    identity.Product = SDL_GameControllerGetProduct(controller);
+#endif
+    if (type != nullptr) *type = identity.Type;
+    return PromptSetForController(identity, IsSteamDeckSession());
+}
+
+// Any button, trigger or stick of the pad in use this poll (for the prompts:
+// the device used last).
+inline bool IsSdlControllerActive(SDL_GameController* controller, std::int16_t axisThreshold = 16384) {
+    if (!controller || SDL_GameControllerGetAttached(controller) != SDL_TRUE) return false;
+    for (int i = 0; i < SDL_CONTROLLER_BUTTON_MAX; ++i)
+        if (SDL_GameControllerGetButton(controller, static_cast<SDL_GameControllerButton>(i))) return true;
+    for (int i = 0; i < SDL_CONTROLLER_AXIS_MAX; ++i) {
+        const int value = SDL_GameControllerGetAxis(controller, static_cast<SDL_GameControllerAxis>(i));
+        if (value > axisThreshold || value < -axisThreshold) return true;
+    }
+    return false;
+}
+
+// A key of a keyboard held this poll: letters, digits, the function,
+// editing, arrow and keypad keys and the modifiers. A phone's Back and the
+// media keys are not a keyboard.
+inline bool IsSdlKeyboardActive() {
+    int count = 0;
+    const Uint8* keys = SDL_GetKeyboardState(&count);
+    if (keys == nullptr) return false;
+    for (int code = SDL_SCANCODE_A; code < std::min(count, static_cast<int>(SDL_SCANCODE_APPLICATION)); ++code)
+        if (keys[code]) return true;
+    for (int code = SDL_SCANCODE_LCTRL; code <= SDL_SCANCODE_RGUI && code < count; ++code)
+        if (keys[code]) return true;
+    return false;
+}
+
+// A pad with both sticks (what a 3DS game needs: Circle Pad and C-Stick).
+inline bool IsFullSdlGamepad(SDL_GameController* controller) {
+    return controller != nullptr &&
+           SDL_GameControllerHasAxis(controller, SDL_CONTROLLER_AXIS_LEFTX) == SDL_TRUE &&
+           SDL_GameControllerHasAxis(controller, SDL_CONTROLLER_AXIS_LEFTY) == SDL_TRUE &&
+           SDL_GameControllerHasAxis(controller, SDL_CONTROLLER_AXIS_RIGHTX) == SDL_TRUE &&
+           SDL_GameControllerHasAxis(controller, SDL_CONTROLLER_AXIS_RIGHTY) == SDL_TRUE;
+}
+
+inline SdlControllerSelection ResolveSdlController(
+    const std::unordered_map<std::int32_t, SDL_GameController*>& connected,
+    std::string_view guid, std::string_view serial, std::int32_t previousInstance) {
+    SdlControllerSelection result;
+    for (const auto& [id, controller] : connected) {
+        if (!controller || SDL_GameControllerGetAttached(controller) != SDL_TRUE) continue;
+        char text[33]{};
+        SDL_JoystickGetGUIDString(SDL_JoystickGetGUID(SDL_GameControllerGetJoystick(controller)),
+                                 text, sizeof(text));
+        DeviceDescriptor device;
+        device.InstanceId = id;
+        device.Guid = text;
+        const char* name = SDL_GameControllerName(controller);
+        device.Name = name ? name : text;
+        device.Prompts = SdlControllerPromptSet(controller, device.Name, &device.Type);
+#if SDL_VERSION_ATLEAST(2, 0, 14)
+        const char* deviceSerial = SDL_GameControllerGetSerial(controller);
+        if (deviceSerial) device.Serial = NormalizeControllerSerial(deviceSerial);
+        device.HasGyroscope = SDL_GameControllerHasSensor(controller, SDL_SENSOR_GYRO) == SDL_TRUE;
+        device.HasAccelerometer = SDL_GameControllerHasSensor(controller, SDL_SENSOR_ACCEL) == SDL_TRUE;
+        device.TouchpadCount = std::max(0, SDL_GameControllerGetNumTouchpads(controller));
+#endif
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+        device.HasRumble = SDL_GameControllerHasRumble(controller) == SDL_TRUE;
+#endif
+#if defined(__ANDROID__)
+        // SDL's automatic Android mapping makes any input device with a face
+        // button (DPAD_CENTER counts as A) a game controller: a TV remote or a
+        // system device opened first would otherwise be the lowest instance
+        // and win the automatic selection over the real pad.
+        device.Rank = IsFullSdlGamepad(controller) ? 1 : 0;
+#endif
+        result.Devices.push_back(std::move(device));
+    }
+    std::sort(result.Devices.begin(), result.Devices.end(), [](const auto& a, const auto& b) {
+        return a.InstanceId < b.InstanceId;
+    });
+    result.InstanceId = SelectControllerDevice(result.Devices, guid, serial, previousInstance);
+    for (auto& device : result.Devices) device.Selected = device.InstanceId == result.InstanceId;
+    if (result.InstanceId >= 0) result.Controller = connected.at(result.InstanceId);
+    return result;
+}
+
+// Plays a resolved rumble on the borrowed pad; false when nothing played (no
+// pad, nothing to play, or a pad without motors).
+inline bool PlaySdlRumble(SDL_GameController* controller, const RumbleCommand& command) {
+    if (!command.Play || !controller || SDL_GameControllerGetAttached(controller) != SDL_TRUE) return false;
+    return SDL_GameControllerRumble(controller, command.LowFrequency, command.HighFrequency,
+                                    command.DurationMilliseconds) == 0;
+}
+
+inline bool IsSdlControllerButtonHeld(SDL_GameController* controller,
+                                      GamepadButton button, std::int16_t triggerThreshold) {
+    if (!controller || SDL_GameControllerGetAttached(controller) != SDL_TRUE) return false;
+    if (button == GamepadButton::LeftTrigger || button == GamepadButton::RightTrigger) {
+        return SDL_GameControllerGetAxis(controller, button == GamepadButton::LeftTrigger
+            ? SDL_CONTROLLER_AXIS_TRIGGERLEFT : SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > triggerThreshold;
+    }
+    constexpr std::array buttons{
+        SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_B,
+        SDL_CONTROLLER_BUTTON_X, SDL_CONTROLLER_BUTTON_Y,
+        SDL_CONTROLLER_BUTTON_BACK, SDL_CONTROLLER_BUTTON_GUIDE, SDL_CONTROLLER_BUTTON_START,
+        SDL_CONTROLLER_BUTTON_LEFTSTICK, SDL_CONTROLLER_BUTTON_RIGHTSTICK,
+        SDL_CONTROLLER_BUTTON_LEFTSHOULDER, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER,
+        SDL_CONTROLLER_BUTTON_DPAD_UP, SDL_CONTROLLER_BUTTON_DPAD_DOWN,
+        SDL_CONTROLLER_BUTTON_DPAD_LEFT, SDL_CONTROLLER_BUTTON_DPAD_RIGHT,
+    };
+    const auto index = static_cast<int>(button);
+    return index >= 0 && index < static_cast<int>(buttons.size()) &&
+        SDL_GameControllerGetButton(controller, buttons[index]) != 0;
+}
+
+// Convert SDL's down-positive axes, rad/s and m/s^2 once at the shared 3DS
+// boundary. UI capture can mute axes while retaining sensor calibration.
+inline void SampleSdlController(SDL_GameController* controller,
+                                PhysicalInputState& state, bool readAxes = true,
+                                std::int32_t touchpadIndex = 0,
+                                std::int16_t triggerThreshold = 8192) {
+    state.LeftStickX = state.LeftStickY = state.RightStickX = state.RightStickY = 0;
+    state.ControllerMotion = {};
+    state.ControllerTouch = {};
+    state.ControllerButtons = 0;
+    state.ControllerPressed = 0;
+    if (!controller || SDL_GameControllerGetAttached(controller) != SDL_TRUE) return;
+    if (readAxes) {
+        for (int i = 0; i < SDL_CONTROLLER_BUTTON_MAX && i < 32; ++i)
+            if (SDL_GameControllerGetButton(controller, static_cast<SDL_GameControllerButton>(i)))
+                state.ControllerButtons |= std::uint32_t{1} << i;
+        if (SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > triggerThreshold)
+            state.ControllerButtons |= std::uint32_t{1} << 30;
+        if (SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > triggerThreshold)
+            state.ControllerButtons |= std::uint32_t{1} << 31;
+        const auto invert = [](std::int16_t value) {
+            return static_cast<std::int16_t>(std::clamp(-static_cast<std::int32_t>(value), -32767, 32767));
+        };
+        state.LeftStickX = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTX);
+        state.LeftStickY = invert(SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTY));
+        state.RightStickX = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTX);
+        state.RightStickY = invert(SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTY));
+    }
+#if SDL_VERSION_ATLEAST(2, 0, 14)
+    const auto sample = [controller](SDL_SensorType type, std::array<float, 3>& data, std::uint64_t& timestamp) {
+        if (SDL_GameControllerHasSensor(controller, type) != SDL_TRUE) return false;
+        if (SDL_GameControllerIsSensorEnabled(controller, type) != SDL_TRUE &&
+            SDL_GameControllerSetSensorEnabled(controller, type, SDL_TRUE) != 0) return false;
+#if SDL_VERSION_ATLEAST(2, 26, 0)
+        Uint64 nativeTimestamp = 0;
+        const bool ok = SDL_GameControllerGetSensorDataWithTimestamp(
+            controller, type, &nativeTimestamp, data.data(), static_cast<int>(data.size())) == 0;
+        timestamp = nativeTimestamp;
+        return ok;
+#else
+        timestamp = 0;
+        return SDL_GameControllerGetSensorData(controller, type, data.data(), static_cast<int>(data.size())) == 0;
+#endif
+    };
+    std::array<float, 3> accel{}, gyro{};
+    std::uint64_t accelTimestamp = 0, gyroTimestamp = 0;
+    const bool accelValid = sample(SDL_SENSOR_ACCEL, accel, accelTimestamp);
+    const bool gyroValid = sample(SDL_SENSOR_GYRO, gyro, gyroTimestamp);
+    state.ControllerMotion = ConvertSdlMotion(accel, accelValid, gyro, gyroValid);
+    state.ControllerMotion.AccelerometerTimestampMicroseconds = accelTimestamp;
+    state.ControllerMotion.GyroscopeTimestampMicroseconds = gyroTimestamp;
+    if (readAxes && touchpadIndex >= 0 && touchpadIndex < SDL_GameControllerGetNumTouchpads(controller)) {
+        for (int finger = 0; finger < SDL_GameControllerGetNumTouchpadFingers(controller, touchpadIndex); ++finger) {
+            Uint8 pressed = 0;
+            float x = 0, y = 0, pressure = 0;
+            if (SDL_GameControllerGetTouchpadFinger(controller, touchpadIndex, finger, &pressed, &x, &y, &pressure) == 0 && pressed) {
+                const NormalizedTouch touch{x, y, true};
+                if (MapNormalizedTouch(touch).Pressed) { state.ControllerTouch = touch; break; }
+            }
+        }
+    }
+#endif
+}
+
+} // namespace ThreeDsRecomp::Input

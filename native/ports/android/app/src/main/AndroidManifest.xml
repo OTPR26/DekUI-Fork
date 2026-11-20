@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-feature android:name="android.hardware.vulkan.level" android:version="1" android:required="true" />
+    <!-- The installation's foreground service (type dataSync, InstallService), its progress
+         notification (asked once on Android 13+, optional) and a partial wake lock held only
+         while the job runs, so it continues with the screen locked. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Only the optional HD interface pack download uses the network, and only when the user
+         taps Download (owner decision 5); the network state tells a mobile or metered
+         connection apart, so the installer can warn with the size first. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- One launcher entry with the game icon (tools/triaevum_release/branding). -->
+    <application android:label="@string/app_name" android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen"
+        android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round"
+        android:allowBackup="false">
+        <!-- Forge runs the runtime library's native helpers in process: never in the game's process.
+             It handles its own language changes (decision 8), so a picked ROM is not lost. -->
+        <activity android:name=".forge.InstallerActivity" android:exported="true" android:process=":forge"
+            android:configChanges="orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <!-- Owns the installation job; same process as the installer (the job handle is in-process). -->
+        <service android:name=".forge.InstallService" android:exported="false" android:process=":forge"
+            android:foregroundServiceType="dataSync" />
+        <!-- Save import/export and the diagnostics report: in the installer's process, so they can
+             tell whether the game's process is running and never start it. -->
+        <activity android:name=".saves.SavesActivity" android:exported="false" android:process=":forge"
+            android:configChanges="orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale" />
+        <activity android:name=".diagnostics.DiagnosticsActivity" android:exported="false" android:process=":forge"
+            android:configChanges="orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale" />
+        <!-- Serves only the diagnostics bundle the user shares, through a temporary read grant. -->
+        <provider android:name=".diagnostics.DiagnosticsBundleProvider"
+            android:authorities="${applicationId}.diagnostics" android:exported="false"
+            android:grantUriPermissions="true" android:process=":forge" />
+        <!-- Exported for developer launches (adb am start) of an already prepared title. A change
+             of the installer's language (a per-app locale) must not recreate a running game. -->
+        <activity android:name=".TriAevumActivity" android:exported="true"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|navigation|density|locale|layoutDirection" />
+    </application>
+</manifest>

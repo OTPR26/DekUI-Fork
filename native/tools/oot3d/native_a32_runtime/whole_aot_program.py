@@ -1,0 +1,1316 @@
+"""Build a backend-neutral structural program from the pinned OOT3D A32 front-end.
+
+This module deliberately does not emit the existing PackedOp representation.  It
+turns the reviewed code/data split and CFG into functions, shared basic blocks,
+static calls, address-taken entries and explicit dynamic exits.  A later backend
+can lower the normalized instruction records to C++ or LLVM IR without changing
+the recovery pass.
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import hashlib
+import json
+import sys
+from collections import Counter, deque
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterable, Sequence
+
+
+ROOT = Path(__file__).resolve().parent
+REPO_ROOT = ROOT.parents[2]
+UPSTREAM = ROOT / "upstream"
+UPSTREAM_SRC = UPSTREAM / "src"
+if str(UPSTREAM_SRC) not in sys.path:
+    sys.path.insert(0, str(UPSTREAM_SRC))
+
+from oot3d_pack import a32_cpp_aot as pinned  # noqa: E402
+from oot3d_pack.arm_decode import DecodedInstruction  # noqa: E402
+import whole_aot_thumb as thumb_flow_module  # noqa: E402
+from oot3d_pack.arm_ir import (  # noqa: E402
+    arm_core_runtime_category,
+    arm_core_supported,
+    arm_vfp_scalar_supported,
+    arm_vfp_transport_supported,
+)
+
+
+FORMAT = "oot3d_whole_aot_program_v1"
+CACHE_FORMAT = "oot3d_whole_aot_program_cache_v1"
+DEFAULT_BASE = 0x00100000
+DEFAULT_OBSERVED_SITES = Path(__file__).resolve().with_name("whole_aot_observed_sites.json")
+
+
+def _sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _sha256_path(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _is_always(item: DecodedInstruction) -> bool:
+    return item.condition in {None, "al"}
+
+
+def _is_register_call(item: DecodedInstruction) -> bool:
+    return (
+        item.kind == "indirect_branch"
+        and (item.raw & 0x0FFFFFF0) == 0x012FFF30
+    )
+
+
+def _is_return(item: DecodedInstruction) -> bool:
+    if item.kind == "indirect_branch":
+        return (
+            (item.raw & 0x0FFFFFF0) == 0x012FFF10
+            and (item.raw & 0xF) == 14
+        )
+    if (
+        item.kind == "data_processing"
+        and item.rd == 15
+        and item.opcode == "mov"
+        and item.rm == 14
+    ):
+        return True
+    raw = item.raw
+    if (
+        (raw & 0x0E000000) == 0x08000000
+        and bool(raw & (1 << 20))
+        and bool(raw & (1 << 15))
+        and ((raw >> 16) & 0xF) == 13
+    ):
+        return True
+    return bool(
+        item.kind == "memory"
+        and item.load
+        and item.rd == 15
+        and item.rn == 13
+    )
+
+
+def _semantic_category(item: DecodedInstruction) -> str:
+    if item.kind in {"branch", "call", "indirect_branch"}:
+        return "control"
+    if item.kind == "svc":
+        return "service"
+    if item.kind == "unknown":
+        return "unknown"
+    if item.state == "arm" and arm_core_supported(item.raw):
+        category = arm_core_runtime_category(item.raw)
+        return f"core_{category}" if category else "core"
+    if item.state == "arm" and arm_vfp_transport_supported(item.raw):
+        return "vfp_transport"
+    if item.state == "arm" and arm_vfp_scalar_supported(item.raw):
+        return "vfp_scalar"
+    return f"decoded_{item.kind}"
+
+
+@dataclass(frozen=True, slots=True)
+class AotInstruction:
+    pc: int
+    raw: int
+    semantic: str
+    mnemonic: str
+    condition: str | None
+    opcode: str | None
+    rd: int | None
+    rn: int | None
+    rm: int | None
+    imm: int | None
+    setflags: bool
+    load: bool | None
+    target: int | None
+    svc_id: int | None
+    family: str | None
+    operand_text: str | None
+
+    @classmethod
+    def from_decoded(cls, item: DecodedInstruction) -> "AotInstruction":
+        return cls(
+            pc=item.pc,
+            raw=item.raw,
+            semantic=_semantic_category(item),
+            mnemonic=item.canonical_mnemonic or item.mnemonic,
+            condition=item.condition,
+            opcode=item.opcode,
+            rd=item.rd,
+            rn=item.rn,
+            rm=item.rm,
+            imm=item.imm,
+            setflags=item.setflags,
+            load=item.load,
+            target=item.target,
+            svc_id=item.svc_id,
+            family=item.family,
+            operand_text=item.operand_text,
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        result: dict[str, object] = {
+            "pc": self.pc,
+            "raw": self.raw,
+            "semantic": self.semantic,
+            "mnemonic": self.mnemonic,
+        }
+        optional = {
+            "condition": self.condition,
+            "opcode": self.opcode,
+            "rd": self.rd,
+            "rn": self.rn,
+            "rm": self.rm,
+            "imm": self.imm,
+            "load": self.load,
+            "target": self.target,
+            "svc_id": self.svc_id,
+            "family": self.family,
+            "operand_text": self.operand_text,
+        }
+        result.update({key: value for key, value in optional.items() if value is not None})
+        if self.setflags:
+            result["setflags"] = True
+        return result
+
+
+@dataclass(frozen=True, slots=True)
+class AotEdge:
+    site: int
+    kind: str
+    target: int | None = None
+    condition: str | None = None
+    value: int | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        result: dict[str, object] = {"site": self.site, "kind": self.kind}
+        if self.target is not None:
+            result["target"] = self.target
+        if self.condition is not None:
+            result["condition"] = self.condition
+        if self.value is not None:
+            result["value"] = self.value
+        return result
+
+
+@dataclass(frozen=True, slots=True)
+class AotBlock:
+    index: int
+    pc: int
+    end_pc: int
+    instructions: tuple[AotInstruction, ...]
+    successors: tuple[AotEdge, ...]
+    body_sha256: str
+    # Thumb blocks (odd pcs) carry their decoded records: the lowering cannot
+    # re-read them from code.bin in 4-byte A32 steps.  Empty for A32 blocks.
+    thumb: tuple[thumb_flow_module.ThumbInstruction, ...] = ()
+
+    def to_dict(self, include_instructions: bool) -> dict[str, object]:
+        categories = Counter(item.semantic for item in self.instructions)
+        result: dict[str, object] = {
+            "id": self.index,
+            "pc": self.pc,
+            "end_pc": self.end_pc,
+            "instruction_count": len(self.instructions),
+            "body_sha256": self.body_sha256,
+            "categories": dict(sorted(categories.items())),
+            "successors": [edge.to_dict() for edge in self.successors],
+        }
+        if include_instructions:
+            result["instructions"] = [item.to_dict() for item in self.instructions]
+        if self.thumb:
+            result["state"] = "thumb"
+            result["thumb_instructions"] = [item.to_dict() for item in self.thumb]
+        return result
+
+
+@dataclass(frozen=True, slots=True)
+class AotFunction:
+    entry: int
+    end: int | None
+    name: str
+    origin: str
+    block_ids: tuple[int, ...]
+    direct_calls: tuple[tuple[int, int], ...]
+    tail_calls: tuple[tuple[int, int], ...]
+    indirect_sites: tuple[tuple[int, str], ...]
+    unresolved_static_edges: tuple[AotEdge, ...]
+    closed_static_cfg: bool
+    body_sha256: str
+
+    def to_dict(self) -> dict[str, object]:
+        result: dict[str, object] = {
+            "entry": self.entry,
+            "name": self.name,
+            "origin": self.origin,
+            "blocks": list(self.block_ids),
+            "direct_calls": [
+                {"site": site, "target": target}
+                for site, target in self.direct_calls
+            ],
+            "tail_calls": [
+                {"site": site, "target": target}
+                for site, target in self.tail_calls
+            ],
+            "indirect_sites": [
+                {"site": site, "kind": kind}
+                for site, kind in self.indirect_sites
+            ],
+            "unresolved_static_edges": [
+                edge.to_dict() for edge in self.unresolved_static_edges
+            ],
+            "closed_static_cfg": self.closed_static_cfg,
+            "body_sha256": self.body_sha256,
+        }
+        if self.end is not None:
+            result["end"] = self.end
+        return result
+
+
+@dataclass(frozen=True, slots=True)
+class AotProgram:
+    base: int
+    executable_size: int
+    code_sha256: str
+    inventory_sha256: str
+    boundary_audit_sha256: str
+    fixed_point_iterations: int
+    literal_data: frozenset[int]
+    pointer_roots: frozenset[int]
+    blocks: tuple[AotBlock, ...]
+    functions: tuple[AotFunction, ...]
+    unclaimed_blocks: tuple[int, ...]
+
+    def to_manifest(self, include_instructions: bool = False) -> dict[str, object]:
+        category_counts: Counter[str] = Counter()
+        for block in self.blocks:
+            category_counts.update(item.semantic for item in block.instructions)
+        direct_calls = sum(len(function.direct_calls) for function in self.functions)
+        tail_calls = sum(len(function.tail_calls) for function in self.functions)
+        indirect_sites = sum(len(function.indirect_sites) for function in self.functions)
+        unresolved_static_edges = sum(
+            len(function.unresolved_static_edges) for function in self.functions
+        )
+        return {
+            "format": FORMAT,
+            "base": self.base,
+            "executable_size": self.executable_size,
+            "code_sha256": self.code_sha256,
+            "inputs": {
+                "inventory_sha256": self.inventory_sha256,
+                "boundary_audit_sha256": self.boundary_audit_sha256,
+            },
+            "configuration": {
+                "literal_cfg_fixed_point_iterations": self.fixed_point_iterations,
+                "instructions_embedded": include_instructions,
+            },
+            "counts": {
+                "functions": len(self.functions),
+                "inventory_functions": sum(
+                    function.origin == "inventory" for function in self.functions
+                ),
+                "synthetic_functions": sum(
+                    function.origin != "inventory" for function in self.functions
+                ),
+                "blocks": len(self.blocks),
+                "instructions": sum(
+                    len(block.instructions) for block in self.blocks
+                ),
+                "literal_words": len(self.literal_data),
+                "pointer_roots": len(self.pointer_roots),
+                "direct_calls": direct_calls,
+                "tail_calls": tail_calls,
+                "indirect_sites": indirect_sites,
+                "unresolved_static_edges": unresolved_static_edges,
+                "closed_static_cfg_functions": sum(
+                    function.closed_static_cfg for function in self.functions
+                ),
+                "unclaimed_blocks": len(self.unclaimed_blocks),
+            },
+            "instruction_categories": dict(sorted(category_counts.items())),
+            "unclaimed_blocks": list(self.unclaimed_blocks),
+            "functions": [function.to_dict() for function in self.functions],
+            "blocks": [
+                block.to_dict(include_instructions) for block in self.blocks
+            ],
+        }
+
+
+def _switch_targets(
+    decoder: pinned._Decoder,
+    literal_sources: dict[int, tuple[int, ...]],
+    valid_pcs: set[int],
+) -> dict[int, tuple[int, ...]]:
+    """Recover dispatch-to-case edges from the literal table evidence."""
+
+    mutable: dict[int, set[int]] = {
+        source: {target} for source, target in
+        pinned._constant_pc_targets(decoder, valid_pcs, valid_pcs).items()
+    }
+    for source, (base, words) in pinned._base_relative_switch_tables(
+        decoder, valid_pcs, set(literal_sources) | valid_pcs
+    ).items():
+        mutable[source] = {
+            (base + decoder.get(word).raw) & 0xFFFFFFFF for word in words
+            if decoder.get(word).raw != 0 and
+            (base + decoder.get(word).raw) & 0xFFFFFFFF in valid_pcs
+        }
+    for word, sources in literal_sources.items():
+        offset = word - decoder.base
+        if offset < 0 or offset + 4 > len(decoder.code):
+            continue
+        target = int.from_bytes(decoder.code[offset : offset + 4], "little")
+        if target not in valid_pcs:
+            continue
+        for source in sources:
+            raw = decoder.get(source).raw
+            if (raw & 0x0FFFFFF0) == 0x079FF100:
+                mutable.setdefault(source, set()).add(target)
+    return {
+        source: tuple(sorted(targets))
+        for source, targets in sorted(mutable.items())
+    }
+
+
+def _edge_target(
+    site: int,
+    kind: str,
+    target: int,
+    condition: str | None,
+) -> AotEdge:
+    return AotEdge(site=site, kind=kind, target=target, condition=condition)
+
+
+def _arm_blx_immediate_target(item: DecodedInstruction) -> int | None:
+    """Thumb destination (bit 0 set) of an A32 ``BLX #imm``, else None.
+
+    The encoding is cond=0xF, 101H, imm24: target = pc + 8 + imm24 * 4 + H * 2,
+    entered in Thumb state (a32_runtime.cpp Opcode::Branch, a32_thumb.h).
+    """
+    if item.state != "arm" or ((item.raw >> 25) & 0x7F) != 0x7D:
+        return None
+    imm24 = item.raw & 0x00FFFFFF
+    if imm24 & 0x00800000:
+        imm24 -= 0x01000000
+    target = (item.pc + 8 + (imm24 << 2) + ((item.raw >> 23) & 2)) & 0xFFFFFFFF
+    return target | 1
+
+
+def _successors(
+    item: DecodedInstruction,
+    explicit_lr_calls: dict[int, int],
+    switch_targets: dict[int, tuple[int, ...]],
+    inline_argument_returns: dict[int, int] | None = None,
+) -> tuple[AotEdge, ...]:
+    pc = item.pc
+    fallthrough = pc + 4
+    condition = None if _is_always(item) else item.condition
+    edges: list[AotEdge] = []
+    if item.kind == "branch":
+        if item.target is not None:
+            edges.append(_edge_target(pc, "branch", item.target, condition))
+        if pc in explicit_lr_calls:
+            edges.append(_edge_target(pc, "resume", explicit_lr_calls[pc], condition))
+        if condition is not None:
+            edges.append(_edge_target(pc, "fallthrough", fallthrough, condition))
+        return tuple(edges)
+    if item.kind == "call":
+        thumb = _arm_blx_immediate_target(item)
+        if thumb is not None:
+            # BLX #imm enters Thumb.  Thumb code has no A32 function in this
+            # program: the runtime executes it from guest memory (a32_thumb),
+            # exactly as the registry's Branch op does.  Model it as a call
+            # to an external Thumb boundary, not as an unresolved A32 edge.
+            edges.append(_edge_target(pc, "thumb_call", thumb, None))
+        elif item.target is not None:
+            edges.append(_edge_target(pc, "direct_call", item.target, condition))
+        resume = (inline_argument_returns or {}).get(pc, fallthrough)
+        edges.append(_edge_target(pc, "resume", resume, condition))
+        return tuple(edges)
+    if item.kind == "indirect_branch":
+        if _is_return(item):
+            edges.append(AotEdge(pc, "return", condition=condition))
+            if condition is not None:
+                edges.append(
+                    _edge_target(pc, "fallthrough", fallthrough, condition)
+                )
+        elif _is_register_call(item) or pc in explicit_lr_calls:
+            edges.append(AotEdge(pc, "indirect_call", condition=condition))
+            edges.append(_edge_target(pc, "resume", explicit_lr_calls.get(pc, fallthrough), condition))
+        else:
+            targets = switch_targets.get(pc, ())
+            if targets:
+                edges.extend(
+                    _edge_target(pc, "switch_case", target, condition)
+                    for target in targets
+                )
+            else:
+                edges.append(AotEdge(pc, "indirect_branch", condition=condition))
+            if condition is not None:
+                edges.append(
+                    _edge_target(pc, "fallthrough", fallthrough, condition)
+                )
+        return tuple(edges)
+    if item.kind == "svc":
+        edges.append(AotEdge(pc, "svc", condition=condition, value=item.svc_id))
+        edges.append(_edge_target(pc, "resume", fallthrough, condition))
+        return tuple(edges)
+    if item.kind == "unknown":
+        return (AotEdge(pc, "unknown", condition=condition),)
+    if pinned._writes_pc(item):
+        if _is_return(item):
+            edges.append(AotEdge(pc, "return", condition=condition))
+            if condition is not None:
+                edges.append(
+                    _edge_target(pc, "fallthrough", fallthrough, condition)
+                )
+        elif pc in explicit_lr_calls:
+            edges.append(AotEdge(pc, "indirect_call", condition=condition))
+            edges.append(_edge_target(pc, "resume", explicit_lr_calls[pc], condition))
+        else:
+            targets = switch_targets.get(pc, ())
+            if targets:
+                edges.extend(
+                    _edge_target(pc, "switch_case", target, condition)
+                    for target in targets
+                )
+            else:
+                edges.append(AotEdge(pc, "indirect_branch", condition=condition))
+            if condition is not None:
+                edges.append(
+                    _edge_target(pc, "fallthrough", fallthrough, condition)
+                )
+        return tuple(edges)
+    return (_edge_target(pc, "fallthrough", fallthrough, None),)
+
+
+def _make_blocks(
+    decoder: pinned._Decoder,
+    reachable: set[int],
+    block_starts: set[int],
+    explicit_lr_calls: dict[int, int],
+    switch_targets: dict[int, tuple[int, ...]],
+    inline_argument_returns: dict[int, int] | None = None,
+) -> tuple[AotBlock, ...]:
+    groups: list[list[int]] = []
+    current: list[int] = []
+    previous: int | None = None
+    for pc in sorted(reachable):
+        if current and (
+            previous is None
+            or pc != previous + 4
+            or pc in block_starts
+            or pinned._ends_block(decoder.get(previous))
+        ):
+            groups.append(current)
+            current = []
+        current.append(pc)
+        previous = pc
+    if current:
+        groups.append(current)
+
+    blocks: list[AotBlock] = []
+    for index, pcs in enumerate(groups):
+        instructions = tuple(
+            AotInstruction.from_decoded(decoder.get(pc)) for pc in pcs
+        )
+        body_digest = hashlib.sha256()
+        body_digest.update(pcs[0].to_bytes(4, "little"))
+        for item in instructions:
+            body_digest.update(item.raw.to_bytes(4, "little"))
+        terminal = decoder.get(pcs[-1])
+        successors = _successors(
+            terminal, explicit_lr_calls, switch_targets,
+            inline_argument_returns,
+        )
+        blocks.append(
+            AotBlock(
+                index=index,
+                pc=pcs[0],
+                end_pc=pcs[-1] + 4,
+                instructions=instructions,
+                successors=successors,
+                body_sha256=body_digest.hexdigest(),
+            )
+        )
+    return tuple(blocks)
+
+
+_COMPLEMENTARY_CONDITIONS = {
+    "eq": "ne",
+    "ne": "eq",
+    "hs": "lo",
+    "lo": "hs",
+    "mi": "pl",
+    "pl": "mi",
+    "vs": "vc",
+    "vc": "vs",
+    "hi": "ls",
+    "ls": "hi",
+    "ge": "lt",
+    "lt": "ge",
+    "gt": "le",
+    "le": "gt",
+}
+
+
+def _normalize_complementary_branch_chains(
+    blocks: tuple[AotBlock, ...], protected_entries: set[int]
+) -> tuple[AotBlock, ...]:
+    """Elide a provably impossible second fallthrough.
+
+    A common compiler idiom emits B<cond>, then one or more instructions
+    predicated by <!cond>, followed by B<!cond>. The second branch is
+    guaranteed on the sole path entering that block. Keep this proof
+    deliberately narrow so address-taken entries, flag writers and blocks
+    with another predecessor retain their original CFG.
+    """
+
+    incoming: dict[int, list[tuple[AotBlock, AotEdge]]] = {}
+    for predecessor in blocks:
+        for edge in predecessor.successors:
+            if edge.target is not None:
+                incoming.setdefault(edge.target, []).append((predecessor, edge))
+
+    normalized: list[AotBlock] = []
+    for current in blocks:
+        predecessors = incoming.get(current.pc, [])
+        branch_edges = [edge for edge in current.successors if edge.kind == "branch"]
+        fallthrough_edges = [
+            edge for edge in current.successors if edge.kind == "fallthrough"
+        ]
+        branch_condition = (
+            branch_edges[0].condition if len(branch_edges) == 1 else None
+        )
+        writes_condition_flags = any(
+            instruction.setflags
+            or (
+                (instruction.raw & 0x0FFF0FFF) == 0x0EF10A10
+                and ((instruction.raw >> 12) & 0xF) == 15
+            )
+            or (
+                (instruction.raw & 0x0FB0FFF0) == 0x0120F000
+                and bool((instruction.raw >> 16) & 0x8)
+            )
+            or (
+                (instruction.raw & 0x0E000000) == 0x08000000
+                and bool(instruction.raw & (1 << 20))
+                and bool(instruction.raw & (1 << 22))
+                and bool(instruction.raw & (1 << 15))
+            )
+            for instruction in current.instructions[:-1]
+        )
+        can_prove = (
+            current.pc not in protected_entries
+            and bool(current.instructions)
+            and len(predecessors) == 1
+            and predecessors[0][1].kind == "fallthrough"
+            and predecessors[0][0].end_pc == current.pc
+            and len(branch_edges) == 1
+            and len(fallthrough_edges) == 1
+            and branch_condition is not None
+            and predecessors[0][1].condition is not None
+            and _COMPLEMENTARY_CONDITIONS.get(predecessors[0][1].condition)
+            == branch_condition
+            and not writes_condition_flags
+            and all(
+                instruction.condition == branch_condition
+                for instruction in current.instructions
+            )
+        )
+        if not can_prove:
+            normalized.append(current)
+            continue
+        guaranteed_branch = AotEdge(
+            site=branch_edges[0].site,
+            kind="branch",
+            target=branch_edges[0].target,
+            condition=None,
+            value=branch_edges[0].value,
+        )
+        normalized.append(
+            AotBlock(
+                index=current.index,
+                pc=current.pc,
+                end_pc=current.end_pc,
+                instructions=current.instructions,
+                successors=(guaranteed_branch,),
+                body_sha256=current.body_sha256,
+            )
+        )
+    return tuple(normalized)
+
+
+def _function_closure(
+    entry: int,
+    entry_to_block: dict[int, int],
+    blocks: tuple[AotBlock, ...],
+    function_entries: set[int],
+) -> tuple[
+    tuple[int, ...],
+    tuple[tuple[int, int], ...],
+    tuple[tuple[int, int], ...],
+    tuple[tuple[int, str], ...],
+    tuple[AotEdge, ...],
+    bool,
+]:
+    start = entry_to_block.get(entry)
+    if start is None:
+        return (), (), (), (), (), False
+    queue = deque([start])
+    visited: set[int] = set()
+    direct_calls: set[tuple[int, int]] = set()
+    tail_calls: set[tuple[int, int]] = set()
+    indirect_sites: set[tuple[int, str]] = set()
+    unresolved: set[AotEdge] = set()
+    closed = True
+    traversable = {"branch", "fallthrough", "resume", "switch_case"}
+    while queue:
+        block_id = queue.popleft()
+        if block_id in visited:
+            continue
+        visited.add(block_id)
+        block = blocks[block_id]
+        for edge in block.successors:
+            if edge.kind == "direct_call":
+                if edge.target is not None:
+                    direct_calls.add((edge.site, edge.target))
+                    if edge.target not in entry_to_block:
+                        unresolved.add(edge)
+                        closed = False
+                else:
+                    unresolved.add(edge)
+                    closed = False
+                continue
+            if edge.kind == "thumb_call":
+                # A32 BLX #imm into Thumb.  A translated Thumb function (its
+                # odd entry is a block of this program) is a direct callee;
+                # otherwise it is an external Thumb boundary dispatched at
+                # run time that neither opens the CFG nor adds a callee.
+                if edge.target in entry_to_block:
+                    direct_calls.add((edge.site, edge.target))
+                continue
+            if edge.kind in {"indirect_call", "indirect_branch"}:
+                indirect_sites.add((edge.site, edge.kind))
+                continue
+            if edge.kind == "unknown":
+                indirect_sites.add((edge.site, edge.kind))
+                unresolved.add(edge)
+                closed = False
+                continue
+            if edge.kind not in traversable:
+                continue
+            if edge.target is None:
+                unresolved.add(edge)
+                closed = False
+                continue
+            target_block = entry_to_block.get(edge.target)
+            if target_block is None:
+                unresolved.add(edge)
+                closed = False
+                continue
+            # A static branch to another entry is a tail call.  Fallthrough,
+            # call resume and switch cases may legitimately enter an
+            # address-taken/internal label, so their blocks remain shared by
+            # both function closures.
+            if (
+                edge.kind == "branch"
+                and edge.target in function_entries
+                and edge.target != entry
+            ):
+                tail_calls.add((edge.site, edge.target))
+                continue
+            queue.append(target_block)
+    return (
+        tuple(sorted(visited)),
+        tuple(sorted(direct_calls)),
+        tuple(sorted(tail_calls)),
+        tuple(sorted(indirect_sites)),
+        tuple(
+            sorted(
+                unresolved,
+                key=lambda edge: (
+                    edge.site,
+                    edge.kind,
+                    -1 if edge.target is None else edge.target,
+                ),
+            )
+        ),
+        closed,
+    )
+
+
+def _body_hash(block_ids: Iterable[int], blocks: tuple[AotBlock, ...]) -> str:
+    digest = hashlib.sha256()
+    for block_id in sorted(block_ids):
+        block = blocks[block_id]
+        digest.update(bytes.fromhex(block.body_sha256))
+    return digest.hexdigest()
+
+
+def _thumb_blocks(
+    flow: "thumb_flow_module.ThumbFlow", first_index: int
+) -> tuple[AotBlock, ...]:
+    blocks: list[AotBlock] = []
+    for offset, (pc, items) in enumerate(thumb_flow_module.make_blocks(flow)):
+        digest = hashlib.sha256()
+        digest.update(pc.to_bytes(4, "little"))
+        for item in items:
+            digest.update(item.size.to_bytes(1, "little"))
+            digest.update(item.thumb.to_bytes(4, "little"))
+        terminal = items[-1]
+        edges = tuple(
+            AotEdge(terminal.pc, kind, target, condition)
+            for kind, target, condition in flow.edges(terminal)
+        )
+        instructions = tuple(
+            AotInstruction(
+                pc=item.pc, raw=item.thumb, semantic=f"thumb_{item.kind}",
+                mnemonic=item.mnemonic, condition=item.condition, opcode=None,
+                rd=None, rn=None, rm=None, imm=None, setflags=False, load=None,
+                target=item.target, svc_id=None, family="thumb", operand_text=None,
+            )
+            for item in items
+        )
+        blocks.append(AotBlock(
+            index=first_index + offset, pc=pc,
+            end_pc=(terminal.address + terminal.size) | 1,
+            instructions=instructions, successors=edges,
+            body_sha256=digest.hexdigest(), thumb=tuple(items),
+        ))
+    return tuple(blocks)
+
+
+def load_observed_sites(path: Path, code: bytes) -> frozenset[int]:
+    """Catalogued pcs that must start a block, for this exact code image.
+
+    The runtime observes or redirects execution at these pcs (TopScreen source
+    port hooks and their resume points); whole-AOT reports only block starts.
+    A catalog for another code image does not apply.
+    """
+    catalog = json.loads(path.read_text(encoding="utf-8"))
+    if catalog.get("format") != "oot3d_whole_aot_observed_sites_v1":
+        raise ValueError(f"unsupported observed-site catalog: {path}")
+    if catalog.get("code_sha256") != hashlib.sha256(code).hexdigest():
+        return frozenset()
+    return frozenset(int(site["pc"], 16) for site in catalog["sites"])
+
+
+INLINE_ARGUMENT_FORMAT = "a32_inline_argument_calls_v1"
+
+
+def load_inline_argument_calls(path: Path | None, code: bytes,
+                               base: int = DEFAULT_BASE) -> dict[int, int]:
+    """Load a title fact: callees that consume argument words placed after BL.
+
+    Each entry carries the guard word at the callee entry; a mismatch means the
+    fact belongs to another image and is refused instead of applied.
+    """
+    if path is None:
+        return {}
+    document = json.loads(path.read_text(encoding="utf-8"))
+    if document.get("format") != INLINE_ARGUMENT_FORMAT:
+        raise ValueError(f"{path}: format is not {INLINE_ARGUMENT_FORMAT}")
+    calls: dict[int, int] = {}
+    for record in document.get("callees", []):
+        entry = int(str(record["entry"]), 0)
+        guard = int(str(record["guard_word"]), 0)
+        words = int(record["inline_words"])
+        offset = entry - base
+        if entry % 4 or offset < 0 or offset + 4 > len(code):
+            raise ValueError(f"{path}: callee 0x{entry:08X} is outside the code image")
+        actual = int.from_bytes(code[offset:offset + 4], "little")
+        if actual != guard:
+            raise ValueError(
+                f"{path}: guard word at 0x{entry:08X} is 0x{actual:08X}, "
+                f"expected 0x{guard:08X}"
+            )
+        if words <= 0 or entry in calls:
+            raise ValueError(f"{path}: invalid or duplicate callee 0x{entry:08X}")
+        calls[entry] = words
+    return calls
+
+
+# Boundary-audit classifications whose entries become dispatchable block
+# starts (see build_program).  Absent from OoT3D's audit: a no-op there.
+DISPATCH_ENTRY_CLASSES = ("multi_return_slot", "unreferenced_code")
+
+
+def load_thumb_ranges(path: Path | None) -> tuple[tuple[int, int], ...]:
+    """Title Thumb code ranges (CSV kind,start,end with an inclusive end)."""
+    if path is None:
+        return ()
+    with path.open(newline="", encoding="utf-8-sig") as source:
+        return tuple(
+            (int(row["start"], 0), int(row["end"], 0) + 1)
+            for row in csv.DictReader(source)
+            if row.get("kind", "range") == "range"
+        )
+
+
+def check_thumb_range_guards(path: Path | None, code: bytes, base: int) -> int:
+    """Verify the optional ``guard`` column (first halfword of the range).
+
+    Returns the number of guarded rows; a mismatch raises ValueError."""
+    if path is None:
+        return 0
+    checked = 0
+    with path.open(newline="", encoding="utf-8-sig") as source:
+        for row in csv.DictReader(source):
+            guard = (row.get("guard") or "").strip()
+            if not guard:
+                continue
+            start = int(row["start"], 0)
+            offset = start - base
+            if offset < 0 or offset + 2 > len(code):
+                raise ValueError(f"{path}: guarded range 0x{start:08X} is outside code")
+            actual = int.from_bytes(code[offset:offset + 2], "little")
+            if actual != int(guard, 0):
+                raise ValueError(
+                    f"{path}: guard at 0x{start:08X} is 0x{actual:04X}, expected {guard}")
+            checked += 1
+    return checked
+
+
+def load_thumb_entries(path: Path | None) -> tuple[int, ...]:
+    """Starts of the title's Thumb functions (CSV rows of kind function)."""
+    if path is None:
+        return ()
+    with path.open(newline="", encoding="utf-8-sig") as source:
+        return tuple(
+            int(row["start"], 0)
+            for row in csv.DictReader(source)
+            if row.get("kind") == "function"
+        )
+
+
+def build_program(
+    code: bytes,
+    inventory_path: Path,
+    boundary_audit_path: Path,
+    *,
+    base: int = DEFAULT_BASE,
+    executable_size: int | None = None,
+    observed_sites: Iterable[int] = (),
+    inline_argument_calls: dict[int, int] | None = None,
+    thumb_ranges: Iterable[tuple[int, int]] = (),
+    thumb_entries: Iterable[int] = (),
+) -> AotProgram:
+    if executable_size is None:
+        executable_size = len(code)
+    if executable_size <= 0 or executable_size > len(code):
+        raise ValueError("executable size is outside the code image")
+    _, callable_functions, slots, _ = pinned._load_inputs(
+        inventory_path, boundary_audit_path, len(code), base
+    )
+    decoder = pinned._Decoder(code, base)
+    flow_slots = slots | set(range(base, base + executable_size, 4))
+    # A data word naming an address inside the title's Thumb code is not an
+    # A32 entry pointer (the runtime executes Thumb from guest memory).
+    thumb_slots = {
+        pc for start, end in thumb_ranges
+        for pc in range(start - start % 4, end, 4)
+    }
+    pointer_root_domain = flow_slots - thumb_slots
+    # Thumb code is decoded by its own strict decoder (whole_aot_thumb).  Its
+    # BLX #imm callees are A32 entries the A32 flow must reach.
+    thumb_spans = tuple(thumb_ranges)
+    thumb_discovery = (
+        thumb_flow_module.discover(code, base, thumb_spans, thumb_entries)
+        if thumb_spans else None
+    )
+    thumb_flow = thumb_discovery.flow if thumb_discovery else None
+    thumb_arm_targets = (
+        tuple(sorted(thumb_flow.arm_call_targets)) if thumb_flow else ()
+    )
+    flow, literal_data, literal_sources, iterations = pinned._address_aware_flow(
+        decoder,
+        flow_slots,
+        (*(function.entry for function in callable_functions), *thumb_arm_targets),
+        pointer_root_domain,
+        inline_argument_calls=inline_argument_calls,
+    )
+    # "Not an independent callable" does not mean "not executable". Audited
+    # switch cases retain the caller's registers and may use relative tables
+    # that the pointer-root pass cannot recognize (notably movie codecs).
+    # Seed only missing, explicitly classified internal cases, never data or
+    # arbitrary excluded intervals. Keep them distinct from public ABI roots.
+    with boundary_audit_path.open(newline="", encoding="utf-8-sig") as source:
+        audit_rows = list(csv.DictReader(source))
+    internal_cases = {
+        int(row["entry"], 0)
+        for row in audit_rows
+        if row.get("classification") == "switch_owned_case"
+    }
+    # Executable entries the runtime may dispatch although no static edge
+    # names them: return slots of a multi-return helper (the callee returns
+    # to BL + 8 + 4 * k) and code no static reference reaches.  They are
+    # block starts and roots even when linear flow already decodes them.
+    dispatch_entries = {
+        int(row["entry"], 0)
+        for row in audit_rows
+        if row.get("classification") in DISPATCH_ENTRY_CLASSES
+    }
+    internal_cases |= dispatch_entries
+    internal_cases -= flow.decoded_reachable | flow.unknown_stops
+    internal_cases &= flow_slots - literal_data
+    if internal_cases:
+        flow, literal_data, literal_sources, extra_iterations = pinned._address_aware_flow(
+            decoder, flow_slots,
+            (*[function.entry for function in callable_functions],
+             *thumb_arm_targets, *sorted(internal_cases)),
+            pointer_root_domain,
+            inline_argument_calls=inline_argument_calls,
+        )
+        iterations += extra_iterations
+    reachable = flow.decoded_reachable | flow.unknown_stops
+    if flow.inline_argument_words & reachable:
+        overlap = ", ".join(
+            f"0x{pc:08X}" for pc in sorted(flow.inline_argument_words & reachable)
+        )
+        raise ValueError(f"inline argument words are also reached as code: {overlap}")
+    literal_data = set(literal_data) | flow.inline_argument_words
+    observed = frozenset(observed_sites) | frozenset(dispatch_entries)
+    if observed - flow.decoded_reachable:
+        missing = ", ".join(f"0x{pc:08X}" for pc in sorted(observed - flow.decoded_reachable))
+        raise ValueError(f"observed sites are not reachable code: {missing}")
+    dynamic_targets = _switch_targets(decoder, literal_sources, reachable)
+    blocks = _make_blocks(
+        decoder,
+        reachable,
+        flow.block_starts | observed,
+        flow.explicit_lr_returns,
+        dynamic_targets,
+        flow.inline_argument_returns,
+    )
+    entry_to_block = {block.pc: block.index for block in blocks}
+    if len(entry_to_block) != len(blocks):
+        raise AssertionError("duplicate basic-block entry")
+
+    inventory_by_entry = {function.entry: function for function in callable_functions}
+    direct_targets = {
+        edge.target
+        for block in blocks
+        for edge in block.successors
+        if edge.kind == "direct_call" and edge.target in entry_to_block
+    }
+    roots = (set(inventory_by_entry) | set(flow.pointer_roots) | direct_targets
+             | internal_cases | dispatch_entries)
+    missing_thumb_callees = set(thumb_arm_targets) - set(entry_to_block)
+    if missing_thumb_callees:
+        raise ValueError(
+            "Thumb BLX callees are not A32 block entries: "
+            + ", ".join(f"0x{pc:08X}" for pc in sorted(missing_thumb_callees))
+        )
+    roots |= set(thumb_arm_targets)
+    roots &= set(entry_to_block)
+    blocks = _normalize_complementary_branch_chains(blocks, roots | observed)
+    if thumb_flow is not None:
+        # Second pass: the listed ranges are a lower bound.  Thumb flow and
+        # address-taken Thumb pointers may reach executable bytes that no
+        # A32 block or A32 literal owns.
+        arm_owned = bytearray(executable_size)
+        for block in blocks:
+            arm_owned[block.pc - base:block.end_pc - base] = (
+                b"\x01" * (block.end_pc - block.pc))
+        for word in literal_data:
+            if base <= word < base + executable_size:
+                arm_owned[word - base:word - base + 4] = b"\x01" * 4
+
+        def unowned(address: int) -> bool:
+            offset = address - base
+            return 0 <= offset < executable_size and not arm_owned[offset] and (
+                offset + 1 >= executable_size or not arm_owned[offset + 1])
+
+        thumb_discovery = thumb_flow_module.discover(
+            code, base, thumb_spans, thumb_entries, region=unowned)
+        thumb_flow = thumb_discovery.flow
+        late_callees = set(thumb_flow.arm_call_targets) - set(entry_to_block)
+        if late_callees:
+            raise ValueError(
+                "Thumb BLX callees are not A32 block entries: "
+                + ", ".join(f"0x{pc:08X}" for pc in sorted(late_callees))
+            )
+        roots |= set(thumb_flow.arm_call_targets)
+        blocks = blocks + _thumb_blocks(thumb_flow, len(blocks))
+        entry_to_block = {block.pc: block.index for block in blocks}
+        if len(entry_to_block) != len(blocks):
+            raise AssertionError("duplicate basic-block entry")
+        roots |= set(thumb_flow.entries)
+        literal_data = set(literal_data) | set(thumb_flow.literal_words)
+
+    def root_record(entry: int) -> tuple[int | None, str, str]:
+        record = inventory_by_entry.get(entry)
+        if record is not None:
+            return record.end, record.name, "inventory"
+        if entry in dispatch_entries:
+            return None, f"dispatch_entry_{entry:08X}", "audited_dispatch_entry"
+        if entry in internal_cases:
+            return None, f"internal_switch_{entry:08X}", "internal_dispatch"
+        if entry in flow.pointer_roots:
+            return None, f"address_taken_{entry:08X}", "address_taken"
+        if entry & 1 and thumb_discovery is not None:
+            origin = thumb_discovery.origins.get(entry, "bl_target")
+            return None, f"thumb_{entry & ~1:08X}", f"thumb_{origin}"
+        return None, f"direct_target_{entry:08X}", "direct_target"
+
+    function_entries = set(roots)
+    closure_records: list[
+        tuple[
+            int,
+            int | None,
+            str,
+            str,
+            tuple[int, ...],
+            tuple[tuple[int, int], ...],
+            tuple[tuple[int, int], ...],
+            tuple[tuple[int, str], ...],
+            tuple[AotEdge, ...],
+            bool,
+        ]
+    ] = []
+    claimed: set[int] = set()
+    for entry in sorted(roots):
+        end, name, origin = root_record(entry)
+        block_ids, calls, tails, indirect, unresolved, closed = _function_closure(
+            entry, entry_to_block, blocks, function_entries
+        )
+        claimed.update(block_ids)
+        closure_records.append(
+            (
+                entry,
+                end,
+                name,
+                origin,
+                block_ids,
+                calls,
+                tails,
+                indirect,
+                unresolved,
+                closed,
+            )
+        )
+
+    # Any residue reached by the reviewed global CFG is preserved explicitly.
+    # It is not silently attributed to the nearest Ghidra interval.
+    for block_id in range(len(blocks)):
+        if block_id in claimed:
+            continue
+        entry = blocks[block_id].pc
+        function_entries.add(entry)
+        block_ids, calls, tails, indirect, unresolved, closed = _function_closure(
+            entry, entry_to_block, blocks, function_entries
+        )
+        if not block_ids:
+            block_ids = (block_id,)
+            closed = False
+        claimed.update(block_ids)
+        closure_records.append(
+            (
+                entry,
+                None,
+                f"cfg_residue_{entry:08X}",
+                "cfg_residue",
+                block_ids,
+                calls,
+                tails,
+                indirect,
+                unresolved,
+                closed,
+            )
+        )
+
+    aot_functions = tuple(
+        AotFunction(
+            entry=entry,
+            end=end,
+            name=name,
+            origin=origin,
+            block_ids=block_ids,
+            direct_calls=calls,
+            tail_calls=tails,
+            indirect_sites=indirect,
+            unresolved_static_edges=unresolved,
+            closed_static_cfg=closed,
+            body_sha256=_body_hash(block_ids, blocks),
+        )
+        for (
+            entry,
+            end,
+            name,
+            origin,
+            block_ids,
+            calls,
+            tails,
+            indirect,
+            unresolved,
+            closed,
+        )
+        in sorted(closure_records, key=lambda row: row[0])
+    )
+    unclaimed = tuple(sorted(set(range(len(blocks))) - claimed))
+    return AotProgram(
+        base=base,
+        executable_size=executable_size,
+        code_sha256=_sha256_bytes(code),
+        inventory_sha256=_sha256_path(inventory_path),
+        boundary_audit_sha256=_sha256_path(boundary_audit_path),
+        fixed_point_iterations=iterations,
+        literal_data=frozenset(literal_data),
+        pointer_roots=frozenset(flow.pointer_roots),
+        blocks=blocks,
+        functions=aot_functions,
+        unclaimed_blocks=unclaimed,
+    )
+
+
+def _write_if_different(path: Path, contents: bytes) -> bool:
+    if path.is_file() and path.read_bytes() == contents:
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(contents)
+    return True
+
+
+def _cache_key(args: argparse.Namespace) -> str:
+    digest = hashlib.sha256()
+    digest.update(FORMAT.encode("ascii"))
+    digest.update(str(args.base).encode("ascii"))
+    digest.update(str(args.executable_size).encode("ascii"))
+    digest.update(str(bool(args.include_instructions)).encode("ascii"))
+    sources = (
+        Path(__file__),
+        UPSTREAM_SRC / "oot3d_pack/a32_cpp_aot.py",
+        UPSTREAM_SRC / "oot3d_pack/arm_decode.py",
+        UPSTREAM_SRC / "oot3d_pack/arm_ir.py",
+    )
+    extra = tuple(
+        path for path in (args.inline_argument_calls, args.thumb_ranges) if path
+    )
+    for path in (*sources, args.code, args.inventory, args.boundary_audit,
+                 args.observed_sites, *extra):
+        digest.update(str(path.resolve()).encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(bytes.fromhex(_sha256_path(path)))
+    return digest.hexdigest()
+
+
+def _stamp_path(output: Path) -> Path:
+    return output.with_name(output.name + ".stamp.json")
+
+
+def _read_cached_counts(
+    output: Path, cache_key: str
+) -> dict[str, int] | None:
+    stamp_path = _stamp_path(output)
+    if not output.is_file() or not stamp_path.is_file():
+        return None
+    try:
+        stamp = json.loads(stamp_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if (
+        stamp.get("format") != CACHE_FORMAT
+        or stamp.get("cache_key") != cache_key
+        or stamp.get("output_bytes") != output.stat().st_size
+        or stamp.get("output_sha256") != _sha256_path(output)
+    ):
+        return None
+    counts = stamp.get("counts")
+    if not isinstance(counts, dict) or not all(
+        isinstance(key, str) and isinstance(value, int)
+        for key, value in counts.items()
+    ):
+        return None
+    return counts
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Extract the structural OOT3D whole-program AOT artifact."
+    )
+    parser.add_argument("--code", type=Path, required=True)
+    parser.add_argument("--inventory", type=Path, required=True)
+    parser.add_argument("--boundary-audit", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--base", type=lambda value: int(value, 0), default=DEFAULT_BASE)
+    parser.add_argument("--executable-size", type=lambda value: int(value, 0))
+    parser.add_argument("--include-instructions", action="store_true")
+    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--observed-sites", type=Path, default=DEFAULT_OBSERVED_SITES)
+    parser.add_argument(
+        "--inline-argument-calls", type=Path, default=None,
+        help="title fact JSON (a32_inline_argument_calls_v1)",
+    )
+    parser.add_argument(
+        "--thumb-ranges", type=Path, default=None,
+        help="title Thumb code ranges; data pointers into them are not A32 roots",
+    )
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    cache_key = _cache_key(args)
+    if not args.force:
+        cached_counts = _read_cached_counts(args.output, cache_key)
+        if cached_counts is not None:
+            print(
+                "Whole AOT program: "
+                f"{cached_counts['functions']} functions, "
+                f"{cached_counts['blocks']} blocks, "
+                f"{cached_counts['instructions']} instructions, "
+                f"{cached_counts['unclaimed_blocks']} unclaimed; "
+                f"cached {args.output}"
+            )
+            return 0
+    code = args.code.read_bytes()
+    check_thumb_range_guards(args.thumb_ranges, code, args.base)
+    program = build_program(
+        code,
+        args.inventory,
+        args.boundary_audit,
+        base=args.base,
+        executable_size=args.executable_size,
+        observed_sites=load_observed_sites(args.observed_sites, code),
+        inline_argument_calls=load_inline_argument_calls(
+            args.inline_argument_calls, code, args.base
+        ),
+        thumb_ranges=load_thumb_ranges(args.thumb_ranges),
+        thumb_entries=load_thumb_entries(args.thumb_ranges),
+    )
+    manifest = program.to_manifest(args.include_instructions)
+    contents = (
+        json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode("utf-8")
+    changed = _write_if_different(args.output, contents)
+    counts = manifest["counts"]
+    assert isinstance(counts, dict)
+    stamp = {
+        "format": CACHE_FORMAT,
+        "cache_key": cache_key,
+        "output_bytes": len(contents),
+        "output_sha256": _sha256_bytes(contents),
+        "counts": counts,
+    }
+    _write_if_different(
+        _stamp_path(args.output),
+        (json.dumps(stamp, indent=2, sort_keys=True) + "\n").encode("utf-8"),
+    )
+    print(
+        "Whole AOT program: "
+        f"{counts['functions']} functions, {counts['blocks']} blocks, "
+        f"{counts['instructions']} instructions, "
+        f"{counts['unclaimed_blocks']} unclaimed; "
+        f"{'wrote' if changed else 'cached'} {args.output}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

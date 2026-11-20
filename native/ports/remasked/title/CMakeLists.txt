@@ -1,0 +1,31 @@
+cmake_minimum_required(VERSION 3.26)
+project(ReMaskedStaticTitle LANGUAGES C CXX)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+find_package(nlohmann_json 3.12.0 EXACT CONFIG REQUIRED)
+get_filename_component(root "../../.." ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+set(REMASKED_TITLE_DIR "" CACHE PATH "Private, hash-verified MM3D translated sources")
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/StaticTitle.cmake")
+remasked_add_static_title("${root}" "${REMASKED_TITLE_DIR}")
+set(host "${root}/tools/oot3d/native_game_runtime")
+set(pinned "${root}/tools/oot3d/native_a32_runtime/upstream/recomp")
+add_library(remasked_static_title_host STATIC title_bridge.cpp
+  "${host}/oot3d_native_direct_aot.cpp"
+  "${pinned}/a32_core.cpp" "${pinned}/a32_core_alu.cpp"
+  "${pinned}/a32_core_memory.cpp" "${pinned}/a32_runtime.cpp"
+  "${root}/tools/oot3d/native_a32_runtime/a32_thumb.cpp")
+target_compile_definitions(remasked_static_title_host PRIVATE
+  TRIAEVUM_STATIC_TITLE_AOT=1 OOT3D_NATIVE_DIRECT_AOT_PLUGIN=1 OOT3D_NATIVE_GENERATED_WHOLE_AOT=1)
+target_link_libraries(remasked_static_title_host PUBLIC remasked_static_title)
+add_executable(remasked_static_title_probe static_title_probe.cpp)
+target_link_libraries(remasked_static_title_probe PRIVATE remasked_static_title_host)
+enable_testing()
+add_test(NAME static_mm3d_title_abi COMMAND remasked_static_title_probe)
+set(REMASKED_CODE_FILE "" CACHE FILEPATH "Private owned code.bin for bounded CPU smoke")
+if(REMASKED_CODE_FILE)
+  file(SHA256 "${REMASKED_CODE_FILE}" code_hash)
+  if(NOT code_hash STREQUAL "6eec27b1827eab2c87744ac38066d569ffe6fe75790b1eb3300bd91f5099038d")
+    message(FATAL_ERROR "CPU smoke requires the exact MM3D code input")
+  endif()
+  add_test(NAME static_mm3d_entry_cpu_smoke COMMAND remasked_static_title_probe "${REMASKED_CODE_FILE}")
+endif()

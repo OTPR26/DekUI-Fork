@@ -1,0 +1,735 @@
+from __future__ import annotations
+
+import fnmatch
+import json
+import tempfile
+import unittest
+import zipfile
+from pathlib import Path
+from unittest.mock import patch
+
+from audit_release import (DEFAULT_POLICY, REPO_ROOT, _matches_any, _title_composition_errors, audit_release,
+                           revision_recipe_path, title_package_composition)
+from common import atomic_write_json, sha256_file
+from package_release import package_release
+from test_vulkan_imports import pe_import_fixture
+from ui_texture_pack import VANILLA_UI_HUD
+
+# The Windows package root holds only Forge, README.md and LICENSE.
+MANIFEST = "docs/release-manifest.json"
+
+# The SingleScreen 3.0 assets are pinned by hash: the fixture ships the real files.
+SINGLESCREEN = Path(__file__).resolve().parents[2] / "runtime/triaevum_resources/topscreen/singlescreen-3.0"
+
+FILES = {
+    "runtime/TriAevum.exe": ("runtime_executable", b"MZ generic runtime"),
+    "TriAevumForge.exe": ("forge_executable", b"MZ generic forge"),
+    "runtime/triaevum_title_aot.dll": ("runtime_library", b"MZ generic AOT stub"),
+    "forge/oot3d_game_module.dll": (
+        "forge_runtime_module",
+        b"MZ generic game adapter",
+    ),
+    "forge/clang-cl.exe": ("forge_tool", b"MZ LLVM compiler fixture"),
+    "forge/llvm-lib.exe": ("forge_tool", b"MZ LLVM archiver fixture"),
+    "forge/lld-link.exe": ("forge_tool", b"MZ LLVM linker fixture"),
+    "forge/triaevum_title_whole_aot_support.lib": (
+        "forge_link_library",
+        b"title-neutral support archive",
+    ),
+    "lib/clang/22/lib/windows/clang_rt.builtins-x86_64.lib": (
+        "forge_tool_resource",
+        b"LLVM builtins fixture",
+    ),
+    "README.md": ("documentation", b"# TriAevum\n"),
+    "docs/LICENSE_SCOPE.md": ("documentation", b"mixed license scope\n"),
+    "docs/THIRD_PARTY_NOTICES.md": ("documentation", b"third-party notices\n"),
+    "docs/SOURCE_OFFER.md": ("documentation", b"corresponding source included\n"),
+    "LICENSE": ("license", b"GPL-3.0-or-later test fixture\n"),
+    "LICENSES/GPL-2.0-or-later.txt": ("license", b"GPL test fixture\n"),
+    "LICENSES/SDL2-zlib.txt": ("license", b"SDL zlib test fixture\n"),
+    "LICENSES/SDL-GameControllerDB-zlib.txt": ("license", b"Controller DB zlib test fixture\n"),
+    "LICENSES/zstd-BSD-3-Clause.txt": ("license", b"zstd BSD test fixture\n"),
+    "LICENSES/Aurora-MIT.txt": ("license", b"Aurora MIT test fixture\n"),
+    "resources/gamecontrollerdb.txt": ("title_neutral_resource", b"# Controller DB fixture\n"),
+    "resources/topscreen/singlescreen-3.0/custom_ui01.ctxb": (
+        "topscreen_singlescreen_asset", (SINGLESCREEN / "custom_ui01.ctxb").read_bytes()),
+    "resources/topscreen/singlescreen-3.0/zelda_link_ext.zar": (
+        "topscreen_singlescreen_asset", (SINGLESCREEN / "zelda_link_ext.zar").read_bytes()),
+    "resources/topscreen/singlescreen-3.1/ltn16.qbf": (
+        "topscreen_singlescreen_asset", (SINGLESCREEN.parent / "singlescreen-3.1/ltn16.qbf").read_bytes()),
+    "LICENSES/SingleScreen-3.0.md": ("license", b"SingleScreen 3.0 permission fixture\n"),
+    # The in-game menu's font atlases are compiled into the runtime.
+    "LICENSES/FiraSans-OFL.txt": ("license", b"SIL Open Font License fixture\n"),
+    "runtime/msvcp140.dll": ("runtime_library", b"MZ C++ library fixture"),
+    "runtime/vcruntime140.dll": ("runtime_library", b"MZ runtime fixture"),
+    "runtime/vcruntime140_1.dll": ("runtime_library", b"MZ exception runtime fixture"),
+    "LICENSES/Microsoft-Visual-Cpp-Runtime.md": ("license", b"Microsoft runtime notice fixture"),
+    "LICENSES/shaderc-Apache-2.0.txt": ("license", b"Apache test fixture\n"),
+    "LICENSES/Python-3.13.txt": ("license", b"Python test fixture\n"),
+    "LICENSES/Capstone-BSD.txt": ("license", b"BSD test fixture\n"),
+    "LICENSES/PyInstaller-GPL-2.0-or-later-with-bootloader-exception.txt": (
+        "license",
+        b"PyInstaller test fixture\n",
+    ),
+    "LICENSES/LLVM-exception.txt": ("license", b"LLVM exception fixture\n"),
+    "LICENSES/iMMERSE-MXAO.md": ("license", b"iMMERSE module exception fixture\n"),
+    "LICENSES/iMMERSE-LICENSE.txt": ("license", b"iMMERSE license fixture\n"),
+    "runtime/triaevum_immerse.dll": ("separately_licensed_module", b"MZ iMMERSE module fixture"),
+    # The DLSS module is the one binary allowed to contain NGX code.
+    "runtime/triaevum_dlss.dll": ("separately_licensed_module", b"MZ DLSS module fixture NVSDK_NGX_VULKAN_Init"),
+    "runtime/nvngx_dlss.dll": ("separately_licensed_module", b"MZ NVIDIA DLSS runtime fixture"),
+    "LICENSES/NVIDIA-DLSS-SDK-LICENSE.txt": ("license", b"NVIDIA RTX SDKs licence fixture\n"),
+    "LICENSES/TriAevum-DLSS-module.md": ("license", b"DLSS module boundary fixture\n"),
+    "resources/environments/scene-0043.environment.json": ("default_environment_profile", b"{}\n"),
+    "recipes/oot3d.json": ("revision_recipe", b'{"format":"recipe-test"}\n'),
+}
+
+
+def write_source_fixture(archive):
+    policy = json.loads(DEFAULT_POLICY.read_text())
+    archive.writestr("src/main.cpp", "int main() { return 0; }\n")
+    for relative in policy.get("source_archive_required_paths", []):
+        archive.writestr(relative, "// source fixture\n")
+    for relative in policy.get("source_archive_required_manifests", []):
+        manifest = json.loads((DEFAULT_POLICY.parents[2] / relative).read_text())
+        archive.writestr(relative, json.dumps(manifest))
+        for item in manifest["files"]:
+            archive.writestr((Path(relative).parent / item["path"]).as_posix(), "// source fixture\n")
+
+
+def write_clean_package(root: Path, manifest: str = MANIFEST) -> None:
+    inventory = []
+    for relative, (role, data) in FILES.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        inventory.append(
+            {
+                "path": relative,
+                "role": role,
+                "bytes": len(data),
+                "sha256": sha256_file(path),
+            }
+        )
+    source_archive = root / "source" / "TriAevum-source.zip"
+    source_archive.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(source_archive, "w") as archive:
+        write_source_fixture(archive)
+    inventory.append(
+        {
+            "path": "source/TriAevum-source.zip",
+            "role": "corresponding_source",
+            "bytes": source_archive.stat().st_size,
+            "sha256": sha256_file(source_archive),
+        }
+    )
+    atomic_write_json(
+        root / manifest,
+        {
+            "format": "triaevum_public_release_manifest_v1",
+            "release": {
+                "name": "TriAevum",
+                "version": "test",
+                "source_commit": "0" * 40,
+                "contains_title_code": False,
+                "contains_title_content": False,
+                "proprietary_sdk_included": False,
+                "redistributable": True,
+            },
+            "files": inventory,
+        },
+    )
+
+
+class PublicReleaseAuditTests(unittest.TestCase):
+    def test_rejects_source_archive_missing_ui_header(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write_clean_package(root)
+            path = root / "source/TriAevum-source.zip"
+            missing = "tools/oot3d/ui_contract/oot3d_ui/ui_primitives.h"
+            with zipfile.ZipFile(path) as archive:
+                kept = {name: archive.read(name) for name in archive.namelist() if name != missing}
+            with zipfile.ZipFile(path, "w") as archive:
+                for name, data in kept.items():
+                    archive.writestr(name, data)
+            manifest_path = root / MANIFEST
+            manifest = json.loads(manifest_path.read_text())
+            item = next(item for item in manifest["files"] if item["role"] == "corresponding_source")
+            item.update(bytes=path.stat().st_size, sha256=sha256_file(path))
+            atomic_write_json(manifest_path, manifest)
+            result = audit_release(root)
+            self.assertFalse(result.ok)
+            self.assertTrue(any(missing in error for error in result.errors), result.errors)
+
+    def test_rejects_package_without_input_or_runtime_dependencies(self):
+        for relative in ("resources/gamecontrollerdb.txt", "runtime/msvcp140.dll",
+                         "runtime/vcruntime140.dll", "runtime/vcruntime140_1.dll"):
+            with self.subTest(path=relative), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                write_clean_package(root)
+                (root / relative).unlink()
+                manifest_path = root / MANIFEST
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                manifest["files"] = [item for item in manifest["files"] if item["path"] != relative]
+                atomic_write_json(manifest_path, manifest)
+                result = audit_release(root)
+                self.assertFalse(result.ok)
+                self.assertTrue(any(relative in error for error in result.errors), result.errors)
+
+    def test_private_plugin_is_rejected_before_publication(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            exe = root / "input.exe"
+            exe.write_bytes(b"fixture")
+            layout = root / "layout.json"
+            atomic_write_json(layout, {"format": "triaevum_public_release_layout_v1", "files": [
+                {"source": str(exe), "path": "runtime/TriAevum.exe", "role": "runtime_executable"}
+            ]})
+            with patch("package_release.query_product", return_value={
+                "product": {"private_title_loaded": True}
+            }):
+                with self.assertRaisesRegex(ValueError, "private title plugin"):
+                    package_release(layout, root / "output", source_root=root,
+                                    version="test", source_commit="0" * 40,
+                                    enforce_readiness=False)
+            self.assertFalse((root / "output").exists())
+
+    def test_separately_licensed_module_keeps_its_role(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write_clean_package(root)
+            manifest_path = root / MANIFEST
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            for item in manifest["files"]:
+                if item["path"] == "runtime/triaevum_immerse.dll":
+                    item["role"] = "runtime_library"
+            atomic_write_json(manifest_path, manifest)
+            result = audit_release(root)
+            self.assertFalse(result.ok)
+            self.assertTrue(any("separately licensed" in error for error in result.errors), result.errors)
+
+    def test_dlss_module_and_nvidia_runtime_keep_their_role(self) -> None:
+        for relative in ("runtime/triaevum_dlss.dll", "runtime/nvngx_dlss.dll"):
+            with self.subTest(path=relative), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                write_clean_package(root)
+                manifest_path = root / MANIFEST
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                for item in manifest["files"]:
+                    if item["path"] == relative:
+                        item["role"] = "runtime_library"
+                atomic_write_json(manifest_path, manifest)
+                result = audit_release(root)
+                self.assertFalse(result.ok)
+                self.assertTrue(any(relative in error and "separately licensed" in error
+                                    for error in result.errors), result.errors)
+
+    def test_rejects_ngx_code_outside_the_dlss_module(self) -> None:
+        for relative in ("runtime/TriAevum.exe", "runtime/msvcp140.dll"):
+            with self.subTest(path=relative), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                write_clean_package(root)
+                path = root / relative
+                # Across the scanner's chunk boundary, too.
+                path.write_bytes(b"MZ" + b"\0" * (8 * 1024 * 1024 - 5) + b"NVSDK_NGX_Init")
+                manifest_path = root / MANIFEST
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                for item in manifest["files"]:
+                    if item["path"] == relative:
+                        item.update(bytes=path.stat().st_size, sha256=sha256_file(path))
+                atomic_write_json(manifest_path, manifest)
+                result = audit_release(root)
+                self.assertFalse(result.ok)
+                self.assertTrue(any(relative in error and "proprietary SDK code" in error
+                                    for error in result.errors), result.errors)
+
+    def test_accepts_exact_clean_allowlist(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write_clean_package(root)
+            result = audit_release(root)
+            self.assertTrue(result.ok, result.errors)
+            self.assertEqual(result.summary["verified_files"], len(FILES) + 1)
+
+    def test_user_documentation_ships_as_documentation(self) -> None:
+        # The user guide and the user data tree (Forge links the guide from
+        # About and Diagnostics) are allowlisted user documentation.
+        repository = Path(__file__).resolve().parents[2]
+        layout = json.loads(Path(__file__).with_name("runtime_release_layout.example.json")
+                            .read_text(encoding="utf-8"))
+        policy = json.loads(DEFAULT_POLICY.read_text(encoding="utf-8"))
+        for relative in ("docs/USER_GUIDE.md", "docs/TRIAEVUM_USER_DATA.md"):
+            self.assertIn({"source": relative, "path": relative, "role": "documentation"}, layout["files"])
+            self.assertTrue((repository / relative).is_file(), relative)
+            for platform in ("x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"):
+                patterns = policy["platforms"][platform]["allowed_roles"]["documentation"]
+                self.assertTrue(_matches_any(relative, patterns), (platform, relative))
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.dict(FILES, {"docs/USER_GUIDE.md": ("documentation", b"# User guide\n")}):
+            root = Path(temporary)
+            write_clean_package(root)
+            result = audit_release(root)
+            self.assertTrue(result.ok, result.errors)
+
+    def test_no_layout_archive_in_a_moonfall_curse_package(self) -> None:
+        # C-DISTRO-1 (coordinator D25): the MC package ships Project
+        # Restoration's layout recipe, BPS patches and original members only;
+        # the Forge rebuilds the .gar/.mfpj files from the user's dump. No role
+        # may carry a .gar or .mfpj, and the new roles are pinned.
+        policy = json.loads(DEFAULT_POLICY.read_text())
+        self.assertNotIn(".gar", policy["forbidden_extension_role_exceptions"])
+        self.assertNotIn(".mfpj", policy["forbidden_extension_role_exceptions"])
+        self.assertIn(".mfpj", policy["forbidden_extensions"])
+        self.assertNotIn("restoration_layout_asset", policy["allowed_roles"])
+        self.assertEqual(policy["forbidden_extension_role_exceptions"][".bps"], ["restoration_patch"])
+        for role, count in (("restoration_layout_recipe", 1), ("restoration_patch", 7),
+                            ("restoration_original_member", 7)):
+            self.assertEqual(len(policy["pinned_role_sha256"][role]), count, role)
+
+        def audit_with(relative: str, role_name: str, data: bytes):
+            with tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                write_clean_package(root)
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(data)
+                manifest_path = root / MANIFEST
+                manifest = json.loads(manifest_path.read_text())
+                manifest["files"].append({"path": relative, "role": role_name, "bytes": len(data),
+                                          "sha256": sha256_file(path)})
+                atomic_write_json(manifest_path, manifest)
+                return audit_release(root).errors
+
+        layout = "resources/mm3d/project-restoration/layout/"
+        # Planted negatives: the former package members, under any role.
+        for name in ("Joker.Main.New.gar", "Joker.Main.Play.gar", "Joker.mfpj"):
+            for role in ("title_neutral_resource", "restoration_original_member", "restoration_patch"):
+                errors = audit_with(layout + name, role, b"GAR\x02 planted archive")
+                self.assertTrue(any("forbidden extension" in e or "not allowed for role" in e for e in errors),
+                                (name, role, errors))
+        errors = audit_with("resources/mm3d/project-restoration/Joker.mfpj", "title_neutral_resource", b"x")
+        self.assertTrue(any("forbidden extension" in e for e in errors), errors)
+        # A patch that is not one of the pinned patches is refused at its own path.
+        errors = audit_with(layout + "patches/Other.bps", "restoration_patch", b"BPS1 another")
+        self.assertTrue(any("not a pinned restoration_patch" in e for e in errors), errors)
+        errors = audit_with("resources/mm3d/extra.bps", "title_neutral_resource", b"BPS1")
+        self.assertTrue(any("forbidden extension" in e for e in errors), errors)
+
+    def test_singlescreen_assets_are_pinned_and_hd_graphics_excluded(self) -> None:
+        def audit_with(relative: str, role: str, data: bytes):
+            with tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                write_clean_package(root)
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(data)
+                manifest_path = root / MANIFEST
+                manifest = json.loads(manifest_path.read_text())
+                manifest["files"] = [item for item in manifest["files"] if item["path"] != relative]
+                manifest["files"].append({"path": relative, "role": role, "bytes": len(data),
+                                          "sha256": sha256_file(path)})
+                atomic_write_json(manifest_path, manifest)
+                return audit_release(root).errors
+
+        atlas = "resources/topscreen/singlescreen-3.0/custom_ui01.ctxb"
+        errors = audit_with(atlas, "topscreen_singlescreen_asset", b"ctxb another atlas")
+        self.assertTrue(any("not a pinned topscreen_singlescreen_asset" in e for e in errors), errors)
+        # Only the pinned role may carry these extensions.
+        errors = audit_with("resources/topscreen/extra.ctxb", "title_neutral_resource",
+                            (SINGLESCREEN / "custom_ui01.ctxb").read_bytes())
+        self.assertTrue(any("forbidden extension" in e for e in errors), errors)
+        # The SingleScreen archives and HD UI atlases stay out, and so do the HD
+        # UI texture pack's archive and textures; the HD font ships, pinned.
+        policy = json.loads(DEFAULT_POLICY.read_text())
+        forbidden = set(policy["forbidden_sha256"])
+        self.assertTrue({"5668640fec8dc2b47b4516fd0b871c4d7d90ca1c2203acc2a22adb59aaab5993",
+                         "25e9f22720029c64ac729deef9c38b4dea3d5426d57d99678963c8f26b2908a1",
+                         "f91485999a6b8e89b8d574064dc03c1c20704f2c718e93c5187251b6ef69dbcb",
+                         "3a505b0beff8654d71c68e870c132975c6bc0209ab9c41aafbd782f7a5880e7a",
+                         "9c401a41d142d153b7dfef9208f3a7982a018f89f729eece441cce0470aacb42",
+                         "5ff478db312c3f57f54263cd84f4caef15bbb391fd1dda3bdd3c25c4917938a1"} <= forbidden)
+        self.assertTrue({digest for _size, digest in VANILLA_UI_HUD.members.values()} <= forbidden)
+        font = "8b83e081f721c6e1842b0a9cd90b71a3fb2849674d2b1040f3dc5c3221594169"
+        self.assertNotIn(font, forbidden)
+        self.assertIn(font, policy["pinned_role_sha256"]["topscreen_singlescreen_asset"])
+        errors = audit_with("resources/topscreen/singlescreen-3.1/ltn16.qbf", "topscreen_singlescreen_asset",
+                            b"QBF1 another font")
+        self.assertTrue(any("not a pinned topscreen_singlescreen_asset" in e for e in errors), errors)
+
+    def test_runtime_contract_excludes_experimental_global_illumination(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write_clean_package(root)
+            manifest_path = root / MANIFEST
+            manifest = json.loads(manifest_path.read_text())
+            runtime = next(item for item in manifest["files"] if item["path"] == "runtime/TriAevum.exe")
+            # A runtime contract also binds the corresponding source to its commit.
+            source = root / "source/TriAevum-source.zip"
+            with zipfile.ZipFile(source, "a") as archive:
+                archive.writestr("SOURCE_ARCHIVE_MANIFEST.json", json.dumps({"source_commit": "0" * 40}))
+            item = next(item for item in manifest["files"] if item["role"] == "corresponding_source")
+            item.update(bytes=source.stat().st_size, sha256=sha256_file(source))
+
+            def audit(capability, mode: str, developer_tools=False) -> list[str]:
+                capabilities = {"nri": True, "f1": True, "topscreen": True}
+                if capability is not None:
+                    capabilities["experimental_global_illumination"] = capability
+                if developer_tools is not None:
+                    capabilities["developer_tools"] = developer_tools
+                product = {
+                    "format": "triaevum_product_info_v1", "runtime": "oot3d_native_game",
+                    "source_commit": "0" * 40, "whole_aot_plugin_abi": 2, "private_title_loaded": False,
+                    "capabilities": capabilities,
+                    "default_config": {"Graphics": {
+                        "Preset": "Enhanced", "FrameRate": {"Mode": "Interpolated2x"},
+                        "Effects": {"GlobalIllumination": {"Mode": mode}}}},
+                }
+                manifest["release"]["runtime_contract"] = {"runtime_sha256": runtime["sha256"], "product": product}
+                atomic_write_json(manifest_path, manifest)
+                return list(audit_release(root).errors)
+
+            self.assertEqual(audit(False, "Off"), [])
+            for capability, mode in ((True, "Off"), (None, "Off"), (False, "ScreenSpace")):
+                errors = audit(capability, mode)
+                self.assertTrue(any("global illumination" in error for error in errors), errors)
+            # A developer build (warp screen, warp points) is never a release.
+            for developer_tools in (True, None):
+                errors = audit(False, "Off", developer_tools)
+                self.assertTrue(any("developer tools" in error for error in errors), errors)
+
+    def test_rejects_binary_importing_vulkan_commands_an_older_loader_lacks(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write_clean_package(root)
+            manifest_path = root / MANIFEST
+            manifest = json.loads(manifest_path.read_text())
+            runtime = root / "runtime/TriAevum.exe"
+
+            def audit(commands: list[str]) -> list[str]:
+                runtime.write_bytes(pe_import_fixture({"vulkan-1.dll": commands}))
+                item = next(item for item in manifest["files"] if item["path"] == "runtime/TriAevum.exe")
+                item.update(bytes=runtime.stat().st_size, sha256=sha256_file(runtime))
+                atomic_write_json(manifest_path, manifest)
+                return list(audit_release(root).errors)
+
+            self.assertEqual(audit(["vkCreateInstance", "vkQueuePresentKHR"]), [])
+            self.assertEqual(audit(["vkCreateInstance", "vkWaitSemaphores"]),
+                             ["runtime/TriAevum.exe imports Vulkan commands that older loaders lack: vkWaitSemaphores"])
+
+    def test_on_demand_vulkan_runtime_may_import_newer_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write_clean_package(root)
+            manifest_path = root / MANIFEST
+            manifest = json.loads(manifest_path.read_text())
+            library = root / "runtime/amd_fidelityfx_vk.dll"
+            library.write_bytes(pe_import_fixture({"vulkan-1.dll": ["vkWaitSemaphores"]}))
+            entry = {"path": "runtime/amd_fidelityfx_vk.dll", "role": "optional_vulkan_runtime",
+                     "bytes": library.stat().st_size, "sha256": sha256_file(library)}
+            manifest["files"].append(entry)
+            atomic_write_json(manifest_path, manifest)
+            self.assertEqual(list(audit_release(root).errors), [])
+            # The same library as an ordinary runtime library loads at startup.
+            entry["role"] = "runtime_library"
+            atomic_write_json(manifest_path, manifest)
+            self.assertEqual(list(audit_release(root).errors),
+                             ["runtime/amd_fidelityfx_vk.dll imports Vulkan commands that older loaders lack: vkWaitSemaphores"])
+
+    def test_rejects_private_file_hidden_in_source_archive(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write_clean_package(root)
+            source_archive = root / "source" / "TriAevum-source.zip"
+            with zipfile.ZipFile(source_archive, "w") as archive:
+                archive.writestr("private/code.bin", b"not public")
+            manifest_path = root / MANIFEST
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            item = next(
+                entry
+                for entry in manifest["files"]
+                if entry["path"] == "source/TriAevum-source.zip"
+            )
+            item["bytes"] = source_archive.stat().st_size
+            item["sha256"] = sha256_file(source_archive)
+            atomic_write_json(manifest_path, manifest)
+            result = audit_release(root)
+            self.assertFalse(result.ok)
+            self.assertTrue(any("code.bin" in error for error in result.errors))
+
+    def test_rejects_undeclared_private_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write_clean_package(root)
+            (root / "game.tam").write_bytes(b"translated title code")
+            result = audit_release(root)
+            self.assertFalse(result.ok)
+            self.assertIn("undeclared file in public package: game.tam", result.errors)
+
+    def test_rejects_topscreen_payload_and_derived_atlas(self) -> None:
+        for relative in ("resources/top_screen.ips", "resources/atlas_overrides.o3tu"):
+            with (
+                self.subTest(relative=relative),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
+                root = Path(temporary)
+                write_clean_package(root)
+                private = root / relative
+                private.parent.mkdir(parents=True, exist_ok=True)
+                private.write_bytes(b"private TopScreen evidence")
+                manifest_path = root / MANIFEST
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                manifest["files"].append(
+                    {
+                        "path": relative,
+                        "role": "title_neutral_resource",
+                        "bytes": private.stat().st_size,
+                        "sha256": sha256_file(private),
+                    }
+                )
+                atomic_write_json(manifest_path, manifest)
+                result = audit_release(root)
+                self.assertFalse(result.ok)
+                self.assertTrue(
+                    any(relative in error for error in result.errors), result.errors
+                )
+
+    def test_rejects_hash_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write_clean_package(root)
+            (root / "runtime/TriAevum.exe").write_bytes(b"changed")
+            result = audit_release(root)
+            self.assertFalse(result.ok)
+            self.assertIn("SHA-256 mismatch: runtime/TriAevum.exe", result.errors)
+
+    def test_rejects_private_json_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write_clean_package(root)
+            private = root / "config" / "private.json"
+            private.parent.mkdir()
+            private.write_text(
+                json.dumps({"original_game_data_included": True}),
+                encoding="utf-8",
+            )
+            manifest_path = root / MANIFEST
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["files"].append(
+                {
+                    "path": "config/private.json",
+                    "role": "configuration",
+                    "bytes": private.stat().st_size,
+                    "sha256": sha256_file(private),
+                }
+            )
+            atomic_write_json(manifest_path, manifest)
+            result = audit_release(root)
+            self.assertFalse(result.ok)
+            self.assertTrue(
+                any("original_game_data_included" in error for error in result.errors)
+            )
+
+    def test_packager_builds_and_audits_only_declared_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source-inputs"
+            source.mkdir()
+            layout_items = []
+            for relative, (role, data) in FILES.items():
+                source_path = source / relative
+                source_path.parent.mkdir(parents=True, exist_ok=True)
+                source_path.write_bytes(data)
+                layout_items.append(
+                    {"source": relative, "path": relative, "role": role}
+                )
+            source_archive = source / "source" / "TriAevum-source.zip"
+            source_archive.parent.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(source_archive, "w") as archive:
+                write_source_fixture(archive)
+            layout_items.append(
+                {
+                    "source": "source/TriAevum-source.zip",
+                    "path": "source/TriAevum-source.zip",
+                    "role": "corresponding_source",
+                }
+            )
+            layout = root / "layout.json"
+            atomic_write_json(
+                layout,
+                {
+                    "format": "triaevum_public_release_layout_v1",
+                    "files": layout_items,
+                },
+            )
+            output = root / "package"
+            result = package_release(
+                layout,
+                output,
+                source_root=source,
+                version="test",
+                source_commit="0" * 40,
+                policy_path=DEFAULT_POLICY,
+                enforce_readiness=False,
+                verify_runtime=False,
+            )
+            self.assertEqual(result["status"], "packaged")
+            self.assertTrue(audit_release(output).ok)
+
+    def test_public_packager_refuses_incomplete_readiness(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            readiness = root / "readiness.json"
+            atomic_write_json(
+                readiness,
+                {
+                    "format": "triaevum_release_readiness_v1",
+                    "gates": [
+                        {"id": "blocked", "required": True, "status": "blocked"}
+                    ],
+                },
+            )
+            layout = root / "layout.json"
+            atomic_write_json(
+                layout,
+                {
+                    "format": "triaevum_public_release_layout_v1",
+                    "files": [
+                        {
+                            "source": "missing",
+                            "path": "runtime/TriAevum.exe",
+                            "role": "runtime_executable",
+                        }
+                    ],
+                },
+            )
+            with self.assertRaisesRegex(ValueError, "readiness gates"):
+                package_release(
+                    layout,
+                    root / "output",
+                    source_root=root,
+                    version="test",
+                    source_commit="0" * 40,
+                    readiness_path=readiness,
+                )
+
+
+class TitleAwareAuditTests(unittest.TestCase):
+    """C-DISTRO-12: a Moonfall Curse package refuses the other title's README,
+    TopScreen resources and OoT3D-only licences, and requires its own; an
+    OoT3D package (no composition file) is audited exactly as before."""
+
+    COMPOSITION = json.loads((REPO_ROOT / "titles/mm3d/forge/package-composition.json").read_text())
+
+    def audit(self, recipe: str | None, extra: dict[str, tuple[str, bytes]], drop=(), readme=None):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write_clean_package(root)
+            manifest_path = root / MANIFEST
+            manifest = json.loads(manifest_path.read_text())
+            files = dict(extra)
+            if recipe is not None:
+                # The release's single revision recipe names its title.
+                fixture = [item["path"] for item in manifest["files"] if item["role"] == "revision_recipe"]
+                drop = tuple(drop) + tuple(path for path in fixture if path != recipe)
+                if recipe not in fixture:
+                    files[recipe] = ("revision_recipe", b"{}")
+            for relative in drop:
+                (root / relative).unlink()
+            manifest["files"] = [item for item in manifest["files"] if item["path"] not in drop]
+            if readme is not None:
+                (root / "README.md").write_bytes(readme)
+                for item in manifest["files"]:
+                    if item["path"] == "README.md":
+                        item["bytes"], item["sha256"] = len(readme), sha256_file(root / "README.md")
+            for relative, (role, data) in files.items():
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(data)
+                manifest["files"].append({"path": relative, "role": role, "bytes": len(data),
+                                          "sha256": sha256_file(path)})
+            atomic_write_json(manifest_path, manifest)
+            return list(audit_release(root).errors)
+
+    def mm3d_package(self):
+        extra = {path: ("license" if path.startswith("LICENSES/") else
+                        "separately_licensed_module" if path.endswith(".dll") else "documentation",
+                        b"MZ fixture" if path.endswith(".dll") else b"text fixture\n")
+                 for path in self.COMPOSITION["require"] + self.windows_only() if path not in FILES}
+        topscreen = [path for path in FILES if _matches_any(path, self.COMPOSITION["refuse"])]
+        return extra, topscreen
+
+    def windows_only(self):
+        return self.COMPOSITION["require_by_target"]["x86_64-pc-windows-msvc"]
+
+    def test_immerse_dll_is_required_only_on_windows(self):
+        # The iMMERSE DLL name is Windows-only: a Linux MC package must not be refused for it.
+        others = list(self.COMPOSITION["require"])
+        self.assertNotIn("runtime/triaevum_immerse.dll", others)
+        self.assertEqual(self.windows_only(), ["runtime/triaevum_immerse.dll"])
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "README.md").write_text("# Moonfall Curse\n", encoding="utf-8")
+            linux = list(_title_composition_errors(root, "mm3d", self.COMPOSITION, others,
+                                                   "x86_64-unknown-linux-gnu"))
+            self.assertEqual(linux, [])
+            windows = list(_title_composition_errors(root, "mm3d", self.COMPOSITION, others,
+                                                     "x86_64-pc-windows-msvc"))
+            self.assertEqual(windows, ["mm3d package is missing runtime/triaevum_immerse.dll"])
+
+    def title_errors(self, errors):
+        return [error for error in errors if error.startswith("mm3d package")]
+
+    def test_moonfall_curse_composition_passes(self):
+        extra, topscreen = self.mm3d_package()
+        errors = self.audit("recipes/mm3d.json", extra, drop=topscreen, readme=b"# Moonfall Curse\n")
+        self.assertEqual(self.title_errors(errors), [])
+        self.assertFalse(any("required release file is missing: resources/topscreen" in e for e in errors), errors)
+
+    def test_planted_negatives_are_refused(self):
+        extra, topscreen = self.mm3d_package()
+        # The EoT README.
+        errors = self.audit("recipes/mm3d.json", extra, drop=topscreen,
+                            readme="# TriAevum \u2014 Echoes of Time\n".encode())
+        self.assertTrue(any("README.md is not the title's README" in e for e in errors), errors)
+        # Each OoT3D-only resource or licence, one at a time.
+        for planted in topscreen + ["LICENSES/OoT3D-Vanilla-UI-HUD.md", "LICENSES/Vanilla-Plus-Link-Remodel.md",
+                                    "docs/releases/v0.8.0-beta.2.md", "docs/TRIAEVUM_TOPSCREEN_INSTALLATION.md"]:
+            kept = [path for path in topscreen if path != planted]
+            plant = {} if planted in FILES else {planted: ("license" if planted.startswith("LICENSES/")
+                                                           else "documentation", b"planted\n")}
+            errors = self.audit("recipes/mm3d.json", {**extra, **plant}, drop=kept, readme=b"# Moonfall Curse\n")
+            self.assertIn(f"mm3d package must not contain {planted}", errors, planted)
+        # A missing title licence (and the iMMERSE module, owner Q2).
+        for required in ("LICENSES/mm3d-dekui.md", "LICENSES/Project-Restoration.md", "runtime/triaevum_immerse.dll"):
+            less = {path: value for path, value in extra.items() if path != required}
+            gone = tuple(topscreen) + ((required,) if required in FILES else ())
+            errors = self.audit("recipes/mm3d.json", less, drop=gone, readme=b"# Moonfall Curse\n")
+            self.assertIn(f"mm3d package is missing {required}", errors, required)
+
+    def test_oot3d_audit_is_unchanged(self):
+        self.assertIsNone(title_package_composition({"files": [{"path": "recipes/oot3d.json",
+                                                               "role": "revision_recipe"}]}))
+        errors = self.audit("recipes/oot3d.json", {})
+        self.assertEqual(self.title_errors(errors), [])
+        self.assertFalse(any("mm3d" in e for e in errors), errors)
+
+
+class RevisionRecipePathTests(unittest.TestCase):
+    """Forge is per title: the precompiled audit reads the release's own recipe."""
+
+    def test_each_title_release_uses_its_declared_recipe(self) -> None:
+        for path in ("recipes/oot3d.json", "recipes/mm3d.json"):
+            declared = {path: {"role": "revision_recipe"}, "runtime/TriAevum.exe": {"role": "runtime_executable"}}
+            self.assertEqual(revision_recipe_path(declared), path)
+
+    def test_missing_or_ambiguous_recipe_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "exactly one revision_recipe, found 0"):
+            revision_recipe_path({"runtime/TriAevum.exe": {"role": "runtime_executable"}})
+        with self.assertRaisesRegex(ValueError, "found 2"):
+            revision_recipe_path({"recipes/oot3d.json": {"role": "revision_recipe"},
+                                  "recipes/mm3d.json": {"role": "revision_recipe"}})
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,229 @@
+# Precompiled release contract
+
+Adopted 2026-09-05 at the maintainer's explicit request, following the distribution
+model of static Xbox 360 recomp ports. This supersedes earlier requirements to
+compile title code on the end user's machine. It changes distribution, not the
+runtime execution backend, game timing, graphics or save format.
+
+2026-09-12 amendment, explicitly confirmed by the maintainer: the catalogued
+portable shader corpus and observed pipeline recipes are included with Forge
+for all users. This is a narrow exception to the earlier private-cache rule,
+not permission to ship driver caches, ROMs, extracted assets, saves or captures.
+Forge prepares device-specific pipelines locally, without asking users to
+select or enable a cache. See [the verified contract](TRIAEVUM_BUNDLED_FORGE_SHADER_CORPUS.md).
+
+2026-10-13 amendment, at the maintainer's request (installation had to fit in
+about five minutes): the release also ships its own **analysis results** for
+the supported revision's rooms, so Forge does not repeat them on every machine.
+These are TriAevum's computations, not game content: per-triangle bits saying
+which triangles may stop casting toward each of 64 interior-sun directions,
+and scene-light placements (position, reach, gain, colour, category, and the
+content hashes and names of the textures they light). They carry no geometry,
+texture, text, audio or code, and each entry is keyed by a hash of one room's
+content, so it applies only where the user's own RomFS has exactly that room.
+Forge still reads every room from the user's RomFS (the interior sun welds the
+geometry from it) and computes locally any room the tables do not cover. Tests
+prove the installed result is byte-identical to local computation. See
+`tools/triaevum_release/precomputed_tables.py`.
+
+## User contract
+
+Windows packages are portable ZIPs, with application-managed persistent data
+beside the executable and no silent AppData fallback. The Linux packaging
+decision and remaining work are in [desktop packaging](TRIAEVUM_DESKTOP_PACKAGING.md).
+
+- One GUI: `TriAevumForge.exe`, one input: a supported decrypted `.3ds`/`.cci` ROM.
+- Forge verifies/extracts the ROM and activates a shipped optimized title DLL.
+- No C++ compiler, linker, SDK, IR generation or compiler cache is needed.
+- Title preparation needs no network request. TopScreen's default texture import
+  downloads its official archive unless a verified local archive/pack exists;
+  see `TRIAEVUM_TOPSCREEN_INSTALLATION.md` for offline setup. Unsupported ROM
+  revisions or missing/corrupt modules produce an error, never an automatic build.
+- Data, saves and user settings remain under `data/`; existing valid settings
+  are preserved. NRI/Vulkan, TopScreen and F1 retain their mature implementations.
+- Native simulation stays 30 Hz with the existing default x2 presentation.
+- Fresh graphics configs also select the title-owned 1.10x FOV, toon/outline
+  and grass snapshot described in `TRIAEVUM_GRAPHICS_DEFAULTS_AND_GRASS_PERFORMANCE.md`.
+  This is not a change to the shared renderer's Authentic preset.
+
+## Offline interior sun
+
+Forge runs the catalogued neutral runtime's `--prebuild-interior-sun` tool mode
+before activation, passing the user's RomFS, the installation renderer cache,
+the release's interior-sun mask table and an output manifest. This never boots
+a title or invokes a compiler/SDK. The room/setup caches hold welded geometry:
+they are local ROM-derived data and must not be included in a release package.
+Only the mask table (fingerprints, triangle counts and mask bits) is shipped.
+Receipts bind RomFS SHA-256, criterion version, runtime identity, mask table
+and output hashes; lazy runtime building handles a missing cache. See
+[Interior sun / offline](ROOM_SHADOW_SHELLS.md) for the command, format, bounds
+and fallback contract.
+
+## Package boundary
+
+Ship the neutral runtime, explicitly identified translated title logic, Forge,
+revision recipes, notices and corresponding source. Do not describe this package
+as containing no title code. Original ROMs, `code.bin`, ExHeader, RomFS, extracted
+assets, mod payloads, keys, SDKs, captures and saves are still excluded.
+
+`recipes/precompiled-titles.json` binds every module to exact code/ExHeader/RomFS
+hashes and sizes, ABI/target, translator identity, runtime and neutral-module
+hashes. It also identifies the translated-source archive and the source snapshot
+used for the title build. The publisher checks the real DLL with the real runtime.
+Post-alpha.1b packages can additionally bind an explicitly qualified
+[content family](TRIAEVUM_CONTENT_FAMILY_IMPORT.md): execution code stays exact,
+while equivalent ExHeader packaging and logical RomFS contents may differ in
+their complete-file identities. Prepared files retain their actual hashes and
+are revalidated against the module-bound family before activation.
+Hash validation is integrity checking, not cryptographic publisher authentication;
+the publisher's Ed25519 signature of the release manifest is
+([TRIAEVUM_UPDATE_SIGNING.md](TRIAEVUM_UPDATE_SIGNING.md)), and Forge installs update ZIPs only
+with it. The private key never enters the repository or a package.
+
+Deferred device-owned memory and resource snapshots require the whole-AOT
+descriptor's `MemoryWriteObservationVersion` to equal **3**. Despite the
+historical field name, this covers compiled reads, writes, atomics, escaped
+pointers and native per-page write epochs. Version 3 changes the fast-page
+layout: rebuild every title shard, not just its wrapper or support archive.
+The runtime rejects older or truncated descriptors before title execution:
+publish a matching runtime/title-module pair and its corresponding source.
+Forge must not repair this package mismatch by generating IR or compiling.
+The developer ABI probe exercises an actual compiled read of deferred memory.
+
+The user requested this distribution policy after discussing the Xbox 360 model.
+The project's license does not grant or relicense original-game rights. Existing
+donor notices remain; earlier legal approval is not expanded into a blanket legal
+guarantee for every possible artifact.
+
+## Implementation owners
+
+- `precompiled_title_layout.py`: publisher promotion of a completed optimized
+  build, generated source verification and source/catalog packaging.
+- `precompiled_titles.py`: strict revision selection and transactional activation.
+- The Rust Forge (`tools/triaevum_forge`, `install` job): ROM-only user flow, with
+  no compiler fallback. `forge_gui.py` / `install_worker.py` remain the Python
+  oracle and developer tools; packages from beta 1.3 do not ship them.
+- `rust_forge_build.py`: publisher build of `TriAevumForge` and
+  `forge/triaevum-forge` with the pinned toolchain and Cargo.lock, remapped
+  build-machine paths and the `forge/rust-forge.json` receipt.
+- `rust_forge_notices.py`: `LICENSES/Rust-Forge-crates.md` and
+  `tools/triaevum_forge/THIRD_PARTY_CRATES.json` from Cargo.lock; its test fails
+  when Cargo.lock gains a crate without a notice decision.
+- `release_signature.py`: the publisher signature (`docs/release-signature.json`)
+  and the owner's one-time key generation; the public keys Forge trusts are
+  `tools/triaevum_forge/update-signing-keys.json`.
+- `prepare_release.py`: developer build/package workflow, not user preparation;
+  it signs a non-candidate release (`--signing-key`).
+- `audit_release.py`: explicit precompiled roles; rejects uncatalogued modules,
+  ROM/content contamination and compiler payloads in the user package. The
+  manifest's `release.forge_profile` selects the Forge profile of
+  `release_policy.json`: `rust` adds the command-line and receipt roles, binds
+  the receipt to the packaged binaries and to the corresponding source's
+  Cargo.lock, toolchain pin and crate notices, rejects build-machine paths in
+  the binaries, compiler roles and any frozen Python payload. Manifests without
+  the field keep the `python_pyinstaller` profile of earlier packages.
+- Existing `forge build-title`: developer-only optimized title generation.
+
+## Reproduce a release
+
+Build the title once using the documented developer `build-title` path from the
+user-owned original revision. Preserve `whole-aot-plugin.json`, its adjacent DLL,
+the corresponding generated C++ manifest/files and the exact source snapshot
+used for that build. Never copy an entire translator cache into a release.
+
+Run `python -m tools.triaevum_release.prepare_release` with `--build-dir`,
+`--cmake`, `--work`, `--output`, `--version` (optionally `--cargo` and
+`--cargo-target-dir` for the Rust Forge build), and:
+
+```
+--title-build <whole-aot-plugin.json>
+--title-sources <generated-C++-manifest.json>
+--title-build-source <title-build-TriAevum-source.zip>
+--recipe oot3d-eur-project-baseline-16a6b0aa
+```
+
+Also supply `--vc-redist-dir` pointing to the licensed publisher's
+`VC/Redist/MSVC/<version>/x64/Microsoft.VC143.CRT` directory. The package
+includes shaderc's three Visual C++ runtime DLLs app-locally, SDL controller
+mappings and their notices. The release audit rejects omission of these
+dependencies; an SDK installed on the developer PC must not hide missing
+user dependencies. SDL2 itself is statically linked by the Windows build.
+
+The runtime's source archive follows its own current commit; the title build
+snapshot follows its build commit. These can differ and must not be conflated.
+Generated C++ is included separately, so its hashes can be checked and changes
+made without regenerating it. To rebuild that code directly, use the paired
+source's `build_generated_cpp_archive` in `whole_aot_object_cache.py`, support
+library CMake target and wrapper/link flags in `whole_aot_plugin_backend.py`.
+The original `build-title` developer path remains the end-to-end rebuild recipe
+from ROM. Byte-identical builds across different toolchains are not promised.
+
+### Profile-guided title builds
+
+A title module may be built with LLVM instrumentation PGO:
+`build-title --profile-data <title.profdata>`. The merged profile is recorded by
+the developer with `tools/renderer/tev_program/collect_aot_profile.py` from
+real checkpoints; users never generate, download or apply it, and Forge's
+install path is unchanged. The profile is a code-generation input: its SHA-256
+joins the object, toolchain and plugin cache identities and is written to
+`whole-aot-plugin.json` as `profile_data_sha256`. Preserve the profile and its
+collection receipt with the title build snapshot and the generated C++, because
+they are needed to rebuild that module. The profile holds only counters for the
+generated title functions, not ROM bytes or assets.
+
+A profiled module is published with its profile: `prepare_release` takes it as
+`--title-profile <title.profdata>`, checks its SHA-256 against
+`profile_data_sha256` and stores it as `title.profdata` in the translated title
+source archive, recorded under `profile` in `TITLE_SOURCE_MANIFEST.json`.
+Promotion fails for a profiled build without its profile, for a different
+profile and for a profile given with an unprofiled build. The release audit
+rejects a profiled title whose translated source lacks that profile or holds
+another one. The collection receipt stays with the private build snapshot (it
+names local checkpoints). Measurements and qualification:
+`TRIAEVUM_AOT_LEVERS_RESULTS.md`.
+
+## Qualification
+
+Run release unit tests and the allowlist audit; install from a fresh copied
+package using the frozen worker and a ROM, without copying any SDK or build cache.
+Record total extraction-to-ready wall time separately from game boot and FPS.
+Boot the resulting profile and capture the framebuffer; inspect TopScreen,
+renderer identity and interpolation counters. Keep performance claims separate
+from visual/audio/manual validation. No modest-PC time target is claimed until
+measured on one. `--candidate` remains an explicitly unqualified test artifact.
+
+## First measured end-to-end result
+
+Implementation commit: `1d4e95cc9`, branch `release/triaevum-precompiled`.
+Candidate: `<local>/TriAevum-0.6.0-candidate-r1`, 37 files / 180,612,481 bytes,
+allowlist audit passed. Runtime and Forge correspond to that commit; the title
+DLL is reused unchanged from the earlier full ROM-build proof. No game asset,
+compiler executable, SDK generation or translator object cache is packaged.
+
+On this 12-logical-CPU Windows host, the frozen installation worker imported
+`<legacy-recomp>/oot3d.cci` into a fresh copy of the candidate:
+
+- Worker process start to exit: **20.905 seconds**.
+- Import/verification/activation inside the worker: **17.016 seconds**.
+- Compiled objects: **0**; no `translator-cache` or `toolchain` directory created.
+- Runtime: successful 30-second scheduled run, exit 0; framebuffer inspected,
+  showing Link/Epona, terrain, sky and moon in the title intro.
+- TopScreen active, NRI/Vulkan, visual interpolation x2. Measured presentation
+  59.226 FPS over 1,713 frames / 28.923 seconds after warmup, with VSync/pacing
+  enabled. This is a functional paced-run result, not maximum throughput.
+- Both processes were closed by the harness; no test executable left running.
+
+Private evidence: `<oot3d-work>/triaevum-precompiled-r1-proof/` contains
+`qualification.json`, `forge.stdout.log`, `runtime.json`, `framebuffer.bmp` and
+the prepared `installation/`. Never include this proof directory in a release.
+
+Package manifest SHA-256:
+`ff306c4492bf9a94dd8d5d1fdc23406b3014b7216c313c35e950cb38b6b632fa`.
+Qualified title DLL SHA-256 (unchanged from the locally compiled proof):
+`106aa7a6b1be71b2f2cee9c0f4baf2a3f0d43a3c4a1443e84ff365837c536549`.
+
+147 release tests passed (including the native CMake probe), 13.025 seconds.
+The runtime code and title DLL are not rewritten for this distribution change.
+This machine has development software installed: an empty install directory is
+not a clean-Windows VM claim. Modest-PC timing, clean-machine qualification and
+new interactive F1/audio/save validation remain explicitly unclaimed.

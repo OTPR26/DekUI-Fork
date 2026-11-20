@@ -1,0 +1,339 @@
+{
+  "_about": "Example for qualify_windows_battery.py. Copy it outside the repository, replace every <...> with a local path, and keep private inputs (extracted title, checkpoints, captures, references) outside the checkout. Keys starting with an underscore are comments.",
+  "repository": "<this checkout>",
+  "ctest": "<CMake bin>/ctest.exe",
+  "python": "python",
+  "wait_idle_processes": ["ninja.exe", "TriAevum.exe"],
+  "build_trees": [
+    {
+      "name": "host",
+      "dir": "<host build tree>",
+      "build_command": ["cmd.exe", "/c", "<script that sets up the compiler and runs ninja -C the host tree>", "-j", "4"],
+      "targets": ["oot3d_native_game", "triaevum_f1_settings_smoke", "verify_renderer_3ds_cross_title_boundary"],
+      "test_jobs": 4,
+      "test_env": {
+        "_about": "Tests needing ROM-derived inputs read them from here and report themselves skipped (77) without them.",
+        "OOT3D_TEST_EXTRACT_ROOT": "<private extracted title: romfs/ and exefs/>"
+      }
+    },
+    {
+      "name": "gpu",
+      "dir": "<GPU test build tree>",
+      "build_command": ["cmd.exe", "/c", "<script that runs ninja -C the GPU test tree>", "-j", "4"],
+      "targets": ["build_fragment_artifacts", "build_pass_artifacts", "build_immerse_pass_artifacts", "build_vertex_artifacts"],
+      "test_jobs": 1
+    },
+    {
+      "name": "forge-helper",
+      "_about": "Forge's device preparation helper (tools/renderer/pipeline_prepare) and its contract test.",
+      "dir": "<Forge helper build tree>",
+      "build_command": ["cmd.exe", "/c", "<script that configures tools/renderer/pipeline_prepare and runs ninja>"],
+      "targets": ["triaevum_nri_pipeline_prepare"],
+      "test_jobs": 1
+    }
+  ],
+  "generator_checks": [
+    {"name": "native", "command": ["<GPU test build tree>/build_fragment_artifacts.exe", "--check"]},
+    {"name": "temporal", "command": ["<GPU test build tree>/build_fragment_artifacts.exe", "--temporal", "--check"]},
+    {"name": "toon", "command": ["<GPU test build tree>/build_fragment_artifacts.exe", "--toon", "--check"]},
+    {"name": "uber", "command": ["<GPU test build tree>/build_fragment_artifacts.exe", "--uber", "--check"]},
+    {"name": "casters", "command": ["<GPU test build tree>/build_fragment_artifacts.exe", "--casters", "--check"]},
+    {"name": "pass", "command": ["<GPU test build tree>/build_pass_artifacts.exe", "--check"]},
+    {"name": "immerse", "command": ["<GPU test build tree>/build_immerse_pass_artifacts.exe", "--check"]},
+    {"name": "vertex", "command": ["<GPU test build tree>/build_vertex_artifacts.exe", "--check",
+                                   "<private extracted title>/romfs/CmbVShader.shbin",
+                                   "<private extracted title>/romfs/profile.shbin"]},
+    {"name": "vulkan-imports", "_about": "Shipped executables import only Vulkan 1.0 and WSI commands (issues 12 and 35).",
+     "cwd": "<this checkout>",
+     "command": ["python", "tools/triaevum_release/vulkan_imports.py", "<host build tree>/TriAevum.exe",
+                 "<Forge helper build tree>/triaevum_nri_pipeline_prepare.exe"]}
+  ],
+  "python_suites": [
+    {"name": "triaevum_release", "start": "tools/triaevum_release"},
+    {"name": "triaevum_release-tests", "start": "tools/triaevum_release/tests"},
+    {"name": "native_a32_runtime", "start": "tools/oot3d/native_a32_runtime"},
+    {"name": "tev_program", "start": "tools/renderer/tev_program"},
+    {"name": "native_pica_frontend", "start": "tools/oot3d/native_pica_frontend"},
+    {"name": "native_game_runtime", "start": "tools/oot3d/native_game_runtime"},
+    {"name": "codec_validation", "start": "tools/oot3d/codec_validation"},
+    {"name": "renderer_integration", "start": "tools/oot3d/renderer_integration"},
+    {"name": "oot3d_asset_tool", "runner": "pytest", "start": "tools/oot3d/oot3d_asset_tool/tests",
+     "env": {"PYTHONPATH": "tools/oot3d/oot3d_asset_tool/src"}},
+    {"name": "android", "start": "tools/android"}
+  ],
+  "scenarios": {
+    "_about": "L5. Each item runs once per output size as TriAevum.exe (hard links) in the working directory, a Forge installation. Captures, the runtime report and per-frame renderer diagnostics (gpu.json) stay in the report directory. 'references' holds accepted captures per item and size; a missing reference is reported as not run.",
+    "_expect": "exit, captures (count), reference (byte identity), full_width_desaturation (captures whose every column is grey), black_bars (captures whose pixels outside the fitted picture of 'picture_native' proportions, default 400x240, are black), bounds on per-frame renderer counters: <counter>_max for every frame, <counter>_min_total for the run, with counter one of screen_content, whole_target_ui, own_picture, picture_bars, picture_overlay, dlss_upscale, native_ui_overlay, and metrics: {source: {min, max, equals}} with source log:TAG.field (the last TAG line of the run log), runtime:path (runtime.json) or lighting:metric (analyze_scene_lighting.py). An item may set env (diagnostic switches), cache_passes ([\"cold\", \"warm\"]: the warm run starts from the renderer cache the cold run left; expect_<pass> adds expectations to one pass) and identical_passes. qualify_windows_battery.py --scenarios NAME,... runs only the named items.",
+    "executable": "<host build tree>/TriAevum.exe",
+    "working_directory": "<Forge installation>",
+    "arguments": ["--title-plugin", "<title module>", "--a32-process-manifest", "<process manifest>",
+                  "--resource-root", "<resources>", "--renderer", "nri", "--ui-profile", "topscreen",
+                  "--topscreen-texture-overrides", "<atlas overrides>", "--pica-aot-shader-pack", "<shader pack>"],
+    "config": "<settings JSON used when an item names none>",
+    "topscreen_config": "<TopScreen settings>",
+    "save_data_seed": "<save data directory copied for every run>",
+    "gpu_lock": "<optional lock directory shared with other GPU jobs>",
+    "references": "<private directory of accepted captures>",
+    "items": [
+      {
+        "name": "S03-hud-aspect",
+        "_about": "Adult Link outside Castle Town: the TopScreen button cluster, minimap and native HUD stay on the native canvas at 4:3, 16:9 and 21:9.",
+        "checkpoint": "<HUD checkpoint>",
+        "sizes": ["960x720", "1280x720", "1720x720"],
+        "frames": 160,
+        "shot_start": 150,
+        "expect": {"exit": 0, "captures": 1, "screen_content_max": 0, "own_picture_max": 0, "whole_target_ui_min_total": 1, "reference": true}
+      },
+      {
+        "name": "S09-revelation-original30",
+        "_about": "Sheik's revelation under Original30: the run passes the raw copies and the black-and-white flashback covers every output column.",
+        "checkpoint": "<revelation trigger checkpoint>",
+        "timeline": "tools/oot3d/native_game_runtime/input_timelines/native_cutscene_dialogue_advance.json",
+        "config": "<settings JSON>",
+        "timing": "original30",
+        "settings": {"Graphics": {"Preset": "Authentic"}},
+        "sizes": ["960x720", "1280x720", "1720x720"],
+        "frames": 3430,
+        "shot_start": 2820,
+        "shot_interval": 300,
+        "diagnostic_frames": 1200,
+        "max_seconds": 600,
+        "expect": {"exit": 0, "captures": 3, "full_width_desaturation": ["framebuffer_002820.bmp"], "screen_content_min_total": 1, "own_picture_max": 0, "reference": true}
+      },
+      {
+        "name": "S10-stone-movie",
+        "_about": "A Sheikah Stone vision under Original30: the Visions menu stays on the native canvas and the movie frames are shown whole at 5:3 with black bars (above and below at 4:3, beside at 16:9 and 21:9).",
+        "checkpoint": "<checkpoint in front of a Sheikah Stone>",
+        "timeline": "tools/oot3d/native_game_runtime/input_timelines/sheikah_stone_vision_play.json",
+        "config": "<settings JSON>",
+        "timing": "original30",
+        "settings": {"Graphics": {"Preset": "Authentic"}},
+        "sizes": ["960x720", "1280x720", "1720x720"],
+        "frames": 430,
+        "shot_start": 120,
+        "shot_interval": 60,
+        "max_seconds": 300,
+        "expect": {"exit": 0, "captures": 6,
+                   "black_bars": ["framebuffer_000240.bmp", "framebuffer_000300.bmp", "framebuffer_000360.bmp", "framebuffer_000420.bmp"],
+                   "own_picture_min_total": 200, "picture_bars_min_total": 200, "reference": true}
+      },
+      {
+        "name": "S04-pause-roundtrip",
+        "_about": "The pause menu opened and closed twice with Start from the HUD checkpoint: the TopScreen page stays on the native canvas over the dimmed scene at 4:3, 16:9 and 21:9.",
+        "checkpoint": "<HUD checkpoint>",
+        "timeline": "tools/oot3d/native_game_runtime/input_timelines/topscreen_hud_pause_roundtrip.json",
+        "sizes": ["960x720", "1280x720", "1720x720"],
+        "frames": 560,
+        "shot_start": 40,
+        "shot_interval": 60,
+        "max_seconds": 300,
+        "expect": {"exit": 0, "captures": 9, "screen_content_max": 0, "own_picture_max": 0, "whole_target_ui_min_total": 1, "reference": true}
+      },
+      {
+        "name": "S04-pause-pages",
+        "_about": "The Map, Gear and Items pages opened by touching the lower screen's page buttons, then Start: each page on the native canvas at 4:3, 16:9 and 21:9.",
+        "checkpoint": "<HUD checkpoint>",
+        "timeline": "tools/oot3d/native_game_runtime/input_timelines/topscreen_ui_pages.json",
+        "sizes": ["960x720", "1280x720", "1720x720"],
+        "frames": 760,
+        "shot_start": 100,
+        "shot_interval": 60,
+        "max_seconds": 300,
+        "expect": {"exit": 0, "captures": 11, "screen_content_max": 0, "own_picture_max": 0, "whole_target_ui_min_total": 1, "reference": true}
+      },
+      {
+        "name": "S14-dlss-hud-pause",
+        "_about": "DLSS Ultra Performance on an NVIDIA GPU: the upscaler reconstructs the scene and the native UI is laid over its output (HUD and pause page).",
+        "checkpoint": "<HUD checkpoint>",
+        "timeline": "tools/oot3d/native_game_runtime/input_timelines/topscreen_hud_pause_roundtrip.json",
+        "config": "<settings JSON with AA Mode Upscaler, Provider DLSS, Quality UltraPerformance>",
+        "sizes": ["1720x720"],
+        "frames": 300,
+        "shot_start": 20,
+        "shot_interval": 80,
+        "max_seconds": 300,
+        "expect": {"exit": 0, "captures": 4, "dlss_upscale_min_total": 100, "native_ui_overlay_min_total": 100, "screen_content_max": 0, "own_picture_max": 0, "reference": true}
+      },
+      {
+        "name": "S14-fsr-hud-pause",
+        "_about": "FSR 2 Ultra Performance with the HUD and a pause roundtrip: the scene is upscaled and the native UI laid over the output.",
+        "checkpoint": "<HUD checkpoint>",
+        "timeline": "tools/oot3d/native_game_runtime/input_timelines/topscreen_hud_pause_roundtrip.json",
+        "config": "<settings JSON of S14>",
+        "settings": {"Graphics": {"AA": {"Mode": "Upscaler", "Upscaler": {"Provider": "FSR", "Quality": "UltraPerformance"}}}},
+        "sizes": ["1720x720"],
+        "frames": 300,
+        "shot_start": 20,
+        "shot_interval": 80,
+        "max_seconds": 300,
+        "expect": {"exit": 0, "captures": 4, "fsr_upscale_min_total": 100, "native_ui_overlay_min_total": 100, "screen_content_max": 0, "own_picture_max": 0, "reference": true}
+      },
+      {
+        "name": "S14-taa-hud-pause",
+        "_about": "TAA resolved before the native UI.",
+        "checkpoint": "<HUD checkpoint>",
+        "timeline": "tools/oot3d/native_game_runtime/input_timelines/topscreen_hud_pause_roundtrip.json",
+        "config": "<settings JSON of S14>",
+        "settings": {"Graphics": {"AA": {"Mode": "TAA"}}},
+        "sizes": ["1720x720"],
+        "frames": 300,
+        "shot_start": 20,
+        "shot_interval": 80,
+        "max_seconds": 300,
+        "expect": {"exit": 0, "captures": 4, "taa_min_total": 100, "before_ui_aa_min_total": 100, "screen_content_max": 0, "own_picture_max": 0, "reference": true}
+      },
+      {
+        "name": "S14-smaa-hud-pause",
+        "_about": "SMAA 1x resolved before the native UI.",
+        "checkpoint": "<HUD checkpoint>",
+        "timeline": "tools/oot3d/native_game_runtime/input_timelines/topscreen_hud_pause_roundtrip.json",
+        "config": "<settings JSON of S14>",
+        "settings": {"Graphics": {"AA": {"Mode": "SMAA1x"}}},
+        "sizes": ["1720x720"],
+        "frames": 300,
+        "shot_start": 20,
+        "shot_interval": 80,
+        "max_seconds": 300,
+        "expect": {"exit": 0, "captures": 4, "smaa_min_total": 100, "before_ui_aa_min_total": 100, "screen_content_max": 0, "own_picture_max": 0, "reference": true}
+      },
+      {
+        "name": "S01-title-late-start",
+        "_about": "Clean boot with the save data seed: Start after the title presentation reaches the game selection.",
+        "timeline": "tools/oot3d/native_game_runtime/input_timelines/title_start_late_file_select.json",
+        "sizes": ["960x720", "1280x720", "1720x720"],
+        "frames": 2400,
+        "shot_start": 1590,
+        "shot_interval": 400,
+        "max_seconds": 400,
+        "expect": {"exit": 0, "captures": 3, "own_picture_max": 0, "reference": true}
+      },
+      {
+        "name": "S01-title-early-start",
+        "_about": "Issue 48: Start during the title presentation must not stop the run. No reference: on this line the selection is not reached (see the qualification record).",
+        "timeline": "tools/oot3d/native_game_runtime/input_timelines/title_to_file_select.json",
+        "sizes": ["1280x720"],
+        "frames": 1800,
+        "shot_start": 590,
+        "shot_interval": 600,
+        "max_seconds": 400,
+        "expect": {"exit": 0, "captures": 3, "own_picture_max": 0}
+      },
+      {
+        "name": "S08-gameover-continue",
+        "_about": "Game Over at zero health: directional input and A choose Save, then the continue question.",
+        "checkpoint": "<zero-health checkpoint>",
+        "timeline": "tools/oot3d/native_game_runtime/input_timelines/topscreen_gameover_continue.json",
+        "timing": "original30",
+        "settings": {"Graphics": {"Preset": "Authentic"}},
+        "sizes": ["960x720", "1280x720", "1720x720"],
+        "frames": 600,
+        "shot_start": 120,
+        "shot_interval": 120,
+        "max_seconds": 300,
+        "expect": {"exit": 0, "captures": 4, "own_picture_max": 0, "reference": true}
+      },
+      {
+        "name": "S08-gameover-quit",
+        "_about": "Game Over at zero health: Don't save, then the continue question.",
+        "checkpoint": "<zero-health checkpoint>",
+        "timeline": "tools/oot3d/native_game_runtime/input_timelines/topscreen_gameover_quit.json",
+        "timing": "original30",
+        "settings": {"Graphics": {"Preset": "Authentic"}},
+        "sizes": ["960x720", "1280x720", "1720x720"],
+        "frames": 600,
+        "shot_start": 120,
+        "shot_interval": 120,
+        "max_seconds": 300,
+        "expect": {"exit": 0, "captures": 4, "own_picture_max": 0, "reference": true}
+      },
+      {
+        "name": "S15-field-light",
+        "_about": "Hyrule Field with the clock running under the Enhanced preset: the scene light moves every guest frame, never jumps or casts from below the horizon, and the shadow keyframes follow it in every presented frame within their page budget (docs/TRIAEVUM_ANIMATED_LIGHTING_STRATEGY.md, section 7).",
+        "checkpoint": "<open-field checkpoint by day>",
+        "timeline": "<input timeline that holds no button: Link stands, the clock runs>",
+        "config": "<settings JSON of the Enhanced preset>",
+        "env": {"TRIAEVUM_SCENE_LIGHT_TRACE": "1"},
+        "sizes": ["1280x720"],
+        "frames": 1800,
+        "shot_start": 1500,
+        "shot_interval": 150,
+        "max_seconds": 900,
+        "expect": {"exit": 0, "captures": 2, "reference": true,
+                   "metrics": {"lighting:moving_frames": {"min": 800}, "lighting:jumps": {"max": 0},
+                               "lighting:below_horizon_casting": {"max": 0}, "lighting:largest_step_change": {"max": 0.05},
+                               "lighting:moving_shadow_frames": {"min": 1500}, "lighting:stalled_frames": {"max": 0},
+                               "lighting:uneven_frames": {"max": 0}, "lighting:cuts": {"max": 0},
+                               "lighting:construction_over_budget": {"max": 0}}}
+      },
+      {
+        "name": "S15-title-intro-light",
+        "_about": "Clean boot without input through the title intro's dawn: the sun/moon handovers never flip the shadow light and it never casts from below the horizon. After each of the intro's scene cuts the shadows wait for their first keyframe (P2 design): stalled and uneven frames are bounded at the accepted run's values.",
+        "config": "<settings JSON of the Enhanced preset>",
+        "env": {"TRIAEVUM_SCENE_LIGHT_TRACE": "1"},
+        "sizes": ["1280x720"],
+        "frames": 1500,
+        "shot_start": 600,
+        "shot_interval": 300,
+        "max_seconds": 900,
+        "expect": {"exit": 0, "captures": 3, "reference": true,
+                   "metrics": {"lighting:moving_frames": {"min": 300}, "lighting:jumps": {"max": 0},
+                               "lighting:below_horizon_casting": {"max": 0}, "lighting:stalled_frames": {"max": 15},
+                               "lighting:uneven_frames": {"max": 19}, "lighting:construction_over_budget": {"max": 0}}}
+      },
+      {
+        "name": "S17-shader-preparation",
+        "_about": "A walk under the Enhanced preset from an empty renderer cache, then from the cache it left: no draw waits for its specialized program (hybrid preparation), every startup part prepares, no pass shader compiles, and the warm run compiles nothing and starts from the persisted pipeline cache. No captures (a capture stalls its frame): the slowest frame after the initial preparation is bounded.",
+        "checkpoint": "<gameplay checkpoint>",
+        "timeline": "<walk input timeline>",
+        "config": "<settings JSON of the Enhanced preset>",
+        "sizes": [
+          "1280x720"
+        ],
+        "frames": 420,
+        "shot_start": 100000,
+        "max_seconds": 900,
+        "cache_passes": [
+          "cold",
+          "warm"
+        ],
+        "expect": {
+          "exit": 0,
+          "captures": 0,
+          "metrics": {
+            "log:TRIAEVUM_HYBRID_PREPARATION.completed_draws": {
+              "max": 0
+            },
+            "log:TRIAEVUM_NATIVE_PROGRAM_PREPARATION_END.failures": {
+              "max": 0
+            },
+            "log:TRIAEVUM_PASS_SHADER_CACHE.compiled": {
+              "max": 0
+            },
+            "runtime:initial_preparation.completed": {
+              "equals": true
+            },
+            "runtime:benchmark_window.frame_times.maximum_ms": {
+              "max": 250
+            }
+          }
+        },
+        "expect_warm": {
+          "metrics": {
+            "log:TRIAEVUM_SPIRV_CACHE.compiled": {
+              "max": 0
+            },
+            "log:TRIAEVUM_NRI_PIPELINE_CACHE.initial_cache_bytes": {
+              "min": 1
+            },
+            "runtime:initial_preparation.wait_seconds": {
+              "max": 0.5
+            }
+          }
+        },
+        "env": {
+          "TRIAEVUM_PACING_TRACE": "1"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleExecutable</key><string>ReMaskedNativeGame</string>
+<key>CFBundleIdentifier</key><string>${REMASKED_APPLE_IDENTIFIER}</string>
+<key>CFBundleName</key><string>${REMASKED_APPLE_DISPLAY_NAME}</string>
+<key>CFBundleDisplayName</key><string>${REMASKED_APPLE_DISPLAY_NAME}</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleVersion</key><string>2</string>
+<key>CFBundleShortVersionString</key><string>0.1</string>
+<key>CFBundleSupportedPlatforms</key><array><string>${REMASKED_APPLE_PLATFORM}</string></array>
+<key>MinimumOSVersion</key><string>17.0</string>
+<key>UIDeviceFamily</key><array>${REMASKED_APPLE_DEVICE_FAMILY}</array>
+${REMASKED_APPLE_ORIENTATIONS}
+<key>LSRequiresIPhoneOS</key><true/>
+<key>UILaunchScreen</key><dict/>
+<key>UIApplicationSupportsIndirectInputEvents</key><true/>
+<key>UIApplicationSceneManifest</key><dict>
+<key>UIApplicationSupportsMultipleScenes</key><false/>
+<key>UISceneConfigurations</key><dict>
+<key>UIWindowSceneSessionRoleApplication</key><array><dict>
+<key>UISceneConfigurationName</key><string>ReMasked Game</string>
+<key>UISceneDelegateClassName</key><string>ReMaskedSceneDelegate</string>
+</dict></array></dict></dict>
+</dict></plist>

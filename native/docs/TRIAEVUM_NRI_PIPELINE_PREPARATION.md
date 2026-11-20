@@ -1,0 +1,601 @@
+# NRI Pipeline Preparation
+
+Date: 2026-09-10. Baseline: `d35277c`, branch `port/linux-nri`.
+
+## Result
+
+The 212-scenario corpus now produces **500 distinct host pipeline descriptions**
+from 709 native recipes, without booting the guest or inventing mesh/texture
+payloads. Native distinctions that do not change a host pipeline collapse through
+the existing structural manifest identity. All 126,612 draws still import with
+zero failures. The existing 815-module portable pack supplies every shader
+requested by these pipelines.
+
+The headless tool creates **actual NRI graphics pipelines**, destroys each after
+creation and persists the driver cache. It does not just compile GLSL, create
+shader modules or prepare the fallback Vulkan pipeline.
+
+Initial helper-only qualification at `eed1a02` (superseded for live-cache
+acceptance by **Live Qualification** below):
+
+| Qualification | Result |
+|---|---|
+| Linux RTX 4060, empty application cache | 500/500, 8.224 seconds |
+| Same device/cache, validation requested | 500/500, 0.807 seconds |
+| Cache payload | 5,056,819 bytes, plus 56-byte envelope |
+| Actual Forge service, separate temporary cache | 500/500, 8.294 s first / 0.791 s reuse |
+| Forge corruption and cooperative cancellation | Passed; cancellation prepares zero pipelines |
+| Portable job/cache/raster CTest | Passed |
+| Existing live planner/visual-transition test plus metadata equivalence | Passed |
+| Linux device-preparation tests including real GPU | 10 passed |
+| Android NDK r29 ARM64 helper and tests | Compile/link passed |
+| Android live `gfx_vulkan.cpp` / `gfx_vulkan_pica.cpp` | Compile passed; pre-existing warnings only |
+
+These are **preparation times**, not FPS, installation times or whole-game
+coverage. An empty application cache does not imply an empty vendor-global
+shader cache. At that initial checkpoint no game/framebuffer equivalence run or
+Windows GPU preparation had been made. Both are now covered below. Public
+catalogs and release packages remain unchanged; Android GPU execution remains
+unqualified because no device was visible to local ADB.
+
+## Ownership
+
+| Layer | Files / responsibility |
+|---|---|
+| Generic renderer | `fast/renderer/pipeline_preparation_job.*`: bounded batches, progress, cancellation and failure accounting; no game/PICA/platform knowledge |
+| Shared 3DS renderer | `fast/renderer3ds/nri_pica_pipeline_bridge.*`: one factory for live draws and `PreparePipeline`; no fake fallback handles |
+| Shared 3DS renderer | `fast/renderer3ds/vulkan_pipeline_cache_store.*`: serialization, GPU/driver validation, atomic publication |
+| PICA adapter | `fast/extension/pica_nri_pipeline_state.*`, `pica_pipeline_preparation.*`, `pica_pipeline_manifest.*`: existing raster/attachment policy and packed NRI vertex layout, shared with live rendering |
+| Native capture adapter | `oot3d_native_pica_capture_inventory.cpp`, `oot3d_native_pica_vulkan_plan.*`: recorded native state into the existing planner/bridge, not a second register decoder |
+| CLI host | `tools/renderer/pipeline_prepare/`: NRI device lifetime, file arguments and JSON progress/report; no SDL, window, guest or whole-AOT |
+| Forge host | `tools/triaevum_release/device_pipeline_preparation.py`: verified artifacts, process lifetime, progress and optional acceleration receipt |
+
+The `fast/extension` paths retain existing renderer API names but contain no title
+addresses, scene IDs or asset exceptions. Android uses the **already patched NRI
+checkout from its renderer build**, not another platform-specific implementation.
+
+The metadata-only planner shares shader generation and vertex layout lowering
+with live draws but skips vertex/index/texture payload copies. Tests compare
+bindings, attributes and sources against a real draw plan and prove that the
+live path still rejects missing resource buffers. Its result is explicitly not
+drawable; only the recording backend consumes it.
+
+## Cache Contract
+
+- File: `nri_pipeline_cache.bin`, in the live renderer's shader-cache directory.
+- Version 2: explicit little-endian header, renderer ABI, Vulkan vendor/device,
+  driver version, pipeline-cache UUID, size and payload checksum; maximum
+  512 MiB (`kMaximumNriPipelineCacheBytes`; the plain Vulkan cache keeps 64 MiB).
+- 2026-10-07: the NRI cache had outgrown the former 64 MiB limit on
+  2026-10-01 (52 MB then, 74.5 MB once stored again). Above it the bridge's
+  `GetPipelineCacheData` returned nothing, so shutdown skipped the store without
+  a message and every session loaded the 2026-10-01 file. NVIDIA's own
+  per-executable cache hid it until a new executable: then every launch spent
+  about 55 s preparing the 39 startup parts and room changes compiled their
+  pipelines again (286 s of pipeline creation in a 600-frame run with one warp,
+  2.5 s once the cache was stored; startup 0.9 s). The size policy now belongs
+  to the store alone: over the limit the file is dropped, so the next session
+  rebuilds a cache of what it uses. The store reports
+  `TRIAEVUM_NRI_PIPELINE_CACHE_STORE result=stored|dropped|failed` on stderr,
+  since the logger may be quiet at shutdown.
+- Old version-1, foreign-device, truncated, oversized and corrupt caches are
+  rejected and rebuilt. This intentionally causes one cache rebuild on upgrade.
+- Writes replace a same-directory temporary file atomically. Failed writes keep
+  the old cache. Live runtime logging now checks write success.
+- Driver cache data remains local. The portable pack is not a driver cache.
+- Do not prepare concurrently with gameplay writing the same cache: atomic
+  writes prevent partial files, but last-writer-wins can discard additions.
+- 2026-11-06: each title has its own pipeline cache files
+  (`TitleSession::PipelineCacheNamespace`,
+  `fast/renderer3ds/title_shader_preparation.h`). OoT3D keeps
+  `nri_pipeline_cache.bin` and `pipeline_cache.bin`, the files Forge and
+  `pipeline_prepare` write; MM3D uses `nri_pipeline_cache.mm3d.bin` and
+  `pipeline_cache.mm3d.bin`, a generic title `*.generic.bin`. A title never
+  loads another title's pipelines nor replaces them, and its own pipelines
+  persist for its next launch. A title without prepared shaders
+  (`TitleSession::PreparedShaders`; MM3D until its corpus exists, generic
+  titles) has no program family to link always-available programs from: its
+  hybrid/uber preparation becomes `complete` before device creation, so the
+  device is negotiated exactly as with `TRIAEVUM_SHADER_PREPARATION=complete`.
+  `TRIAEVUM_TITLE_SHADER_PREPARATION` prints the decision and the cache file.
+  The content-addressed SPIR-V and pass-shader caches are unaffected: their
+  entries are per program and never collide between titles.
+
+The helper now wraps a Vulkan device using the live renderer's shared
+`renderer3ds/pica_vulkan_device_profile.h`: application/API contract and enabled
+core/Vulkan-1.2 features. It no longer lets standalone NRI choose a different API
+and feature set. Queue/surface ownership stays in the host; no window is needed
+for preparation. The helper's host implementation is isolated in
+`tools/renderer/pipeline_prepare/headless_device.h`.
+
+GPU/driver identity is necessary but not sufficient. On the tested Linux NVIDIA
+driver, importing the desktop display/session environment changes the reported
+pipeline-cache UUID even on the same GPU. An SSH-only preparation produced an
+incompatible cache; importing the same session used by gameplay produced the
+matching UUID. Run the helper in Forge's inherited desktop/sandbox environment,
+not in a detached environment with display variables stripped. Never rewrite
+the UUID or weaken validation to force a cache to load.
+
+Cancellation is checked between pipeline calls. A synchronous driver compilation
+cannot be interrupted safely inside NRI. Forge requests cooperative cancellation
+and reaps the process if it does not return, with a bounded total timeout. It
+never leaves an unowned background job. Validation errors cannot count as
+successful pipeline preparation.
+
+## Forge Contract
+
+Optional `device_pipeline_preparation` is a sibling of `shader_preparation` in a
+verified title record. This example is **not an enabled catalog**:
+
+```json
+{
+  "device_pipeline_preparation": {
+    "format": "triaevum_device_pipeline_preparation_v1",
+    "helper": {"path": "tools/triaevum_nri_pipeline_prepare", "bytes": 123, "sha256": "VERIFIED_HASH"},
+    "manifest": {"path": "seeds/native-pipelines.json", "bytes": 123, "sha256": "VERIFIED_HASH"},
+    "dependencies": [],
+    "adapter": 0
+  }
+}
+```
+
+Forge prepares the portable pack, then the device pipelines, before title
+activation. Missing/unverified artifacts are package errors. GPU failure or
+cancellation is reported but does not prevent a playable install: normal runtime
+compilation remains available. No contract means no job.
+
+Every invocation rechecks the actual device, not just yesterday's success
+receipt. Reports include GPU/cache identity, counts and times and are stored at
+`DATA_ROOT/shader-seeds/device-preparation/latest.json`. Success requires complete
+counts and the requested cache file. No receipt claims game coverage.
+
+Desktop cache paths match `SDL_GetPrefPath(nullptr, "oot3d_native_vulkan")`:
+Windows `%APPDATA%/oot3d_native_vulkan/shader_cache`; Linux
+`${XDG_DATA_HOME:-~/.local/share}/oot3d_native_vulkan/shader_cache`. Flatpak uses
+its own environment. Android's future in-process installer supplies its private
+path and uses the shared job/factory, not Python or an executable spawned by Java.
+The helper reports its GPU; `adapter` is an NRI enumeration index. On multi-GPU
+hosts verify that it matches gameplay before enabling a package contract. A
+mismatch invalidates the cache, not rendering.
+
+For isolated tests, both Forge and the renderer accept the same optional
+`TRIAEVUM_RENDERER_CACHE_DIR` absolute path. Relative paths are rejected; absent
+overrides retain the normal platform directory. This is a developer isolation
+mechanism, not another user-facing cache preference.
+
+`--validation` on the helper now requires an actual Khronos validation layer;
+missing layers fail explicitly rather than implying API validation from NRI's
+error counter alone. Normal Forge preparation does not require a Vulkan SDK.
+
+## Reproduce
+
+Developer build only, using existing pinned dependencies:
+
+```text
+cmake -S tools/renderer/pipeline_prepare -B BUILD -G Ninja -DCMAKE_BUILD_TYPE=Release -DTRIAEVUM_NRI_SOURCE_DIR=PINNED_NRI -DCMAKE_PREFIX_PATH=DEPENDENCY_PREFIX
+cmake --build BUILD --parallel 2
+ctest --test-dir BUILD --output-on-failure
+oot3d_native_pica_capture_inventory --manifest PRIVATE_CORPUS.json --output PRIVATE_INVENTORY.json --pipeline-manifest PRIVATE_PIPELINES.json
+triaevum_nri_pipeline_prepare --manifest PRIVATE_PIPELINES.json --pack PRIVATE_PACK.o3ps --cache-dir PRIVATE_CACHE --report PRIVATE_REPORT.json --validation
+```
+
+Android: same project with the NDK toolchain, `ANDROID_ABI=arm64-v8a`,
+`ANDROID_PLATFORM=android-29`, and its existing patched NRI source. No title or
+APK rebuild is required for the helper. End users never execute CMake.
+
+Real Forge test: set `TRIAEVUM_TEST_NRI_PREPARE_HELPER`,
+`TRIAEVUM_TEST_NRI_PIPELINE_MANIFEST`, `TRIAEVUM_TEST_NRI_SHADER_PACK`, then run
+`python -m unittest test_device_pipeline_preparation` in the release-tools folder.
+Inputs are copied to a temporary private package; no installed cache is modified.
+
+Live qualification uses the existing bounded probe, with savedata/configuration
+copies and framebuffer readback rather than desktop screenshots:
+
+```text
+python tools/triaevum_release/probe_renderer.py INSTALLATION RUNTIME COLD_OUTPUT --profile HOST_LAUNCH_PROFILE --native-fidelity --frames 900 --seconds 90 --capture-interval 150 --shader-pack PRIVATE_PACK.o3ps
+triaevum_nri_pipeline_prepare --manifest PRIVATE_PIPELINES.json --pack PRIVATE_PACK.o3ps --cache-dir PREPARED_CACHE --report PRIVATE_REPORT.json
+python tools/triaevum_release/probe_renderer.py INSTALLATION RUNTIME WARM_OUTPUT --profile HOST_LAUNCH_PROFILE --native-fidelity --frames 900 --seconds 90 --capture-interval 150 --shader-pack PRIVATE_PACK.o3ps --cache-directory PREPARED_CACHE
+```
+
+Use the same desktop environment for all three commands. Each probe output must
+be a new directory. `--native-fidelity` selects Authentic, fixed native ticks
+and no interpolation. The seconds argument remains a safety bound, not the
+measured gameplay duration. Compare the six `framebuffer_*.bmp` hashes, runtime
+state fingerprints and `gpu.json/nri_pipeline_compilation`. The latter records
+driver-accepted initial bytes and timed creation attempts/successes, independent
+of the release logger's severity threshold. Neither cache-file existence nor
+`cache_input_loaded` alone proves that gameplay used the prepared data.
+
+## Live Qualification (2026-09-10)
+
+- Windows MSVC helper/contract build passes. Actual Forge preparation on RTX
+  3060: **500/500**, 9.815 s first preparation, 0.688 s reuse. All 13 Forge/probe
+  tests pass, including GPU-accepted bytes, corruption, cancellation, Windows
+  executable suffix and isolated configuration. A separate 500-pipeline Vulkan
+  and NRI validation run reports zero errors (unused vertex attributes produce
+  warnings from the existing live 16-attribute layout).
+- Linux RTX 4060: **500/500**, 8.298 s first preparation, 0.664 s reuse through
+  Forge. All 13 Forge/probe tests, the pipeline contract test, and 6 diagnostic
+  tests pass. These Linux runs do **not** claim Khronos API validation: that
+  layer is absent on this host. Earlier `validation_requested` reports from
+  standalone NRI did not prove it was installed.
+- Real Linux intro: **900 presentations, 70,391 submitted draws**, no visual
+  interpolation. Six framebuffer captures at presentations 120, 270, 420, 570,
+  720 and 870 are byte-identical between the pre-change runtime, the modified
+  renderer with empty application cache, and the prepared-cache run. All three
+  finish with process-state fingerprint `2405137468041955`.
+- Gameplay accepts **5,056,331 cache payload bytes**. Its 58 NRI pipeline
+  creations take **68.580 ms** with empty application cache versus **18.765 ms**
+  with the prepared cache in these samples. Driver-global disk caches were not
+  cleared; this is not a cold-driver benchmark, an FPS improvement claim, or
+  proof that every first-use hitch is eliminated. The fallback Vulkan pipeline
+  factory still has its own cost/cache.
+- The tested runs report zero composition mismatches and zero rejected scene
+  draws. Native fidelity remains active, with zero interpolated draws.
+- The same helper builds for Android ARM64 with NDK r29 and the renderer's
+  patched NRI. Subsequent Adreno 830 qualification prepares **500/500** pipelines
+  in 94.635 s, then reuses the cache in 0.975 s. The updated APK also reuses the
+  portable pack and pass cache. This is device qualification, not an Android
+  installer UI: see [Android results](../ports/android/SHADER_PREPARATION.md).
+
+Private live evidence is under `~/triaevum-pipeline-live-proof/`:
+`baseline-resolved/`, `cold-measured/`, `prepared-live-profile/`, and
+`prepare-desktop.json`. The intermediate `prepared/` run intentionally remains
+as negative evidence: identical images but **zero** accepted cache bytes.
+Windows helper evidence/build is in
+`<oot3d-work>/nri-pipeline-preparation-windows/`. No captures, packs, driver
+caches or executable backups belong in the public source archive.
+
+Private evidence:
+- Linux: `~/triaevum-android-build/prepared-native-pipelines.json`,
+  `prepared-capture-inventory.json`, `nri-preparation-{cold,warm}.json`.
+- Host build: `~/triaevum-pipeline-prepare-build`.
+- ARM64 build: `~/triaevum-pipeline-prepare-android-build`.
+- Windows evidence mirror:
+  `%USERPROFILE%/AppData/Local/TriAevumDeveloperEvidence/shader-seed-expansion/`.
+
+## Next Integration
+
+1. Extend the live prepared-cache qualification beyond the intro, then verify
+   the packaged Windows runtime and Steam Deck/AMD environment. Linux intro
+   parity and actual cache acceptance are established above, not whole-game
+   hitch coverage.
+2. Connect Android's installer in-process after the Adreno qualification, and
+   select the same physical GPU as gameplay on multi-GPU desktops.
+3. Generate the **actual enabled extension profile's** instrumented recipes with
+   the existing typed shader hooks. This corpus currently prepares native
+   fidelity, not every Grass/toon/interpolation/MSAA configuration.
+4. Then add helper/dependencies/contracts to platform packaging. Keep captured
+   state, ROMs and derived packs private under the current release policy; do
+   not silently distribute the developer corpus.
+
+## Startup Programs (2026-10-02)
+
+`--startup-programs` adds the renderer's startup program parts to the job:
+every shader-bearing graphics-pipeline-library part an always-available draw
+links (the title vertex family, the superset effect programs, the canonical
+bases), which the renderer otherwise creates on its first launch (39 parts,
+the driver's longest work). The helper and the renderer take them from one
+derivation, `renderer3ds/pica_startup_programs.h` (`PicaStartupProgramParts`,
+`PreparePicaStartupProgramPart`), at the renderer's single-sample startup
+state, with its depth format and geometry-shader capability. Manifests and
+`--pack` become optional when only startup programs are requested.
+
+The headless device negotiates graphics pipeline libraries and the extended
+dynamic state exactly as the live device (`PicaPipelineLibrariesSupported`,
+`kPicaPipelineLibraryExtensions` in `pica_vulkan_device_profile.h`) and passes
+the same extensions to NRI. This also matters for the observed recipes: with
+libraries enabled the live device has the extended dynamic state, which changes
+the pipelines NRI creates; before, the helper prepared them without it.
+
+Parts are created on about one thread per physical core (six on a 6c/12t CPU),
+before the recipes; progress events count both. The report adds `recipes`,
+`pipeline_libraries`, `startup_parts`, `startup_prepared`, `startup_failed`,
+`startup_threads` and `startup_seconds`; `total`/`prepared`/`failed` include
+the parts. Without library support the renderer prepares no parts and neither
+does the helper (`pipeline_libraries: false`).
+
+Forge passes the flag when the title contract says `"startup_programs": true`
+(bound by `shader_corpus_layout.py`), with a 1800 s budget instead of 600 s.
+The helper now embeds the translated title vertex family, like the runtime
+executable: it is the title's Forge tool, not title-neutral code, and the
+release metadata must catalogue it with that artifact (see
+`oot3d_native_vertex_binaries.provenance.json`).
+
+Windows RTX 3060, i5-12400F: empty application cache on a new driver, 39/39 in
+45.5 s; again with an empty application cache, 0.7-0.8 s (the driver's own disk
+cache keeps the helper's parts); recipes plus parts, 539/539 in 9.1 s. The game's
+first launch on that cache accepts all 13,654,247 bytes and its startup
+preparation takes 0.72-1.16 s instead of 33.5-34.9 s, with no guest wait;
+captures are identical to a cold first launch (12/12). The real Forge test
+(`test_actual_device_job_reuse_corruption_and_cancel`) passes with this helper:
+500 pipelines, 8.6 s first, 0.59 s reuse.
+
+The helper build needed three repairs of its own: the bridge now uses the
+preparation queue (`pica_preparation_queue.cpp`), clang-cl needs NRI's `/WX`
+relaxed as in the runtime build, and its contract test expected geometry
+shaders disabled although the shared profile enables them for PBR seams.
+
+## Graphics Profile Coverage (2026-10-12)
+
+The corpus recipes were canonical and attachment-free: captures and Citra
+caches hold Authentic programs only. A profile such as Enhanced (or a Custom
+one with per-pixel PBR lighting, virtual shadow maps and MXAO) draws
+instrumented variants whose features and attachments the runtime decides per
+draw (shadow receivers, water, isolated or authored appearance, grass,
+materials). A cache prepared from the 2026-10-07 corpus left a dusk session in
+Hyrule Field creating 283 pipelines in 54.6 s, as with no cache at all.
+
+Those variants come from recorded sessions instead. Sessions record the
+variant requests and the raw PICA state (`OOT3D_PICA_VARIANT_REQUESTS`,
+`OOT3D_PICA_RAW_DRAWS`) with the pipeline inventory
+(`OOT3D_PICA_PIPELINE_INVENTORY`); `regenerate_shader_corpus.py
+--variant-records DIR` replays them with the build's own generators (issue
+#76: recorded shader text went stale with every generator change). The
+programs join the pack and the recipes are rewritten into
+`runtime-pipelines.json`, passed to the release builder as another
+`--pipeline-manifest`. Recording the runtime's inventories exposed three
+defects, fixed in `fe0f370`, each found by tracing both sides with
+`TRIAEVUM_NRI_PIPELINE_TRACE=1`:
+
+- Recipes with an instrumentation feature above bit 13 failed a fixed mask and
+  were dropped silently; the material baseline (applied, never requested)
+  failed the applied-within-requested rule. These were the heaviest programs
+  (4-6 s of driver work each).
+- Always-available pipelines were recorded although they are linked from the
+  startup parts and their programs are not in the pack.
+- The runtime resolved a specialized fragment program from the built-in
+  families before the pack; the helper read the pack only. Both use
+  `FindPicaBuiltInFragmentSpirv`.
+
+With those fixed, every pipeline the helper prepared from a session's recipes
+was created by the game from the cache (identical creation input, 0.1-0.2 ms).
+
+Developer sweep (`lighting-library/lab/lab_sweep.py`, outside the repository):
+each entrance of the Better warp list, Enhanced and the play profile applied
+in turn through the lab `graphics` command (75 frames each); outdoor scenes as
+child by day and adult by night, dungeons at their age. A session that a
+cutscene keeps out of normal play is ended and the next one resumes from the
+Kokiri savestate. 419 visits: 390 arrived, 9 held by a cutscene, 20 refused
+(adult Market and Castle are other scenes); 10 sessions, about 75 minutes.
+
+Corpus `shader-corpus-20261012`: 1,773 modules (989 before), 521 capture
+recipes and 1,312 profile recipes. The helper prepares 1,872 pipelines with the
+startup parts in 357 s on an RTX 3060 (driver disk cache warm for the parts);
+the cache is 98.7 MB.
+
+Validation on a path the sweep never visits (Hyrule Field through dusk into
+night, 2,400 frames, cache from the helper only): driver pipeline work during
+the session 1,318 ms in total (54.6 s with the old corpus's cache, 6.6 s with
+one recorded session), slowest pipeline 115 ms (an always-available link),
+draws waiting on always-available programs 514 (15,048-51,344 before). Four
+programs of that path are still compiled once at run time.
+
+Limits: coverage is what a spawn view of each entrance draws under the two
+profiles; profiles with other effects (Toon, other AO or shadow modes) need
+their own sweep. Variants a session did not see still prepare in the
+background behind the always-available programs.
+
+## Host Load (2026-10-23)
+
+A fork user with a Ryzen 5600 and an RX 6700 reported that Forge's
+"Preparing GPU pipelines" stage made the machine unusable. The helper ran one
+worker per logical core (12 there) at normal priority; AMD's proprietary driver
+compiles every pipeline on a worker pool of its own, so the machine carried
+12 x N compiler threads plus the working set of 12 concurrent compilations
+(issues #78 and #84 report `VK_ERROR_OUT_OF_HOST_MEMORY` from the same driver).
+On the reference RTX 3060 the 1872 cold pipelines took 204 s on 6 threads and
+175 s on 12: the extra cores bought 14 percent of time for all of the CPU.
+
+The helper now follows `Fast::Renderer::PreparationWorkerCount`
+(`runtime/three_ds_recomp/include/fast/renderer/preparation_host.h`, shared by
+the renderer and Forge):
+
+- Workers: half the logical cores, at most 8; at most 4 when the driver
+  compiles concurrently itself (`VK_DRIVER_ID_AMD_PROPRIETARY`).
+  `TRIAEVUM_PIPELINE_PREPARE_THREADS` (1..16) still overrides.
+- Priority: the helper process runs at below-normal priority and every worker
+  thread below normal; Forge also starts the helper and the shader compiler
+  with `BELOW_NORMAL_PRIORITY_CLASS` on Windows.
+- Memory governor: before taking the next pipeline a worker checks the host's
+  available memory and retires when it is below max(1 GiB, 1/8 of installed
+  memory) while other workers run; the last worker never retires, so the job
+  completes sequentially on a machine short of memory.
+- Retry: pipelines the driver refused during the parallel pass are retried
+  once, sequentially, after it; a refusal under memory pressure is not a
+  verdict on the pipeline.
+- Incremental persistence: `Renderer3ds::PipelineCacheFlusher` stores the
+  cache during the run (at most once per 20 s, only when new pipelines exist),
+  so a cancelled run, a kill or an exhausted time budget keeps its work and the
+  next attempt continues from a warm cache. The final store is unchanged.
+
+The receipt (`shader-seeds/device-preparation/latest.json`) records
+`worker_policy_threads`, `process_priority_lowered`,
+`workers_retired_for_memory`, `retried`, `recovered`, `host_memory_total_bytes`,
+`host_memory_available_bytes`, `peak_working_set_bytes`, `cache_flushes`,
+`cache_flushed_bytes` and `driver_id`, so AMD reports become measurable. The
+same flusher runs in the game device (`TRIAEVUM_NRI_PIPELINE_CACHE_FLUSH=0`
+restores the shutdown-only store), see
+`docs/TRIAEVUM_WINDROID_FORK_EVALUATION.md`.
+
+Verification: contract tests in `tools/renderer/pipeline_prepare/tests.cpp`
+(policy, reserve, retirement, flush schedule, flusher store), and cold runs of
+the helper on the reference machine (RTX 3060, 12 logical cores, 32 GiB, NVIDIA
+driver id 4) over the beta.1b corpus (1888 pipelines including the 39 startup
+program parts), with an empty renderer cache and the driver's own shader cache
+redirected to an empty directory (`__GL_SHADER_DISK_CACHE_PATH`; without that
+a "cold" rerun completes in 5 s from the driver cache):
+
+| Workers | Wall | Startup programs | Recipes | Peak working set | Flushes |
+| --- | --- | --- | --- | --- | --- |
+| 6 (policy) | 238 s, 236 s | 99 s, 97 s | 130 s, 137 s | 3.66 GiB, 3.64 GiB | 11 |
+| 12 (`TRIAEVUM_PIPELINE_PREPARE_THREADS=12`) | 213 s | 97 s | 113 s | 6.78 GiB | 9 |
+
+Twelve workers buy 10 percent of wall time for twice the working set; the
+startup-program phase does not scale at all. No worker was retired for memory
+and no pipeline was retried on this machine. Each flush stores the whole cache
+(114 MiB at the end), so the eleven flushes wrote 563 MiB over four minutes; the
+20 s minimum interval keeps that below 2.5 MiB/s. Not verified on an AMD
+Windows driver (no such GPU here); the Linux AMD reference machine runs RADV, a
+different compiler.
+
+## Device-Loss Diagnostics (2026-10-26)
+
+Several Windows users on AMD's proprietary driver (`amdvlk64.dll`, RX 5600M to
+RX 6750 XT) cannot start the game. By default the process faults inside the
+driver about a second after device creation, in
+`triaevum_nri::GraphicsPipelineLibraries::Create` on a startup-program worker
+(`PrepareNativePicaPrograms`). With libraries off
+(`TRIAEVUM_NRI_PIPELINE_LIBRARIES=0`), `vkQueueSubmit(frame)` returns
+`VK_ERROR_DEVICE_LOST` on the first frame. No such GPU is available here, so
+the renderer now records what a report from those machines needs instead of a
+guessed fix.
+
+| Switch | Default | Owner | Effect |
+| --- | --- | --- | --- |
+| `VK_EXT_device_fault` | On when the device offers `deviceFault` | `renderer3ds/vulkan_device_fault.*` | After device loss, one fault description from the driver |
+| `TRIAEVUM_VULKAN_BREADCRUMBS=1` | Off | `renderer3ds/vulkan_breadcrumbs.*` | Marker trail over the recorded passes, read after device loss |
+| `TRIAEVUM_NRI_GPL_TRACE=1` | Off | `cmake/patches/nri_pipeline_libraries/GraphicsPipelineLibrariesVK.h` | One line before and after every library part and link |
+
+Every device-loss path reports once, before its existing error propagates:
+the backend's `CheckVk` (submits, fence waits, presents, including the
+asynchronous present worker's deferred error), the texture-copy prefix waits
+and NRI swapchain acquire/present (`NriSwapchainOperationResult::DeviceLost`).
+Disabled, nothing is enabled on the device and nothing is recorded: the fault
+report only reads driver state after the loss, and the breadcrumb hooks are a
+null check.
+
+**Startup capability.** Game log (warnings) and stderr:
+
+```text
+OOT3D Vulkan diagnostics: device_fault=1 breadcrumbs=off
+TRIAEVUM_VULKAN_DIAGNOSTICS device_fault=1 device_fault_extension=1 breadcrumbs=off breadcrumbs_requested=0
+```
+
+**Fault report.** `vkGetDeviceFaultInfoEXT`, once, in the game log and on
+stderr. Address types are `read_invalid`, `write_invalid`, `execute_invalid`
+and the `instruction_pointer_*` kinds; the faulting range is the address
+rounded down to its precision. `deviceFaultVendorBinary` is not requested: its
+dumps need vendor tools to decode. A failed query prints `query_result=<VkResult>`.
+
+```text
+TRIAEVUM_VULKAN_DEVICE_FAULT operation="vkQueueSubmit(frame)" result=-4 description="..." address_infos=[{type=read_invalid,address=0x7F001000,precision=0x1000}] vendor_infos=[{description="...",code=0x2A,data=0x1234}]
+```
+
+**Breadcrumbs.** With `TRIAEVUM_VULKAN_BREADCRUMBS=1` the device enables
+`VK_AMD_buffer_marker` (preferred; NVIDIA exposes it too) or
+`VK_NV_device_diagnostic_checkpoints`. Every boundary the GPU profiler is
+already told about (its scopes such as `native_pica`, `grass`, `scanout`, and
+the named timeline marks, `oot3d_vulkan_gpu_profiler.cpp`) records a monotonic
+id, as do `frame_begin`/`frame_end`, the immediate upload command buffers and
+the ends of mid-frame prefix submissions. The buffer-marker mechanism writes
+each id when the preceding work has started (top of pipe) and when it has
+completed (bottom of pipe) into host-coherent memory. Granularity is per pass
+group, not per draw. After device loss:
+
+```text
+TRIAEVUM_VULKAN_BREADCRUMBS mechanism=amd_buffer_marker recorded=5 started=3 completed=1 last_completed={id=1,frame=3,pass="frame_begin"} in_flight=[{id=2,frame=3,pass="native_pica"},{id=3,frame=3,pass="after native_pica"},{id=4,frame=3,pass="scanout"}]
+```
+
+The faulting work follows `last_completed` and precedes the marker after
+`started`; `in_flight` lists those boundaries (at most 16). `recorded` beyond
+`started + 1` were recorded but never reached. A breadcrumb device that cannot
+create its buffer logs `TRIAEVUM_VULKAN_BREADCRUMBS mechanism=... initialized=0`
+and runs without them.
+
+**Library trace.** The crash inside the driver returns no `VkResult`; the
+crash handler's stack names the GPL call. `TRIAEVUM_NRI_GPL_TRACE=1` adds
+flushed stderr lines around each driver call, so the last `op=part` or
+`op=link` without its `_done` line on the crashing thread is the request:
+
+```text
+TRIAEVUM_NRI_GPL_TRACE op=part part=2 stage=fragment key=71e11f49ac387200 thread=28da7cd9fdcecb dynamic_states=9 vertex_bindings=1 vertex_attributes=16 topology=3 depth_format=126 stencil_format=0 color_formats=[37] blend_attachments=1 samples=1
+TRIAEVUM_NRI_GPL_TRACE op=part_done part=2 key=71e11f49ac387200 thread=28da7cd9fdcecb result=0 ms=0.6
+TRIAEVUM_NRI_GPL_TRACE op=link keys=[a28d7b49fcb56dc1,2f0b0622df7665ae,71e11f49ac387200,5b6293890d366600] thread=8f8d9b7c9a35e01c
+TRIAEVUM_NRI_GPL_TRACE op=link_done thread=8f8d9b7c9a35e01c result=0 ms=0.0
+```
+
+Formats and topology are numeric `VkFormat` and `VkPrimitiveTopology` values;
+`key` is a hash of the part's library identity, stable across runs of one
+build. The trace lives inside NRI and has no logger, so it reaches only stderr;
+it is not limited to one driver because it only runs on request. A Windows
+tester captures it from a command prompt:
+
+```text
+set TRIAEVUM_NRI_GPL_TRACE=1
+TriAevum.exe 2> triaevum-stderr.txt
+```
+
+Editing the patch header requires rerunning
+`cmake -DNRI_SOURCE_DIR=<nri checkout> -P runtime/three_ds_recomp/cmake/patches/nri_graphics_pipeline_libraries.cmake`
+for a build whose NRI checkout is already patched (the step copies the headers
+and skips applied edits).
+
+A tester willing to install AMD's Radeon Developer Panel can additionally
+capture a driver-side crash dump (Radeon GPU Detective); it needs no
+TriAevum change.
+
+Verification: `vulkan_device_loss_diagnostics_tests` (fault-line and
+breadcrumb formatting against synthetic driver data, enabling policies,
+history wrap), and developer launches on the reference machine (RTX 3060,
+NVIDIA driver id 4, which offers both `VK_EXT_device_fault` and
+`VK_AMD_buffer_marker`) from a savestate for 60 frames: unset, the run reports
+`device_fault=1 breadcrumbs=off` and is otherwise unchanged; with
+`TRIAEVUM_VULKAN_BREADCRUMBS=1 TRIAEVUM_NRI_GPL_TRACE=1` it reports
+`breadcrumbs=amd_buffer_marker`, records the trail through every frame and
+prints 58 part and 55 link requests, each matched by its `_done` line. The
+device-loss paths themselves (fault query, breadcrumb readout, checkpoints)
+are unexercised: no device was lost on the reference machine, and checkpoint
+data can only be read from a lost device.
+
+## AMD Windows Driver Policy (2026-10-28)
+
+Measured on an AMD Windows machine (RX 7900 XT, `amdvlk64` driver version
+2.0.395 = `0x0080018B`, `VK_DRIVER_ID_AMD_PROPRIETARY`). The reports'
+driver is older (2.0.353 = `0x00800161`).
+
+- **beta.1.2 as published** (libraries on): no crash on this newer driver, but
+  startup preparation took 58.6 s (`TRIAEVUM_INITIAL_PREPARATION
+  startup_seconds=58.595`). Forge's prepared cache did not cover the library
+  parts the game asked for: 48 fragment parts compiled in 221 s of driver
+  time, 97 links took 241 s, and the longest link took 18 s. The first 90
+  seconds rendered 56 frames. The older driver crashes in the link step
+  (#117-#120).
+- **Libraries off** (`TRIAEVUM_NRI_PIPELINE_LIBRARIES=0`, as earlier testers
+  tried): the GPU faults within frames 3-8 (`TRIAEVUM_VULKAN_DEVICE_FAULT
+  ... description="GPU fault" address_infos=[{type=read_invalid,
+  address=0x13A4CC000,precision=0x1000}]`). This is the reports'
+  `vkQueueSubmit(frame) -4`; here it surfaced first in the next
+  `vkCreateGraphicsPipelines`, which now also prints the fault report and
+  breadcrumbs. The address is the same in every run.
+- **Bisection:** `robustBufferAccess` on the device removes the fault.
+  Library-linked pipelines for every draw (`TRIAEVUM_NRI_PIPELINE_LIBRARIES=1`
+  with `TRIAEVUM_SHADER_PREPARATION=complete`) avoid it too. The following
+  do not change the fault or its address:
+  - enabling extended dynamic state with monolithic pipelines;
+  - turning off NRI PICA draws, NRI texture images, NRI display copies or the
+    NRI scanout;
+  - padding each per-geometry vertex buffer by up to 4 KiB.
+
+  Core and synchronization validation report nothing before the fault.
+  GPU-assisted validation reports no out-of-bounds access, and its
+  instrumented shaders do not fault. A CPU check of every native draw found
+  index and vertex ranges inside their bindings. The faulting access is
+  therefore an out-of-bounds buffer read that AMD's monolithic pipelines do
+  not clamp. Its exact source is not yet identified.
+
+The device profile (`pica_vulkan_device_profile.h`) therefore:
+- defaults `VK_DRIVER_ID_AMD_PROPRIETARY` to monolithic pipelines
+  (`policy=driver_policy`, like Intel's anv);
+- enables `robustBufferAccess` on that driver (`PicaRobustBufferAccessRequired`);
+- negotiates `VK_EXT_extended_dynamic_state` whenever it is offered, so
+  libraries off no longer also moves NRI onto its static fallback.
+
+Forge's helper takes the same device features, so its prepared pipelines stay
+cache hits. Result on the same machine (developer build of the branch, the
+beta.1.2 installation's data):
+- Forge's device preparation: 1838/1838 pipelines in 190 s with 4 workers,
+  1.0 GB peak.
+- Title boot: startup preparation 0.08 s; 3602 frames in 76 s with no fault;
+  110 pipelines created in play, 5.8 s of driver time in total.
+- Gameplay from a Barinade savestate: 57 fps over 75 s, rendering correct.

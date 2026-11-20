@@ -1,0 +1,142 @@
+import io
+import os
+from contextlib import redirect_stderr
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+import forge
+import forge_gui
+from host_layout import FLATPAK_ID, for_package
+from tools.triaevum_release import desktop_launcher
+
+
+class HostLayoutTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.package = self.root / "read only app"
+        self.xdg = self.root / "private user data"
+        self.env = {"FLATPAK_ID": FLATPAK_ID, "XDG_DATA_HOME": str(self.xdg)}
+
+    def test_windows_is_portable_even_with_flatpak_variables(self):
+        layout = for_package(self.package, environ=self.env, platform="win32")
+        self.assertEqual(layout.activation, self.package)
+        self.assertEqual(layout.data, self.package / "data")
+        self.assertFalse(layout.use_file_portal)
+
+    def test_macos_bundle_keeps_activation_outside_the_seal(self):
+        package = self.root / "TriAevum.app/Contents/MacOS"
+        env = {"HOME": str(self.root / "home")}
+        layout = for_package(package, environ=env, platform="darwin")
+        self.assertEqual(layout.activation, self.root / "home/Library/Application Support/TriAevum")
+        env["TRIAEVUM_MACOS_DATA_ROOT"] = str(self.xdg)
+        self.assertEqual(for_package(package, environ=env, platform="darwin").activation, self.xdg)
+        for invalid in ("relative", str(package / "data")):
+            env["TRIAEVUM_MACOS_DATA_ROOT"] = invalid
+            with self.assertRaises(ValueError):
+                for_package(package, environ=env, platform="darwin")
+        self.assertFalse(package.exists())
+
+    def test_linux_outside_application_is_still_portable(self):
+        for app_id in ("", "org.freedesktop.Sdk"):
+            env = dict(self.env, FLATPAK_ID=app_id)
+            self.assertEqual(for_package(self.package, environ=env, platform="linux").activation,
+                             self.package)
+
+    def test_appimage_layout_keeps_user_data_without_appdir(self):
+        """The payload layout owns the decision; the environment may be absent."""
+        for appdir in ("", ".", str(self.root / "another mount")):
+            env = {"HOME": str(self.root / "home"), "APPDIR": appdir}
+            for data_home, expected in (
+                (None, self.root / "home/.local/share/TriAevum"),
+                (str(self.xdg), self.xdg / "TriAevum"),
+            ):
+                if data_home is not None:
+                    env["XDG_DATA_HOME"] = data_home
+                else:
+                    env.pop("XDG_DATA_HOME", None)
+                with self.subTest(appdir=appdir, data_home=data_home):
+                    layout = for_package(self.root / "mount/usr/lib/triaevum",
+                                         platform="linux", environ=env)
+                    self.assertEqual(layout.activation, expected)
+
+    def test_similar_directory_name_is_not_an_appimage(self):
+        for package in (self.root / "opt/triaevum", self.root / "triaevum"):
+            with self.subTest(package=package.name):
+                layout = for_package(package, platform="linux",
+                                     environ={"HOME": str(self.root / "home")})
+                self.assertEqual(layout.activation, package)
+
+    def test_flatpak_defaults_are_writable_and_shared(self):
+        with (patch.object(sys, "platform", "linux"),
+              patch("release_platform.platform.machine", return_value="x86_64"),
+              patch.object(sys, "frozen", True, create=True),
+              patch.object(sys, "executable", str(self.package / "TriAevumForge")),
+              patch.dict(os.environ, self.env)):
+            activation = self.xdg / "TriAevum"
+            self.assertEqual(forge.default_runtime_launch_profile_path(), activation / "TriAevum.launch.json")
+            self.assertEqual(forge.default_output_root(), activation / "data/titles")
+            self.assertEqual(forge_gui.default_gui_data_root(), activation / "data")
+            self.assertEqual(forge_gui.runtime_path(), self.package / "TriAevum")
+            self.assertEqual(forge.default_runtime_plugin_path(), activation / "triaevum_title_aot.so")
+        self.assertFalse(self.xdg.exists())
+
+    def test_invalid_flatpak_root_fails_instead_of_writing_to_app(self):
+        for root in ("", "relative", str(self.package)):
+            with self.subTest(root=root), self.assertRaises(ValueError):
+                for_package(self.package, platform="linux", environ=dict(self.env, XDG_DATA_HOME=root))
+
+    def test_flatpak_launch_lock_lives_in_activation_root(self):
+        with (patch("forge_gui.installation_root", return_value=self.package),
+              patch("forge_gui.for_package", return_value=for_package(
+                  self.package, environ=self.env, platform="linux")),
+              patch("forge_gui._launch_runtime_locked", return_value="child")):
+            self.assertEqual(forge_gui.launch_runtime(), "child")
+        self.assertFalse(self.package.exists())
+        self.assertTrue((self.xdg / "TriAevum").is_dir())
+
+
+class DesktopLauncherTests(unittest.TestCase):
+    def test_first_run_and_explicit_forge_open_gui(self):
+        with (patch.object(desktop_launcher.forge_gui, "load_active_title", return_value=None),
+              patch.object(desktop_launcher.forge_gui, "main", return_value=0) as gui,
+              patch.object(desktop_launcher.forge_gui, "launch_runtime") as launch):
+            self.assertEqual(desktop_launcher.main([]), 0)
+            self.assertEqual(desktop_launcher.main(["--forge"]), 0)
+            self.assertEqual(gui.call_count, 2)
+            launch.assert_not_called()
+
+    def test_prepared_installation_plays_and_preserves_exit_code(self):
+        with (patch.object(desktop_launcher.forge_gui, "load_active_title", return_value=object()),
+              patch.object(desktop_launcher.forge_gui, "main") as gui,
+              patch.object(desktop_launcher.forge_gui, "launch_runtime") as launch):
+            launch.return_value.wait.return_value = 7
+            self.assertEqual(desktop_launcher.main([]), 7)
+            gui.assert_not_called()
+
+    def test_invalid_installation_opens_repair_with_visible_error(self):
+        with (patch.object(desktop_launcher.forge_gui, "load_active_title", return_value=object()),
+              patch.object(desktop_launcher.forge_gui, "main", return_value=0) as gui,
+              patch.object(desktop_launcher.forge_gui, "launch_runtime", side_effect=OSError("changed module"))):
+            self.assertEqual(desktop_launcher.main([]), 0)
+            gui.assert_called_once_with(startup_error="changed module")
+
+    def test_opened_file_argument_still_reaches_the_application(self):
+        """A desktop integration that passes the AppImage path must not disable it."""
+        with tempfile.TemporaryDirectory() as temporary:
+            opened = Path(temporary) / "TriAevum.AppImage"
+            opened.write_bytes(b"")
+            with (patch.object(desktop_launcher.forge_gui, "load_active_title", return_value=None),
+                  patch.object(desktop_launcher.forge_gui, "main", return_value=0) as gui):
+                self.assertEqual(desktop_launcher.main([str(opened)]), 0)
+                self.assertEqual(desktop_launcher.main(["--forge", str(opened)]), 0)
+                self.assertEqual(gui.call_count, 2)
+
+    def test_unknown_option_is_still_rejected(self):
+        with redirect_stderr(io.StringIO()):
+            self.assertEqual(desktop_launcher.main(["--unknown"]), 2)
+            self.assertEqual(desktop_launcher.main(["missing-file.cci"]), 2)

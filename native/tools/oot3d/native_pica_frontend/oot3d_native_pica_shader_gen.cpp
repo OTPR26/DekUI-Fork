@@ -1,0 +1,1629 @@
+#include "oot3d_native_pica_shader_gen.h"
+#include "oot3d_native_pica_affine_layout.h"
+#include "oot3d_translated_vertex_programs.h"
+
+#include "nihstro/shader_bytecode.h"
+#include "video_core/shader/generator/glsl_shader_decompiler.h"
+
+#include <algorithm>
+#include <array>
+#include <cctype>
+#include <optional>
+#include <sstream>
+#include <vector>
+
+namespace Oot3dNativeGame {
+namespace {
+
+// Preserve the PICA multiplication semantics for NaN/zero combinations. This
+// is part of the translated program identity because it changes generated
+// shader code, not a runtime presentation preference.
+constexpr bool kAccuratePicaMultiplication = true;
+
+void SetError(std::string* error, const char* message) {
+    if (error != nullptr) {
+        *error = message;
+    }
+}
+
+uint64_t HashWords(uint64_t hash, const uint32_t* words, size_t count) {
+    constexpr uint64_t kFnvPrime = 1099511628211ULL;
+    for (size_t index = 0; index < count; ++index) {
+        uint32_t word = words[index];
+        for (size_t byte = 0; byte < sizeof(word); ++byte) {
+            hash ^= static_cast<uint8_t>(word >> (byte * 8U));
+            hash *= kFnvPrime;
+        }
+    }
+    return hash;
+}
+
+std::string InputRegisterName(uint32_t index) {
+    return "pica_input" + std::to_string(index);
+}
+
+std::string OutputRegisterName(uint32_t index) {
+    return "pica_output" + std::to_string(index);
+}
+
+size_t StreamOffset(std::ostringstream& stream) {
+    return static_cast<size_t>(stream.tellp());
+}
+
+bool PreviousScopedIdentifier(std::string_view token) {
+    return token == "uniforms" || token == "conditional_code" ||
+           token == "address_registers" ||
+           token == "get_offset_register" || token == "exec_shader" ||
+           token == "sanitize_mul" || token == "pica_position" ||
+           token == "pica_ndc_z" || token == "pica_raw_primary_color" ||
+           token.starts_with("pica_output") ||
+           token.starts_with("reg_tmp") || token.starts_with("sub_");
+}
+
+std::string PreviousScopedSource(std::string_view source) {
+    std::string result;
+    result.reserve(source.size() + source.size() / 8U);
+    for (size_t index = 0; index < source.size();) {
+        const unsigned char value =
+            static_cast<unsigned char>(source[index]);
+        if (std::isalpha(value) || source[index] == '_') {
+            const size_t start = index++;
+            while (index < source.size()) {
+                const unsigned char next =
+                    static_cast<unsigned char>(source[index]);
+                if (!std::isalnum(next) && source[index] != '_') {
+                    break;
+                }
+                ++index;
+            }
+            const std::string_view token =
+                source.substr(start, index - start);
+            result.append(token);
+            if (PreviousScopedIdentifier(token)) {
+                result.append("_previous");
+            }
+        } else {
+            result.push_back(source[index++]);
+        }
+    }
+    return result;
+}
+
+struct SemanticSource {
+    bool Present = false;
+    uint8_t Register = 0;
+    uint8_t Component = 0;
+};
+
+struct ArithmeticInstructionView {
+    nihstro::OpCode::Id Opcode = nihstro::OpCode::Id::NOP;
+    nihstro::Instruction Instruction{0U};
+    nihstro::SwizzlePattern Swizzle{0U};
+    nihstro::DestRegister Destination{0U};
+    nihstro::SourceRegister Source1{0U};
+    nihstro::SourceRegister Source2{0U};
+    bool HasSource2 = false;
+    uint8_t AddressRegister = 0U;
+};
+
+std::optional<ArithmeticInstructionView> DecodeArithmeticInstruction(
+    const Oot3dPicaDrawPacket& packet, size_t offset) {
+    if (offset >= packet.VertexShader.ProgramWordCount) {
+        return std::nullopt;
+    }
+    const nihstro::Instruction instruction{
+        packet.VertexShader.Program[offset]};
+    const auto opcode = instruction.opcode.Value();
+    const auto& info = opcode.GetInfo();
+    if (info.type != nihstro::OpCode::Type::Arithmetic) {
+        return std::nullopt;
+    }
+    const size_t swizzleOffset =
+        instruction.common.operand_desc_id.Value();
+    if (swizzleOffset >= packet.VertexShader.SwizzleWordCount) {
+        return std::nullopt;
+    }
+    const bool inverted =
+        (info.subtype & nihstro::OpCode::Info::SrcInversed) != 0U;
+    return ArithmeticInstructionView{
+        opcode.EffectiveOpCode(),
+        instruction,
+        nihstro::SwizzlePattern{
+            packet.VertexShader.Swizzles[swizzleOffset]},
+        instruction.common.dest.Value(),
+        instruction.common.GetSrc1(inverted),
+        instruction.common.GetSrc2(inverted),
+        (info.subtype & nihstro::OpCode::Info::Src2) != 0U,
+        static_cast<uint8_t>(
+            instruction.common.address_register_index.Value())};
+}
+
+uint8_t SourceComponent(const ArithmeticInstructionView& instruction,
+                        uint8_t source, uint8_t component) {
+    const auto selector =
+        source == 1U
+            ? instruction.Swizzle.GetSelectorSrc1(component)
+            : instruction.Swizzle.GetSelectorSrc2(component);
+    return static_cast<uint8_t>(selector);
+}
+
+bool SourceNegated(const ArithmeticInstructionView& instruction,
+                   uint8_t source) {
+    return source == 1U ? instruction.Swizzle.negate_src1.Value()
+                        : instruction.Swizzle.negate_src2.Value();
+}
+
+bool SourceIdentity(const ArithmeticInstructionView& instruction,
+                    uint8_t source) {
+    for (uint8_t component = 0U; component < 4U; ++component) {
+        if (SourceComponent(instruction, source, component) != component) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool IsRegister(const nihstro::SourceRegister& source,
+                nihstro::RegisterType type, uint8_t index) {
+    return source.GetRegisterType() == type &&
+           source.GetIndex() == static_cast<int>(index);
+}
+
+bool IsRegister(const nihstro::DestRegister& destination,
+                nihstro::RegisterType type, uint8_t index) {
+    return destination.GetRegisterType() == type &&
+           destination.GetIndex() == static_cast<int>(index);
+}
+
+struct CoordinateFeed {
+    uint8_t Temporary = 0xffU;
+    uint8_t Component = 0xffU;
+    bool Present = false;
+};
+
+std::optional<std::array<CoordinateFeed, 2U>> ResolveCoordinateOutputFeed(
+    const Oot3dPicaDrawPacket& packet,
+    const std::array<SemanticSource, 24U>& semantics,
+    size_t begin = 0, size_t end = ~size_t{}) {
+    end = std::min(end, packet.VertexShader.ProgramWordCount);
+    if (!semantics[12U].Present || !semantics[13U].Present) {
+        return std::nullopt;
+    }
+    std::array<CoordinateFeed, 2U> result{};
+    for (size_t offset = begin; offset < end; ++offset) {
+        const auto instruction =
+            DecodeArithmeticInstruction(packet, offset);
+        if (!instruction.has_value() ||
+            instruction->Opcode != nihstro::OpCode::Id::MOV ||
+            instruction->AddressRegister != 0U ||
+            SourceNegated(*instruction, 1U) ||
+            instruction->Source1.GetRegisterType() !=
+                nihstro::RegisterType::Temporary) {
+            continue;
+        }
+        for (uint8_t coordinateComponent = 0U;
+             coordinateComponent < result.size(); ++coordinateComponent) {
+            const auto& semantic = semantics[12U + coordinateComponent];
+            if (!IsRegister(instruction->Destination,
+                            nihstro::RegisterType::Output,
+                            semantic.Register) ||
+                !instruction->Swizzle.DestComponentEnabled(
+                    semantic.Component)) {
+                continue;
+            }
+            const CoordinateFeed candidate{
+                static_cast<uint8_t>(instruction->Source1.GetIndex()),
+                SourceComponent(*instruction, 1U, semantic.Component),
+                true};
+            if (result[coordinateComponent].Present &&
+                (result[coordinateComponent].Temporary !=
+                     candidate.Temporary ||
+                 result[coordinateComponent].Component !=
+                     candidate.Component)) {
+                return std::nullopt;
+            }
+            result[coordinateComponent] = candidate;
+        }
+    }
+    if (!result[0].Present || !result[1].Present ||
+        result[0].Temporary != result[1].Temporary ||
+        result[0].Component == result[1].Component) {
+        return std::nullopt;
+    }
+    return result;
+}
+
+struct MatrixFeed {
+    uint8_t Uniform = 0xffU;
+    uint8_t WorkingTemporary = 0xffU;
+    bool Present = false;
+};
+
+std::optional<MatrixFeed> DecodeMatrixFeed(
+    const Oot3dPicaDrawPacket& packet, size_t offset,
+    const CoordinateFeed& coordinate, uint8_t addressRegister = 0U) {
+    const auto instruction = DecodeArithmeticInstruction(packet, offset);
+    if (!instruction.has_value() ||
+        instruction->Opcode != nihstro::OpCode::Id::DP4 ||
+        instruction->AddressRegister != addressRegister ||
+        !IsRegister(instruction->Destination,
+                    nihstro::RegisterType::Temporary,
+                    coordinate.Temporary) ||
+        !instruction->Swizzle.DestComponentEnabled(
+            coordinate.Component) ||
+        SourceNegated(*instruction, 1U) ||
+        SourceNegated(*instruction, 2U) ||
+        !SourceIdentity(*instruction, 1U) ||
+        !SourceIdentity(*instruction, 2U)) {
+        return std::nullopt;
+    }
+    const auto source1Type = instruction->Source1.GetRegisterType();
+    const auto source2Type = instruction->Source2.GetRegisterType();
+    const bool source1Uniform =
+        source1Type == nihstro::RegisterType::FloatUniform;
+    const bool source2Uniform =
+        source2Type == nihstro::RegisterType::FloatUniform;
+    const bool source1Temporary =
+        source1Type == nihstro::RegisterType::Temporary;
+    const bool source2Temporary =
+        source2Type == nihstro::RegisterType::Temporary;
+    if (!((source1Uniform && source2Temporary) ||
+          (source2Uniform && source1Temporary))) {
+        return std::nullopt;
+    }
+    const auto& uniform =
+        source1Uniform ? instruction->Source1 : instruction->Source2;
+    const auto& temporary =
+        source1Temporary ? instruction->Source1 : instruction->Source2;
+    if (uniform.GetIndex() < 0 || uniform.GetIndex() >= 96 ||
+        temporary.GetIndex() < 0 || temporary.GetIndex() >= 16) {
+        return std::nullopt;
+    }
+    return MatrixFeed{
+        static_cast<uint8_t>(uniform.GetIndex()),
+        static_cast<uint8_t>(temporary.GetIndex()), true};
+}
+
+std::optional<MatrixFeed> ResolveMatrixFeed(
+    const Oot3dPicaDrawPacket& packet,
+    const CoordinateFeed& coordinate) {
+    MatrixFeed result{};
+    for (size_t offset = 0U;
+         offset < packet.VertexShader.ProgramWordCount; ++offset) {
+        const auto candidate =
+            DecodeMatrixFeed(packet, offset, coordinate);
+        if (!candidate.has_value()) {
+            continue;
+        }
+        if (result.Present &&
+            (result.Uniform != candidate->Uniform ||
+             result.WorkingTemporary !=
+                 candidate->WorkingTemporary)) {
+            return std::nullopt;
+        }
+        result = *candidate;
+    }
+    return result.Present ? std::optional<MatrixFeed>{result}
+                          : std::nullopt;
+}
+
+struct UniformMove {
+    uint8_t DestinationTemporary = 0xffU;
+    uint8_t Uniform = 0xffU;
+    uint8_t Component = 0xffU;
+};
+
+std::optional<UniformMove> DecodeUniformBroadcastMove(
+    const Oot3dPicaDrawPacket& packet, size_t offset,
+    uint8_t firstDestinationComponent,
+    uint8_t secondDestinationComponent) {
+    const auto instruction = DecodeArithmeticInstruction(packet, offset);
+    if (!instruction.has_value() ||
+        instruction->Opcode != nihstro::OpCode::Id::MOV ||
+        instruction->AddressRegister != 0U ||
+        SourceNegated(*instruction, 1U) ||
+        instruction->Destination.GetRegisterType() !=
+            nihstro::RegisterType::Temporary ||
+        instruction->Source1.GetRegisterType() !=
+            nihstro::RegisterType::FloatUniform ||
+        !instruction->Swizzle.DestComponentEnabled(
+            firstDestinationComponent) ||
+        !instruction->Swizzle.DestComponentEnabled(
+            secondDestinationComponent)) {
+        return std::nullopt;
+    }
+    const uint8_t first = SourceComponent(
+        *instruction, 1U, firstDestinationComponent);
+    const uint8_t second = SourceComponent(
+        *instruction, 1U, secondDestinationComponent);
+    if (first != second || instruction->Source1.GetIndex() < 0 ||
+        instruction->Source1.GetIndex() >= 96 ||
+        instruction->Destination.GetIndex() < 0 ||
+        instruction->Destination.GetIndex() >= 16) {
+        return std::nullopt;
+    }
+    return UniformMove{
+        static_cast<uint8_t>(instruction->Destination.GetIndex()),
+        static_cast<uint8_t>(instruction->Source1.GetIndex()), first};
+}
+
+struct UniformComparison {
+    uint8_t Uniform = 0xffU;
+    std::array<uint8_t, 2U> Components{0xffU, 0xffU};
+};
+
+std::optional<UniformComparison> DecodeEqualUniformComparison(
+    const Oot3dPicaDrawPacket& packet, size_t offset,
+    uint8_t temporary,
+    nihstro::Instruction::Common::CompareOpType::Op compare = nihstro::Instruction::Common::CompareOpType::Equal) {
+    const auto instruction = DecodeArithmeticInstruction(packet, offset);
+    if (!instruction.has_value() ||
+        instruction->Opcode != nihstro::OpCode::Id::CMP ||
+        instruction->AddressRegister != 0U ||
+        SourceNegated(*instruction, 1U) ||
+        SourceNegated(*instruction, 2U) ||
+        instruction->Instruction.common.compare_op.x.Value() != compare ||
+        instruction->Instruction.common.compare_op.y.Value() != compare) {
+        return std::nullopt;
+    }
+    const auto source1Type = instruction->Source1.GetRegisterType();
+    const auto source2Type = instruction->Source2.GetRegisterType();
+    const bool source1Uniform =
+        source1Type == nihstro::RegisterType::FloatUniform;
+    const bool source2Uniform =
+        source2Type == nihstro::RegisterType::FloatUniform;
+    const bool source1Temporary =
+        source1Type == nihstro::RegisterType::Temporary &&
+        instruction->Source1.GetIndex() == temporary;
+    const bool source2Temporary =
+        source2Type == nihstro::RegisterType::Temporary &&
+        instruction->Source2.GetIndex() == temporary;
+    if (!((source1Uniform && source2Temporary) ||
+          (source2Uniform && source1Temporary))) {
+        return std::nullopt;
+    }
+    const uint8_t uniformSource = source1Uniform ? 1U : 2U;
+    const auto& uniform =
+        source1Uniform ? instruction->Source1 : instruction->Source2;
+    if (uniform.GetIndex() < 0 || uniform.GetIndex() >= 96) {
+        return std::nullopt;
+    }
+    return UniformComparison{
+        static_cast<uint8_t>(uniform.GetIndex()),
+        {SourceComponent(*instruction, uniformSource, 0U),
+         SourceComponent(*instruction, uniformSource, 1U)}};
+}
+
+bool IsConditionalBranch(const Oot3dPicaDrawPacket& packet,
+                         size_t offset, bool referenceX,
+                         bool referenceY) {
+    if (offset >= packet.VertexShader.ProgramWordCount) {
+        return false;
+    }
+    const nihstro::Instruction instruction{
+        packet.VertexShader.Program[offset]};
+    return instruction.opcode.Value().EffectiveOpCode() ==
+               nihstro::OpCode::Id::IFC &&
+           instruction.flow_control.op.Value() ==
+               nihstro::Instruction::FlowControlType::And &&
+           instruction.flow_control.refx.Value() == referenceX &&
+           instruction.flow_control.refy.Value() == referenceY;
+}
+
+std::optional<uint8_t> FindEnclosingBooleanUniform(
+    const Oot3dPicaDrawPacket& packet, size_t enclosedOffset,
+    size_t beginOffset = 0U) {
+    std::optional<uint8_t> result;
+    for (size_t offset = beginOffset; offset < enclosedOffset; ++offset) {
+        const nihstro::Instruction instruction{
+            packet.VertexShader.Program[offset]};
+        if (instruction.opcode.Value().EffectiveOpCode() !=
+                nihstro::OpCode::Id::IFU ||
+            instruction.flow_control.dest_offset.Value() <=
+                enclosedOffset) {
+            continue;
+        }
+        const uint32_t booleanUniform =
+            instruction.flow_control.bool_uniform_id.Value();
+        if (booleanUniform < 16U) {
+            result = static_cast<uint8_t>(booleanUniform);
+        }
+    }
+    return result;
+}
+
+struct CoordinateSourceRoute {
+    Oot3d::Renderer::PicaVertexTextureCoordinateSourceLayout Layout;
+    uint8_t HomogeneousUniform = 0xffU;
+    uint8_t HomogeneousComponent = 0xffU;
+};
+
+std::optional<CoordinateSourceRoute> DecodeCoordinateSourceRoute(
+    const Oot3dPicaDrawPacket& packet, size_t beginOffset,
+    size_t endOffset, uint8_t workingTemporary) {
+    for (size_t offset = beginOffset; offset < endOffset; ++offset) {
+        const auto instruction =
+            DecodeArithmeticInstruction(packet, offset);
+        if (!instruction.has_value() ||
+            instruction->Opcode != nihstro::OpCode::Id::MUL ||
+            instruction->AddressRegister != 0U ||
+            !IsRegister(instruction->Destination,
+                        nihstro::RegisterType::Temporary,
+                        workingTemporary) ||
+            !instruction->Swizzle.DestComponentEnabled(0U) ||
+            !instruction->Swizzle.DestComponentEnabled(1U) ||
+            SourceNegated(*instruction, 1U) ||
+            SourceNegated(*instruction, 2U)) {
+            continue;
+        }
+        const auto source1Type = instruction->Source1.GetRegisterType();
+        const auto source2Type = instruction->Source2.GetRegisterType();
+        const bool source1Uniform =
+            source1Type == nihstro::RegisterType::FloatUniform;
+        const bool source2Uniform =
+            source2Type == nihstro::RegisterType::FloatUniform;
+        const bool source1Input =
+            source1Type == nihstro::RegisterType::Input;
+        const bool source2Input =
+            source2Type == nihstro::RegisterType::Input;
+        if (!((source1Uniform && source2Input) ||
+              (source2Uniform && source1Input))) {
+            continue;
+        }
+        const uint8_t uniformSource = source1Uniform ? 1U : 2U;
+        const uint8_t inputSource = source1Input ? 1U : 2U;
+        const auto& uniform =
+            source1Uniform ? instruction->Source1 : instruction->Source2;
+        const auto& input =
+            source1Input ? instruction->Source1 : instruction->Source2;
+        const uint8_t scaleComponent0 =
+            SourceComponent(*instruction, uniformSource, 0U);
+        const uint8_t scaleComponent1 =
+            SourceComponent(*instruction, uniformSource, 1U);
+        if (scaleComponent0 != scaleComponent1 ||
+            SourceComponent(*instruction, inputSource, 0U) != 0U ||
+            SourceComponent(*instruction, inputSource, 1U) != 1U ||
+            uniform.GetIndex() < 0 || uniform.GetIndex() >= 96 ||
+            input.GetIndex() < 0 || input.GetIndex() >= 16) {
+            continue;
+        }
+        const auto enabled = FindEnclosingBooleanUniform(
+            packet, offset, beginOffset);
+        const auto homogeneous = DecodeUniformBroadcastMove(
+            packet, offset + 1U, 2U, 3U);
+        if (!enabled.has_value() || !homogeneous.has_value() ||
+            homogeneous->DestinationTemporary != workingTemporary) {
+            continue;
+        }
+        return CoordinateSourceRoute{
+            {static_cast<uint8_t>(input.GetIndex()),
+             static_cast<uint8_t>(uniform.GetIndex()),
+             scaleComponent0, *enabled},
+            homogeneous->Uniform, homogeneous->Component};
+    }
+    return std::nullopt;
+}
+
+std::optional<Oot3d::Renderer::PicaVertexTextureCoordinateLayout>
+DecodeCmbTextureCoordinate0Layout(
+    const Oot3dPicaDrawPacket& packet,
+    const std::array<SemanticSource, 24U>& semantics) {
+    const auto outputFeed =
+        ResolveCoordinateOutputFeed(packet, semantics);
+    if (!outputFeed.has_value()) {
+        return std::nullopt;
+    }
+    const auto matrixU = ResolveMatrixFeed(packet, (*outputFeed)[0]);
+    const auto matrixV = ResolveMatrixFeed(packet, (*outputFeed)[1]);
+    if (!matrixU.has_value() || !matrixV.has_value() ||
+        matrixU->WorkingTemporary != matrixV->WorkingTemporary) {
+        return std::nullopt;
+    }
+
+    for (size_t matrixOffset = 5U;
+         matrixOffset + 1U < packet.VertexShader.ProgramWordCount;
+         ++matrixOffset) {
+        const auto directU = DecodeMatrixFeed(
+            packet, matrixOffset, (*outputFeed)[0]);
+        const auto directV = DecodeMatrixFeed(
+            packet, matrixOffset + 1U, (*outputFeed)[1]);
+        if (!directU.has_value() || !directV.has_value() ||
+            directU->Uniform != matrixU->Uniform ||
+            directV->Uniform != matrixV->Uniform ||
+            directU->WorkingTemporary !=
+                matrixU->WorkingTemporary ||
+            directV->WorkingTemporary !=
+                matrixV->WorkingTemporary) {
+            continue;
+        }
+
+        const auto selector = DecodeUniformBroadcastMove(
+            packet, matrixOffset - 2U, 0U, 1U);
+        const nihstro::Instruction resolverCall{
+            packet.VertexShader.Program[matrixOffset - 1U]};
+        const auto mode = DecodeUniformBroadcastMove(
+            packet, matrixOffset - 5U, 0U, 1U);
+        const auto modeComparison = DecodeEqualUniformComparison(
+            packet, matrixOffset - 4U,
+            mode.has_value() ? mode->DestinationTemporary : 0xffU);
+        if (!selector.has_value() || !mode.has_value() ||
+            !modeComparison.has_value() ||
+            resolverCall.opcode.Value().EffectiveOpCode() !=
+                nihstro::OpCode::Id::CALL ||
+            !IsConditionalBranch(packet, matrixOffset - 3U, false,
+                                 false)) {
+            continue;
+        }
+        const auto coordinateEnable = FindEnclosingBooleanUniform(
+            packet, matrixOffset - 5U);
+        if (!coordinateEnable.has_value()) {
+            continue;
+        }
+
+        const size_t resolverBegin =
+            resolverCall.flow_control.dest_offset.Value();
+        const size_t resolverEnd =
+            resolverBegin +
+            resolverCall.flow_control.num_instructions.Value();
+        if (resolverEnd > packet.VertexShader.ProgramWordCount ||
+            resolverBegin + 3U >= resolverEnd) {
+            continue;
+        }
+        const auto sourceComparison = DecodeEqualUniformComparison(
+            packet, resolverBegin,
+            selector->DestinationTemporary);
+        if (!sourceComparison.has_value() ||
+            !IsConditionalBranch(packet, resolverBegin + 2U, true,
+                                 false)) {
+            continue;
+        }
+        const nihstro::Instruction firstBranch{
+            packet.VertexShader.Program[resolverBegin + 2U]};
+        const size_t secondBranchOffset =
+            firstBranch.flow_control.dest_offset.Value();
+        if (secondBranchOffset >= resolverEnd ||
+            !IsConditionalBranch(packet, secondBranchOffset, false,
+                                 true)) {
+            continue;
+        }
+        const nihstro::Instruction secondBranch{
+            packet.VertexShader.Program[secondBranchOffset]};
+        const size_t thirdRouteOffset =
+            secondBranch.flow_control.dest_offset.Value();
+        const size_t thirdRouteEnd =
+            thirdRouteOffset +
+            secondBranch.flow_control.num_instructions.Value();
+        if (thirdRouteOffset >= resolverEnd ||
+            thirdRouteEnd > resolverEnd) {
+            continue;
+        }
+
+        const std::array<std::optional<CoordinateSourceRoute>, 3U>
+            routes{
+                DecodeCoordinateSourceRoute(
+                    packet, resolverBegin + 3U,
+                    secondBranchOffset,
+                    matrixU->WorkingTemporary),
+                DecodeCoordinateSourceRoute(
+                    packet, secondBranchOffset + 1U,
+                    thirdRouteOffset,
+                    matrixU->WorkingTemporary),
+                DecodeCoordinateSourceRoute(
+                    packet, thirdRouteOffset, thirdRouteEnd,
+                    matrixU->WorkingTemporary)};
+        if (!routes[0].has_value() || !routes[1].has_value() ||
+            !routes[2].has_value() ||
+            routes[0]->HomogeneousUniform !=
+                routes[1]->HomogeneousUniform ||
+            routes[0]->HomogeneousUniform !=
+                routes[2]->HomogeneousUniform ||
+            routes[0]->HomogeneousComponent !=
+                routes[1]->HomogeneousComponent ||
+            routes[0]->HomogeneousComponent !=
+                routes[2]->HomogeneousComponent) {
+            continue;
+        }
+
+        Oot3d::Renderer::PicaVertexTextureCoordinateLayout layout;
+        layout.Operation = Oot3d::Renderer::
+            PicaVertexTextureCoordinateOperation::CmbAffine;
+        layout.EnableBooleanUniform = *coordinateEnable;
+        layout.SourceSelectorUniform = selector->Uniform;
+        layout.SourceSelectorComponent = selector->Component;
+        layout.SourceSelectorConstantUniform =
+            sourceComparison->Uniform;
+        layout.SourceSelectorConstantComponents =
+            sourceComparison->Components;
+        layout.CoordinateModeUniform = mode->Uniform;
+        layout.CoordinateModeComponent = mode->Component;
+        layout.CoordinateModeConstantUniform =
+            modeComparison->Uniform;
+        layout.CoordinateModeConstantComponents =
+            modeComparison->Components;
+        layout.MatrixRowUUniform = matrixU->Uniform;
+        layout.MatrixRowVUniform = matrixV->Uniform;
+        layout.HomogeneousUniform =
+            routes[0]->HomogeneousUniform;
+        layout.HomogeneousComponent =
+            routes[0]->HomogeneousComponent;
+        layout.SourceCount = 3U;
+        for (size_t route = 0U; route < routes.size(); ++route) {
+            layout.Sources[route] = routes[route]->Layout;
+        }
+        if (layout.Available()) {
+            return layout;
+        }
+    }
+    return std::nullopt;
+}
+
+// Indexed affine UV subroutines with a uniform-dispatched model entry. The
+// guards keep other entries, generated/projected modes and nonzero row offsets
+// unavailable. All registers/uniforms come from instructions, not a title ID,
+// program hash, source-text pattern or asset name.
+std::optional<Oot3d::Renderer::PicaVertexTextureCoordinateLayout>
+DecodeIndexedAffineUv0(const Oot3dPicaDrawPacket& packet,
+                      const Oot3dPicaDecodedDrawState& state,
+                      const std::array<SemanticSource, 24U>& semantics) {
+    using Id = nihstro::OpCode::Id;
+    using Type = nihstro::RegisterType;
+    using Compare = nihstro::Instruction::Common::CompareOpType;
+    const auto count = packet.VertexShader.ProgramWordCount;
+    const auto at = [&](size_t i) { return nihstro::Instruction{packet.VertexShader.Program[i]}; };
+    const auto call = [&](size_t i) { return i < count && at(i).opcode.Value().EffectiveOpCode() == Id::CALL &&
+        size_t(at(i).flow_control.dest_offset.Value()) + at(i).flow_control.num_instructions.Value() <= count; };
+    const auto xBranch = [&](size_t i) { return i < count && at(i).opcode.Value().EffectiveOpCode() == Id::IFC &&
+        at(i).flow_control.op.Value() == nihstro::Instruction::FlowControlType::JustX && at(i).flow_control.refx.Value(); };
+    const size_t entry = state.ShaderInterface.VertexMainOffset;
+    if (state.ShaderInterface.GeometryShaderEnabled || entry + 4 >= count || !xBranch(entry + 2) || !call(entry + 3)) return {};
+    const auto root = DecodeUniformBroadcastMove(packet, entry, 0, 1);
+    const auto rootCompare = root ? DecodeEqualUniformComparison(packet, entry + 1, root->DestinationTemporary) : std::nullopt;
+    if (!rootCompare || at(entry + 2).flow_control.dest_offset.Value() != entry + 5 ||
+        at(entry + 4).opcode.Value().EffectiveOpCode() != Id::NOP) return {};
+    const auto rootEnd = size_t(at(entry + 2).flow_control.dest_offset.Value()) + at(entry + 2).flow_control.num_instructions.Value();
+    if (rootEnd + 1 >= count || at(rootEnd).opcode.Value().EffectiveOpCode() != Id::NOP ||
+        at(rootEnd + 1).opcode.Value().EffectiveOpCode() != Id::END) return {};
+    const size_t begin = at(entry + 3).flow_control.dest_offset.Value();
+    const size_t end = begin + at(entry + 3).flow_control.num_instructions.Value();
+    const auto feed = ResolveCoordinateOutputFeed(packet, semantics, begin, end);
+    if (!feed) return {};
+    for (size_t c = begin + 5; c + 4 < end; ++c) {
+        if (!call(c) || !xBranch(c - 3)) continue;
+        const auto mode = DecodeUniformBroadcastMove(packet, c - 5, 0, 1);
+        const auto minimum = mode ? DecodeEqualUniformComparison(packet, c - 4, mode->DestinationTemporary, Compare::LessEqual) : std::nullopt;
+        const auto selector = DecodeUniformBroadcastMove(packet, c - 2, 0, 1);
+        const auto slot = DecodeUniformBroadcastMove(packet, c - 1, 0, 1);
+        const auto output = DecodeArithmeticInstruction(packet, c + 4);
+        if (!mode || !minimum || !selector || !slot || !output || output->Opcode != Id::MOV ||
+            !IsRegister(output->Source1, Type::Temporary, (*feed)[0].Temporary) ||
+            !IsRegister(output->Destination, Type::Output, semantics[12].Register) ||
+            !output->Swizzle.DestComponentEnabled(semantics[12].Component) ||
+            !output->Swizzle.DestComponentEnabled(semantics[13].Component) ||
+            SourceNegated(*output, 1) || SourceComponent(*output, 1, semantics[12].Component) != (*feed)[0].Component ||
+            SourceComponent(*output, 1, semantics[13].Component) != (*feed)[1].Component) continue;
+        const size_t h = at(c).flow_control.dest_offset.Value(), he = h + at(c).flow_control.num_instructions.Value();
+        if (h + 7 >= he || !IsConditionalBranch(packet, h + 4, false, false) ||
+            !IsConditionalBranch(packet, h + 6, false, false)) continue;
+        const auto forbidden = DecodeEqualUniformComparison(packet, h, mode->DestinationTemporary);
+        const auto direct = DecodeEqualUniformComparison(packet, h + 5, mode->DestinationTemporary);
+        const auto mad = at(h + 1);
+        const auto mova = DecodeArithmeticInstruction(packet, h + 2);
+        if (!forbidden || !direct || mad.opcode.Value().EffectiveOpCode() != Id::MAD ||
+            mad.mad.operand_desc_id.Value() >= packet.VertexShader.SwizzleWordCount ||
+            mad.mad.address_register_index.Value() != 0 ||
+            !IsRegister(mad.mad.dest.Value(), Type::Temporary, slot->DestinationTemporary) ||
+            !IsRegister(mad.mad.GetSrc1(false), Type::Temporary, slot->DestinationTemporary) ||
+            mad.mad.GetSrc2(false).GetRegisterType() != Type::FloatUniform ||
+            !IsRegister(mad.mad.GetSrc3(false), Type::Temporary, slot->DestinationTemporary) ||
+            !mova || mova->Opcode != Id::MOVA || mova->AddressRegister != 0 ||
+            !IsRegister(mova->Source1, Type::Temporary, slot->DestinationTemporary) ||
+            SourceNegated(*mova, 1) || SourceComponent(*mova, 1, 0) != 0 ||
+            !mova->Swizzle.DestComponentEnabled(0)) continue;
+        const nihstro::SwizzlePattern sw{packet.VertexShader.Swizzles[mad.mad.operand_desc_id.Value()]};
+        if (sw.negate_src1.Value() || sw.negate_src2.Value() || sw.negate_src3.Value() ||
+            !sw.DestComponentEnabled(0) || sw.DestComponentEnabled(1) || sw.DestComponentEnabled(2) || sw.DestComponentEnabled(3) ||
+            uint8_t(sw.GetSelectorSrc1(0)) != 0 || uint8_t(sw.GetSelectorSrc3(0)) != 1 ||
+            at(h + 3).opcode.Value().EffectiveOpCode() != Id::NOP) continue;
+        const size_t d = at(h + 6).flow_control.dest_offset.Value();
+        if (d + 2 >= he || !call(d)) continue;
+        const auto u = DecodeMatrixFeed(packet, d + 1, (*feed)[0], 1);
+        const auto v = DecodeMatrixFeed(packet, d + 2, (*feed)[1], 1);
+        if (!u || !v || u->WorkingTemporary != v->WorkingTemporary) continue;
+        const size_t r = at(d).flow_control.dest_offset.Value(), re = r + at(d).flow_control.num_instructions.Value();
+        const auto compare = DecodeEqualUniformComparison(packet, r, selector->DestinationTemporary);
+        if (!compare || r + 3 >= re || !IsConditionalBranch(packet, r + 2, true, false)) continue;
+        const size_t second = at(r + 2).flow_control.dest_offset.Value();
+        if (second >= re || !IsConditionalBranch(packet, second, false, true)) continue;
+        const size_t third = at(second).flow_control.dest_offset.Value();
+        const size_t thirdEnd = third + at(second).flow_control.num_instructions.Value();
+        if (third >= re || thirdEnd > re) continue;
+        const std::array<std::optional<CoordinateSourceRoute>, 3> routes{
+            DecodeCoordinateSourceRoute(packet, r + 3, second, u->WorkingTemporary),
+            DecodeCoordinateSourceRoute(packet, second + 1, third, u->WorkingTemporary),
+            DecodeCoordinateSourceRoute(packet, third, thirdEnd, u->WorkingTemporary)};
+        if (!routes[0] || !routes[1] || !routes[2]) continue;
+        const auto homogeneous = routes[0]->HomogeneousUniform;
+        const auto component = routes[0]->HomogeneousComponent;
+        if (routes[1]->HomogeneousUniform != homogeneous || routes[2]->HomogeneousUniform != homogeneous ||
+            routes[1]->HomogeneousComponent != component || routes[2]->HomogeneousComponent != component ||
+            rootCompare->Uniform != slot->Uniform || rootCompare->Components[0] != slot->Component ||
+            rootCompare->Uniform != homogeneous || rootCompare->Components[1] != component ||
+            minimum->Uniform != homogeneous || minimum->Components[0] != component || minimum->Components[1] != component) continue;
+        const auto enabled = FindEnclosingBooleanUniform(packet, c - 5, begin);
+        if (!enabled) continue;
+        Oot3d::Renderer::PicaVertexTextureCoordinateLayout layout;
+        layout.Operation = Oot3d::Renderer::PicaVertexTextureCoordinateOperation::CmbAffine;
+        layout.EnableBooleanUniform = *enabled;
+        layout.SourceSelectorUniform = selector->Uniform; layout.SourceSelectorComponent = selector->Component;
+        layout.SourceSelectorConstantUniform = compare->Uniform; layout.SourceSelectorConstantComponents = compare->Components;
+        layout.CoordinateModeUniform = mode->Uniform; layout.CoordinateModeComponent = mode->Component;
+        layout.CoordinateModeConstantUniform = forbidden->Uniform; layout.CoordinateModeConstantComponents = forbidden->Components;
+        layout.MatrixRowUUniform = u->Uniform; layout.MatrixRowVUniform = v->Uniform;
+        layout.HomogeneousUniform = homogeneous; layout.HomogeneousComponent = component;
+        layout.SourceCount = 3;
+        for (size_t i = 0; i < 3; ++i) layout.Sources[i] = routes[i]->Layout;
+        auto& g = layout.AffineGuards; g.Version = 1;
+        g.RootMode = {root->Uniform, root->Component}; g.Zero = {slot->Uniform, slot->Component};
+        g.Stride = {uint8_t(mad.mad.GetSrc2(false).GetIndex()), uint8_t(sw.GetSelectorSrc2(0))};
+        for (size_t i = 0; i < 2; ++i) g.DirectModes[i] = {direct->Uniform, direct->Components[i]};
+        if (layout.Available()) return layout;
+    }
+    return {};
+}
+
+bool SameRegister(const nihstro::SourceRegister& left, const nihstro::SourceRegister& right) {
+    return left.GetRegisterType() == right.GetRegisterType() && left.GetIndex() == right.GetIndex();
+}
+
+bool SameRegister(const nihstro::DestRegister& left, const nihstro::DestRegister& right) {
+    return left.GetRegisterType() == right.GetRegisterType() && left.GetIndex() == right.GetIndex();
+}
+
+struct DotMatrixChain {
+    size_t Offset = 0U;
+    uint8_t FirstUniform = 0xffU;
+    uint8_t AddressRegister = 0U;
+    nihstro::DestRegister Destination{ 0U };
+    nihstro::SourceRegister Value{ 0U };
+};
+
+std::optional<uint8_t> SingleDestinationComponent(const ArithmeticInstructionView& instruction) {
+    std::optional<uint8_t> result;
+    for (uint8_t component = 0U; component < 4U; ++component) {
+        if (!instruction.Swizzle.DestComponentEnabled(component)) {
+            continue;
+        }
+        if (result.has_value()) {
+            return std::nullopt;
+        }
+        result = component;
+    }
+    return result;
+}
+
+std::optional<DotMatrixChain> DecodeDotMatrixChain(const Oot3dPicaDrawPacket& packet, size_t offset,
+                                                   nihstro::OpCode::Id opcode, uint8_t rowCount) {
+    DotMatrixChain result;
+    result.Offset = offset;
+    for (uint8_t row = 0U; row < rowCount; ++row) {
+        const auto instruction = DecodeArithmeticInstruction(packet, offset + row);
+        if (!instruction.has_value() || instruction->Opcode != opcode || SourceNegated(*instruction, 1U) ||
+            SourceNegated(*instruction, 2U) || !SourceIdentity(*instruction, 1U) || !SourceIdentity(*instruction, 2U)) {
+            return std::nullopt;
+        }
+        const auto destinationComponent = SingleDestinationComponent(*instruction);
+        if (!destinationComponent.has_value() || *destinationComponent != row) {
+            return std::nullopt;
+        }
+        const bool source1Uniform = instruction->Source1.GetRegisterType() == nihstro::RegisterType::FloatUniform;
+        const bool source2Uniform = instruction->Source2.GetRegisterType() == nihstro::RegisterType::FloatUniform;
+        if (source1Uniform == source2Uniform) {
+            return std::nullopt;
+        }
+        const auto& uniform = source1Uniform ? instruction->Source1 : instruction->Source2;
+        const auto& value = source1Uniform ? instruction->Source2 : instruction->Source1;
+        if (uniform.GetIndex() < 0 || uniform.GetIndex() >= 96) {
+            return std::nullopt;
+        }
+        if (row == 0U) {
+            result.FirstUniform = static_cast<uint8_t>(uniform.GetIndex());
+            result.AddressRegister = instruction->AddressRegister;
+            result.Destination = instruction->Destination;
+            result.Value = value;
+        } else if (uniform.GetIndex() != static_cast<int>(result.FirstUniform + row) ||
+                   instruction->AddressRegister != result.AddressRegister ||
+                   !SameRegister(instruction->Destination, result.Destination) || !SameRegister(value, result.Value)) {
+            return std::nullopt;
+        }
+    }
+    return result;
+}
+
+template <typename Predicate>
+std::optional<DotMatrixChain> FindConsistentDotMatrixChain(const Oot3dPicaDrawPacket& packet,
+                                                           nihstro::OpCode::Id opcode, uint8_t rowCount,
+                                                           Predicate&& predicate) {
+    std::optional<DotMatrixChain> result;
+    for (size_t offset = 0U; offset + rowCount <= packet.VertexShader.ProgramWordCount; ++offset) {
+        const auto candidate = DecodeDotMatrixChain(packet, offset, opcode, rowCount);
+        if (!candidate.has_value() || !predicate(*candidate)) {
+            continue;
+        }
+        if (result.has_value() &&
+            (result->FirstUniform != candidate->FirstUniform || result->AddressRegister != candidate->AddressRegister ||
+             !SameRegister(result->Destination, candidate->Destination) ||
+             !SameRegister(result->Value, candidate->Value))) {
+            return std::nullopt;
+        }
+        if (!result.has_value()) {
+            result = candidate;
+        }
+    }
+    return result;
+}
+
+std::optional<uint8_t> DecodeMovaTemporary(const Oot3dPicaDrawPacket& packet, size_t offset) {
+    const auto instruction = DecodeArithmeticInstruction(packet, offset);
+    if (!instruction.has_value() || instruction->Opcode != nihstro::OpCode::Id::MOVA ||
+        instruction->Source1.GetRegisterType() != nihstro::RegisterType::Temporary || SourceNegated(*instruction, 1U) ||
+        instruction->Source1.GetIndex() < 0 || instruction->Source1.GetIndex() >= 16) {
+        return std::nullopt;
+    }
+    return static_cast<uint8_t>(instruction->Source1.GetIndex());
+}
+
+struct InputMultiplyFeed {
+    uint8_t InputRegister = 0xffU;
+    uint8_t InputComponent = 0xffU;
+    uint8_t DestinationMask = 0U;
+};
+
+std::optional<InputMultiplyFeed> DecodeInputMultiplyFeed(const Oot3dPicaDrawPacket& packet, size_t offset,
+                                                         uint8_t destinationTemporary) {
+    const auto instruction = DecodeArithmeticInstruction(packet, offset);
+    if (!instruction.has_value() || instruction->Opcode != nihstro::OpCode::Id::MUL ||
+        instruction->AddressRegister != 0U ||
+        !IsRegister(instruction->Destination, nihstro::RegisterType::Temporary, destinationTemporary) ||
+        SourceNegated(*instruction, 1U) || SourceNegated(*instruction, 2U)) {
+        return std::nullopt;
+    }
+    const bool source1Input = instruction->Source1.GetRegisterType() == nihstro::RegisterType::Input;
+    const bool source2Input = instruction->Source2.GetRegisterType() == nihstro::RegisterType::Input;
+    const bool source1Uniform = instruction->Source1.GetRegisterType() == nihstro::RegisterType::FloatUniform;
+    const bool source2Uniform = instruction->Source2.GetRegisterType() == nihstro::RegisterType::FloatUniform;
+    if (!((source1Input && source2Uniform) || (source2Input && source1Uniform))) {
+        return std::nullopt;
+    }
+    const uint8_t inputSource = source1Input ? 1U : 2U;
+    const auto& input = source1Input ? instruction->Source1 : instruction->Source2;
+    uint8_t destinationMask = 0U;
+    std::optional<uint8_t> inputComponent;
+    for (uint8_t component = 0U; component < 4U; ++component) {
+        if (!instruction->Swizzle.DestComponentEnabled(component)) {
+            continue;
+        }
+        destinationMask |= static_cast<uint8_t>(1U << component);
+        const uint8_t sourceComponent = SourceComponent(*instruction, inputSource, component);
+        if (inputComponent.has_value() && *inputComponent != sourceComponent) {
+            return std::nullopt;
+        }
+        inputComponent = sourceComponent;
+    }
+    if (!inputComponent.has_value() || input.GetIndex() < 0 || input.GetIndex() >= 16) {
+        return std::nullopt;
+    }
+    return InputMultiplyFeed{ static_cast<uint8_t>(input.GetIndex()), *inputComponent, destinationMask };
+}
+
+struct UniformBranch {
+    size_t Offset = 0U;
+    size_t ThenBegin = 0U;
+    size_t ElseBegin = 0U;
+    size_t End = 0U;
+    uint8_t BooleanUniform = 0xffU;
+};
+
+std::optional<UniformBranch> DecodeUniformBranch(const Oot3dPicaDrawPacket& packet, size_t offset) {
+    if (offset >= packet.VertexShader.ProgramWordCount) {
+        return std::nullopt;
+    }
+    const nihstro::Instruction instruction{ packet.VertexShader.Program[offset] };
+    if (instruction.opcode.Value().EffectiveOpCode() != nihstro::OpCode::Id::IFU) {
+        return std::nullopt;
+    }
+    const size_t elseBegin = instruction.flow_control.dest_offset.Value();
+    const size_t end = elseBegin + instruction.flow_control.num_instructions.Value();
+    const uint32_t booleanUniform = instruction.flow_control.bool_uniform_id.Value();
+    if (offset + 1U > elseBegin || elseBegin > end || end > packet.VertexShader.ProgramWordCount ||
+        booleanUniform >= 16U) {
+        return std::nullopt;
+    }
+    return UniformBranch{ offset, offset + 1U, elseBegin, end, static_cast<uint8_t>(booleanUniform) };
+}
+
+bool Contains(size_t begin, size_t end, size_t offset) {
+    return begin <= offset && offset < end;
+}
+
+struct CmbTransformPrograms {
+    std::optional<Oot3d::Renderer::PicaVertexTransformLayout> Transform;
+    std::optional<Oot3d::Renderer::PicaVertexSkeletonLayout> Skeleton;
+};
+
+CmbTransformPrograms DecodeCmbTransformPrograms(const Oot3dPicaDrawPacket& packet,
+                                                const std::array<SemanticSource, 24U>& semantics) {
+    CmbTransformPrograms result;
+    if (!semantics[0U].Present || !semantics[1U].Present || !semantics[2U].Present || !semantics[3U].Present) {
+        return result;
+    }
+    const auto projection =
+        FindConsistentDotMatrixChain(packet, nihstro::OpCode::Id::DP4, 4U, [&](const DotMatrixChain& chain) {
+            if (chain.AddressRegister != 0U || chain.Destination.GetRegisterType() != nihstro::RegisterType::Output) {
+                return false;
+            }
+            for (uint8_t component = 0U; component < 4U; ++component) {
+                if (semantics[component].Register != chain.Destination.GetIndex() ||
+                    semantics[component].Component != component) {
+                    return false;
+                }
+            }
+            return true;
+        });
+    if (!projection.has_value() || projection->Value.GetRegisterType() != nihstro::RegisterType::Temporary) {
+        return result;
+    }
+    const auto view =
+        FindConsistentDotMatrixChain(packet, nihstro::OpCode::Id::DP4, 3U, [&](const DotMatrixChain& chain) {
+            return chain.AddressRegister == 0U &&
+                   chain.Destination.GetRegisterType() == nihstro::RegisterType::Temporary &&
+                   chain.Destination.GetIndex() == projection->Value.GetIndex() &&
+                   chain.Value.GetRegisterType() == nihstro::RegisterType::Temporary;
+        });
+    if (!view.has_value()) {
+        return result;
+    }
+    const auto model =
+        FindConsistentDotMatrixChain(packet, nihstro::OpCode::Id::DP4, 3U, [&](const DotMatrixChain& chain) {
+            return chain.AddressRegister == 0U &&
+                   chain.Destination.GetRegisterType() == nihstro::RegisterType::Temporary &&
+                   chain.Destination.GetIndex() == view->Value.GetIndex() &&
+                   chain.Value.GetRegisterType() == nihstro::RegisterType::Input;
+        });
+    if (!model.has_value()) {
+        return result;
+    }
+    const auto normal =
+        FindConsistentDotMatrixChain(packet, nihstro::OpCode::Id::DP3, 3U, [&](const DotMatrixChain& chain) {
+            return chain.AddressRegister == 0U && chain.FirstUniform == model->FirstUniform &&
+                   chain.Value.GetRegisterType() == nihstro::RegisterType::Input;
+        });
+    if (!normal.has_value()) {
+        return result;
+    }
+
+    Oot3d::Renderer::PicaVertexTransformLayout transform;
+    transform.Operation = Oot3d::Renderer::PicaVertexTransformOperation::ModelViewProjection3x4;
+    transform.ProjectionFirstUniform = projection->FirstUniform;
+    transform.ProjectionRowCount = 4U;
+    transform.ViewFirstUniform = view->FirstUniform;
+    transform.ViewRowCount = 3U;
+    transform.ModelFirstUniform = model->FirstUniform;
+    transform.ModelRowCount = 3U;
+    transform.PositionInputRegister = static_cast<uint8_t>(model->Value.GetIndex());
+    transform.NormalInputRegister = static_cast<uint8_t>(normal->Value.GetIndex());
+    if (!transform.Available()) {
+        return result;
+    }
+    result.Transform = transform;
+
+    const auto indexedPosition =
+        FindConsistentDotMatrixChain(packet, nihstro::OpCode::Id::DP4, 3U, [&](const DotMatrixChain& chain) {
+            return chain.AddressRegister != 0U && chain.FirstUniform == model->FirstUniform &&
+                   chain.Value.GetRegisterType() == nihstro::RegisterType::Temporary;
+        });
+    if (!indexedPosition.has_value() || indexedPosition->Offset == 0U) {
+        return result;
+    }
+    const auto indexedNormal =
+        FindConsistentDotMatrixChain(packet, nihstro::OpCode::Id::DP3, 3U, [&](const DotMatrixChain& chain) {
+            return chain.AddressRegister != 0U && chain.FirstUniform == model->FirstUniform &&
+                   chain.Value.GetRegisterType() == nihstro::RegisterType::Temporary;
+        });
+    const auto addressTemporary = DecodeMovaTemporary(packet, indexedPosition->Offset - 1U);
+    if (!indexedNormal.has_value() || !addressTemporary.has_value()) {
+        return result;
+    }
+    const size_t paletteRoutine = indexedPosition->Offset - 1U;
+    std::vector<size_t> paletteCalls;
+    std::array<bool, 4U> influenceComponents{};
+    std::optional<uint8_t> boneIndexInput;
+    std::optional<uint8_t> boneWeightInput;
+    for (size_t offset = 0U; offset < packet.VertexShader.ProgramWordCount; ++offset) {
+        const nihstro::Instruction instruction{ packet.VertexShader.Program[offset] };
+        if (instruction.opcode.Value().EffectiveOpCode() != nihstro::OpCode::Id::CALL ||
+            instruction.flow_control.dest_offset.Value() != paletteRoutine) {
+            continue;
+        }
+        paletteCalls.push_back(offset);
+        const size_t begin = offset > 3U ? offset - 3U : 0U;
+        for (size_t feedOffset = begin; feedOffset < offset; ++feedOffset) {
+            const auto feed = DecodeInputMultiplyFeed(packet, feedOffset, *addressTemporary);
+            if (!feed.has_value()) {
+                continue;
+            }
+            if ((feed->DestinationMask & 0x3U) != 0U) {
+                if (boneIndexInput.has_value() && *boneIndexInput != feed->InputRegister) {
+                    return result;
+                }
+                boneIndexInput = feed->InputRegister;
+                if (feed->InputComponent < influenceComponents.size()) {
+                    influenceComponents[feed->InputComponent] = true;
+                }
+            }
+            if ((feed->DestinationMask & (1U << 3U)) != 0U) {
+                if (boneWeightInput.has_value() && *boneWeightInput != feed->InputRegister) {
+                    return result;
+                }
+                boneWeightInput = feed->InputRegister;
+            }
+        }
+    }
+    if (paletteCalls.empty() || !boneIndexInput.has_value() || !boneWeightInput.has_value()) {
+        return result;
+    }
+
+    std::optional<uint8_t> skeletonEnable;
+    std::optional<uint8_t> multipleInfluenceEnable;
+    uint8_t maximumInfluences =
+        static_cast<uint8_t>(std::count(influenceComponents.begin(), influenceComponents.end(), true));
+    for (size_t offset = 0U; offset < packet.VertexShader.ProgramWordCount; ++offset) {
+        const auto branch = DecodeUniformBranch(packet, offset);
+        if (!branch.has_value()) {
+            continue;
+        }
+        const auto countCalls = [&](size_t begin, size_t end) {
+            return static_cast<uint8_t>(std::count_if(paletteCalls.begin(), paletteCalls.end(),
+                                                      [&](size_t call) { return Contains(begin, end, call); }));
+        };
+        const uint8_t thenCalls = countCalls(branch->ThenBegin, branch->ElseBegin);
+        const uint8_t elseCalls = countCalls(branch->ElseBegin, branch->End);
+        const bool modelInThen = Contains(branch->ThenBegin, branch->ElseBegin, model->Offset);
+        const bool modelInElse = Contains(branch->ElseBegin, branch->End, model->Offset);
+        if ((modelInThen && elseCalls != 0U) || (modelInElse && thenCalls != 0U)) {
+            skeletonEnable = branch->BooleanUniform;
+        }
+        if ((thenCalls > 1U && elseCalls == 1U) || (elseCalls > 1U && thenCalls == 1U)) {
+            multipleInfluenceEnable = branch->BooleanUniform;
+            maximumInfluences = std::max(maximumInfluences, std::max(thenCalls, elseCalls));
+        }
+    }
+    if (!skeletonEnable.has_value() || maximumInfluences == 0U || maximumInfluences > 4U) {
+        return result;
+    }
+
+    Oot3d::Renderer::PicaVertexSkeletonLayout skeleton;
+    skeleton.Operation = Oot3d::Renderer::PicaVertexSkeletonOperation::MatrixPalette3x4;
+    skeleton.EnableBooleanUniform = *skeletonEnable;
+    skeleton.MultipleInfluenceBooleanUniform =
+        multipleInfluenceEnable.value_or(Oot3d::Renderer::PicaVertexSkeletonLayout::Unavailable);
+    skeleton.PaletteFirstUniform = model->FirstUniform;
+    skeleton.RowsPerMatrix = 3U;
+    skeleton.BoneIndexInputRegister = *boneIndexInput;
+    skeleton.BoneWeightInputRegister = *boneWeightInput;
+    skeleton.MaximumInfluences = maximumInfluences;
+    if (skeleton.Available()) {
+        result.Skeleton = skeleton;
+    }
+    return result;
+}
+
+std::optional<Fast::Renderer3ds::PicaVertexUniformComponent> DecodeScalarUniform(
+    const ArithmeticInstructionView& instruction, uint8_t source) {
+    const auto& reg = source == 1U ? instruction.Source1 : instruction.Source2;
+    if (reg.GetRegisterType() != nihstro::RegisterType::FloatUniform ||
+        reg.GetIndex() < 0 || reg.GetIndex() >= 96 ||
+        instruction.AddressRegister != 0U || SourceNegated(instruction, source)) return std::nullopt;
+    std::optional<uint8_t> component;
+    for (uint8_t output = 0; output < 4U; ++output) {
+        if (!instruction.Swizzle.DestComponentEnabled(output)) continue;
+        const auto value = SourceComponent(instruction, source, output);
+        if (component && *component != value) return std::nullopt;
+        component = value;
+    }
+    if (!component) return std::nullopt;
+    return Fast::Renderer3ds::PicaVertexUniformComponent{
+        static_cast<uint8_t>(reg.GetIndex()), *component};
+}
+
+std::optional<Fast::Renderer3ds::PicaVertexUniformComponent> DecodeInputScale(
+    const ArithmeticInstructionView& instruction, uint8_t input) {
+    if (instruction.Opcode != nihstro::OpCode::Id::MUL) return std::nullopt;
+    if (IsRegister(instruction.Source1, nihstro::RegisterType::Input, input) &&
+        !SourceNegated(instruction, 1U)) return DecodeScalarUniform(instruction, 2U);
+    if (IsRegister(instruction.Source2, nihstro::RegisterType::Input, input) &&
+        !SourceNegated(instruction, 2U)) return DecodeScalarUniform(instruction, 1U);
+    return std::nullopt;
+}
+
+std::optional<Fast::Renderer3ds::PicaVertexSurfaceLayout> DecodeCmbSurface(
+    const Oot3dPicaDrawPacket& packet, const CmbTransformPrograms& transforms) {
+    using namespace Fast::Renderer3ds;
+    using Op = nihstro::OpCode::Id;
+    using Reg = nihstro::RegisterType;
+    if (!transforms.Transform) return std::nullopt;
+    const auto& transform = *transforms.Transform;
+    const auto modelNormal = FindConsistentDotMatrixChain(packet, Op::DP3, 3U,
+        [&](const DotMatrixChain& chain) {
+            return chain.AddressRegister == 0U &&
+                   chain.FirstUniform == transform.ModelFirstUniform &&
+                   IsRegister(chain.Value, Reg::Input, transform.NormalInputRegister);
+        });
+    if (!modelNormal || modelNormal->Destination.GetRegisterType() != Reg::Temporary) return std::nullopt;
+    const auto viewNormal = FindConsistentDotMatrixChain(packet, Op::DP3, 3U,
+        [&](const DotMatrixChain& chain) {
+            return chain.AddressRegister == 0U && chain.FirstUniform == transform.ViewFirstUniform &&
+                   IsRegister(chain.Value, Reg::Temporary, static_cast<uint8_t>(modelNormal->Destination.GetIndex())) &&
+                   chain.Destination.GetRegisterType() == Reg::Temporary;
+        });
+    if (!viewNormal) return std::nullopt;
+    PicaVertexSurfaceLayout surface;
+    surface.ViewNormalTemporary = static_cast<uint8_t>(viewNormal->Destination.GetIndex());
+    // A temporary exported at main-end must not have a later writer. Reject
+    // unsupported programs rather than guessing a register from generated text.
+    for (size_t offset = viewNormal->Offset + 3U; offset < packet.VertexShader.ProgramWordCount; ++offset) {
+        const auto arithmetic = DecodeArithmeticInstruction(packet, offset);
+        if (arithmetic && arithmetic->Opcode != Op::CMP && arithmetic->Opcode != Op::MOVA &&
+            IsRegister(arithmetic->Destination, Reg::Temporary, surface.ViewNormalTemporary)) return std::nullopt;
+        const nihstro::Instruction instruction{packet.VertexShader.Program[offset]};
+        const auto op = instruction.opcode.Value().EffectiveOpCode();
+        if ((op == Op::MAD || op == Op::MADI) &&
+            IsRegister(instruction.mad.dest.Value(), Reg::Temporary, surface.ViewNormalTemporary)) return std::nullopt;
+    }
+
+    std::optional<UniformBranch> lighting;
+    for (size_t offset = 0; offset < packet.VertexShader.ProgramWordCount; ++offset) {
+        const auto branch = DecodeUniformBranch(packet, offset);
+        if (!branch || branch->ThenBegin + 11U >= branch->ElseBegin) continue;
+        const auto diffuse = DecodeArithmeticInstruction(packet, branch->ThenBegin);
+        const auto ambient = DecodeArithmeticInstruction(packet, branch->ThenBegin + 1U);
+        if (!diffuse || !ambient || diffuse->Opcode != Op::MOV || ambient->Opcode != Op::MOV ||
+            diffuse->Source1.GetRegisterType() != Reg::FloatUniform ||
+            ambient->Source1.GetRegisterType() != Reg::FloatUniform ||
+            diffuse->AddressRegister != 0U || ambient->AddressRegister != 0U ||
+            SourceNegated(*diffuse, 1U) || SourceNegated(*ambient, 1U) ||
+            !SourceIdentity(*diffuse, 1U) || !SourceIdentity(*ambient, 1U)) continue;
+        auto candidate = surface;
+        bool valid = true;
+        for (uint8_t slot = 0; slot < 3U; ++slot) {
+            const auto dot = DecodeArithmeticInstruction(packet, branch->ThenBegin + 2U + slot);
+            const auto flag = DecodeArithmeticInstruction(packet, branch->ThenBegin + 7U + slot);
+            if (!dot || !flag || dot->Opcode != Op::DP3 || flag->Opcode != Op::MOV ||
+                dot->AddressRegister != 0U || flag->AddressRegister != 0U ||
+                dot->Source1.GetRegisterType() != Reg::FloatUniform ||
+                !IsRegister(dot->Source2, Reg::Temporary, surface.ViewNormalTemporary) ||
+                !SourceNegated(*dot, 1U) || SourceNegated(*dot, 2U) ||
+                !SourceIdentity(*dot, 1U) || !SourceIdentity(*dot, 2U) ||
+                !IsRegister(flag->Source1, Reg::FloatUniform, static_cast<uint8_t>(dot->Source1.GetIndex())) ||
+                SourceComponent(*flag, 1U, slot) != 3U) {
+                valid = false;
+                break;
+            }
+            candidate.LightDirectionUniforms[slot] = static_cast<uint8_t>(dot->Source1.GetIndex());
+        }
+        const auto compare = DecodeArithmeticInstruction(packet, branch->ThenBegin + 10U);
+        if (!valid || !compare || compare->Opcode != Op::CMP ||
+            compare->Source1.GetRegisterType() != Reg::FloatUniform ||
+            SourceComponent(*compare, 1U, 0U) != SourceComponent(*compare, 1U, 1U) ||
+            compare->Instruction.common.compare_op.x.Value() != nihstro::Instruction::Common::CompareOpType::Equal ||
+            compare->Instruction.common.compare_op.y.Value() != nihstro::Instruction::Common::CompareOpType::Equal)
+            continue;
+        if (lighting) return std::nullopt;
+        lighting = branch;
+        candidate.LightingBooleanUniform = branch->BooleanUniform;
+        candidate.DiffuseUniform = static_cast<uint8_t>(diffuse->Source1.GetIndex());
+        candidate.AmbientUniform = static_cast<uint8_t>(ambient->Source1.GetIndex());
+        candidate.LightEnabledValue = {static_cast<uint8_t>(compare->Source1.GetIndex()),
+                                       SourceComponent(*compare, 1U, 0U)};
+        surface = candidate;
+    }
+    if (!lighting) return std::nullopt;
+    for (size_t offset = lighting->ThenBegin; offset < lighting->ElseBegin; ++offset) {
+        const auto branch = DecodeUniformBranch(packet, offset);
+        if (!branch || branch->ThenBegin >= branch->ElseBegin) continue;
+        const auto multiply = DecodeArithmeticInstruction(packet, branch->ThenBegin);
+        if (!multiply || multiply->Opcode != Op::MUL) continue;
+        const uint8_t inputSource = multiply->Source1.GetRegisterType() == Reg::Input ? 1U : 2U;
+        const auto& input = inputSource == 1U ? multiply->Source1 : multiply->Source2;
+        if (input.GetRegisterType() != Reg::Input || !SourceIdentity(*multiply, inputSource)) continue;
+        const auto scale = DecodeInputScale(*multiply, static_cast<uint8_t>(input.GetIndex()));
+        if (!scale || surface.TintScale.Available()) return std::nullopt;
+        surface.TintScale = *scale;
+        surface.TintBooleanUniform = branch->BooleanUniform;
+        surface.TintInputRegister = static_cast<uint8_t>(input.GetIndex());
+    }
+    if (!surface.Available()) return std::nullopt;
+
+    if (transforms.Skeleton) {
+        const auto& skeleton = *transforms.Skeleton;
+        bool positionScaleAmbiguous = false;
+        const auto merge = [](PicaVertexUniformComponent& target,
+                              const std::optional<PicaVertexUniformComponent>& value) {
+            if (!value) return true;
+            if (target.Available() && target != *value) return false;
+            target = *value;
+            return true;
+        };
+        for (size_t offset = 0; offset < packet.VertexShader.ProgramWordCount; ++offset) {
+            const auto instruction = DecodeArithmeticInstruction(packet, offset);
+            if (!instruction) continue;
+            if (!merge(surface.BoneIndexScale, DecodeInputScale(*instruction, skeleton.BoneIndexInputRegister)) ||
+                !merge(surface.BoneWeightScale, DecodeInputScale(*instruction, skeleton.BoneWeightInputRegister)) ||
+                !merge(surface.SkinnedNormalScale, DecodeInputScale(*instruction, transform.NormalInputRegister)))
+                return std::nullopt;
+            if (const auto scale = DecodeInputScale(*instruction, transform.PositionInputRegister)) {
+                if (surface.SkinnedPositionScale.Available() && surface.SkinnedPositionScale != *scale)
+                    positionScaleAmbiguous = true;
+                surface.SkinnedPositionScale = *scale;
+            }
+            if (instruction->Opcode != Op::MOV || offset + 1U >= packet.VertexShader.ProgramWordCount) continue;
+            const auto count = DecodeScalarUniform(*instruction, 1U);
+            const auto compare = DecodeArithmeticInstruction(packet, offset + 1U);
+            if (!count || !compare || compare->Opcode != Op::CMP ||
+                compare->Source1.GetRegisterType() != Reg::FloatUniform ||
+                instruction->Destination.GetRegisterType() != Reg::Temporary ||
+                !IsRegister(compare->Source2, Reg::Temporary, static_cast<uint8_t>(instruction->Destination.GetIndex())) ||
+                compare->Instruction.common.compare_op.x.Value() != nihstro::Instruction::Common::CompareOpType::LessEqual ||
+                compare->Instruction.common.compare_op.y.Value() != nihstro::Instruction::Common::CompareOpType::LessEqual)
+                continue;
+            if (!merge(surface.InfluenceCount, count)) return std::nullopt;
+            for (uint8_t axis = 0; axis < 2U; ++axis) {
+                const PicaVertexUniformComponent threshold{
+                    static_cast<uint8_t>(compare->Source1.GetIndex()), SourceComponent(*compare, 1U, axis)};
+                if (!merge(surface.AdditionalInfluenceThresholds[axis], threshold)) return std::nullopt;
+            }
+        }
+        if (!surface.SkinnedNormalsAvailable()) return std::nullopt;
+        if (positionScaleAmbiguous) surface.SkinnedPositionScale = {};
+    }
+    return surface;
+}
+
+// A vertex-lighting block of four directional lights (MM3D's GzwShader):
+// under a boolean uniform, MOV material diffuse and ambient, then four DP3 of
+// a light-direction uniform with the view-space normal, one per component of
+// one temporary, each light enabled by a component of a uniform vector. Its
+// native vertex lighting is not reconstructed per pixel (the surface lighting
+// rows hold three lights); the layout supplies the normal, material and
+// tint, so a draw that does not light per vertex can be lit and shadowed per
+// pixel.
+std::optional<Fast::Renderer3ds::PicaVertexSurfaceLayout> DecodeFourLightSurface(
+    const Oot3dPicaDrawPacket& packet, const CmbTransformPrograms& transforms) {
+    using namespace Fast::Renderer3ds;
+    using Op = nihstro::OpCode::Id;
+    using Reg = nihstro::RegisterType;
+    if (!transforms.Transform || transforms.Skeleton) return std::nullopt;
+    const auto& transform = *transforms.Transform;
+    std::optional<UniformBranch> lighting;
+    PicaVertexSurfaceLayout surface;
+    for (size_t offset = 0; offset < packet.VertexShader.ProgramWordCount; ++offset) {
+        const auto branch = DecodeUniformBranch(packet, offset);
+        if (!branch || branch->ThenBegin + 6U >= branch->ElseBegin) continue;
+        const auto diffuse = DecodeArithmeticInstruction(packet, branch->ThenBegin);
+        const auto ambient = DecodeArithmeticInstruction(packet, branch->ThenBegin + 1U);
+        if (!diffuse || !ambient || diffuse->Opcode != Op::MOV || ambient->Opcode != Op::MOV ||
+            diffuse->Source1.GetRegisterType() != Reg::FloatUniform ||
+            ambient->Source1.GetRegisterType() != Reg::FloatUniform ||
+            diffuse->AddressRegister != 0U || ambient->AddressRegister != 0U ||
+            SourceNegated(*diffuse, 1U) || SourceNegated(*ambient, 1U) ||
+            !SourceIdentity(*diffuse, 1U) || !SourceIdentity(*ambient, 1U)) continue;
+        std::optional<uint8_t> normal;
+        std::optional<int> dots;
+        bool valid = true;
+        for (uint8_t slot = 0; slot < 4U && valid; ++slot) {
+            const auto dot = DecodeArithmeticInstruction(packet, branch->ThenBegin + 2U + slot);
+            const auto component = dot ? SingleDestinationComponent(*dot) : std::nullopt;
+            valid = dot && dot->Opcode == Op::DP3 && dot->AddressRegister == 0U && component == slot &&
+                    dot->Source1.GetRegisterType() == Reg::FloatUniform &&
+                    dot->Source2.GetRegisterType() == Reg::Temporary &&
+                    dot->Destination.GetRegisterType() == Reg::Temporary &&
+                    !SourceNegated(*dot, 1U) && !SourceNegated(*dot, 2U) &&
+                    SourceIdentity(*dot, 1U) && SourceIdentity(*dot, 2U) &&
+                    (!normal || IsRegister(dot->Source2, Reg::Temporary, *normal)) &&
+                    (!dots || *dots == dot->Destination.GetIndex());
+            if (!valid) break;
+            normal = static_cast<uint8_t>(dot->Source2.GetIndex());
+            dots = dot->Destination.GetIndex();
+        }
+        if (!valid || !normal) continue;
+        // The normal the lights read is the view transform of a normal.
+        const auto viewNormal = FindConsistentDotMatrixChain(packet, Op::DP3, 3U,
+            [&](const DotMatrixChain& chain) {
+                return chain.AddressRegister == 0U && chain.FirstUniform == transform.ViewFirstUniform &&
+                       IsRegister(chain.Destination, Reg::Temporary, *normal) &&
+                       chain.Value.GetRegisterType() == Reg::Temporary;
+            });
+        if (!viewNormal) continue;
+        if (lighting) return std::nullopt;
+        lighting = branch;
+        surface.ViewNormalTemporary = *normal;
+        surface.LightingBooleanUniform = branch->BooleanUniform;
+        surface.DiffuseUniform = static_cast<uint8_t>(diffuse->Source1.GetIndex());
+        surface.AmbientUniform = static_cast<uint8_t>(ambient->Source1.GetIndex());
+    }
+    if (!lighting) return std::nullopt;
+    for (size_t offset = lighting->ThenBegin; offset < lighting->ElseBegin; ++offset) {
+        const auto branch = DecodeUniformBranch(packet, offset);
+        if (!branch || branch->ThenBegin >= branch->ElseBegin) continue;
+        const auto multiply = DecodeArithmeticInstruction(packet, branch->ThenBegin);
+        if (!multiply || multiply->Opcode != Op::MUL) continue;
+        const uint8_t inputSource = multiply->Source1.GetRegisterType() == Reg::Input ? 1U : 2U;
+        const auto& input = inputSource == 1U ? multiply->Source1 : multiply->Source2;
+        if (input.GetRegisterType() != Reg::Input || !SourceIdentity(*multiply, inputSource)) continue;
+        const auto scale = DecodeInputScale(*multiply, static_cast<uint8_t>(input.GetIndex()));
+        if (!scale || surface.TintScale.Available()) return std::nullopt;
+        surface.TintScale = *scale;
+        surface.TintBooleanUniform = branch->BooleanUniform;
+        surface.TintInputRegister = static_cast<uint8_t>(input.GetIndex());
+    }
+    surface.VertexLightsReconstructed = false;
+    if (!surface.Available()) return std::nullopt;
+    return surface;
+}
+
+} // namespace
+
+uint64_t ComputeOot3dPicaVertexShaderStateKey(
+    const Oot3dPicaDrawPacket& packet) {
+    constexpr uint64_t kFnvOffset = 1469598103934665603ULL;
+    uint64_t key = HashWords(kFnvOffset, packet.VertexShader.Program.data(),
+                             packet.VertexShader.ProgramWordCount);
+    key = HashWords(key, packet.VertexShader.Swizzles.data(),
+                    packet.VertexShader.SwizzleWordCount);
+    const std::array<uint32_t, 11> interfaceWords{
+        packet.Registers[0x4FU], packet.Registers[0x50U],
+        packet.Registers[0x51U], packet.Registers[0x52U],
+        packet.Registers[0x53U], packet.Registers[0x54U],
+        packet.Registers[0x55U], packet.Registers[0x56U],
+        packet.Registers[0x2BAU], packet.Registers[0x2BDU],
+        packet.Registers[0x229U]};
+    key = HashWords(key, interfaceWords.data(), interfaceWords.size());
+    const uint32_t arithmeticSemantics =
+        kAccuratePicaMultiplication ? 1U : 0U;
+    return HashWords(key, &arithmeticSemantics, 1U);
+}
+
+Oot3dPicaVertexUniformState BuildOot3dPicaVertexUniformState(
+    const Oot3dPicaDrawPacket& packet) {
+    Oot3dPicaVertexUniformState uniforms;
+    for (size_t index = 0;
+         index < packet.VertexShader.BooleanUniforms.size(); ++index) {
+        if (packet.VertexShader.BooleanUniforms[index]) {
+            uniforms.BooleanMask |= 1U << index;
+        }
+    }
+    for (size_t row = 0; row < uniforms.Integers.size(); ++row) {
+        for (size_t component = 0;
+             component < uniforms.Integers[row].size(); ++component) {
+            uniforms.Integers[row][component] =
+                packet.VertexShader.IntegerUniforms[row][component];
+        }
+    }
+    uniforms.Floats = packet.VertexShader.FloatUniforms;
+    return uniforms;
+}
+
+bool GenerateOot3dPicaVertexShader(
+    const Oot3dPicaDrawPacket& packet,
+    const Oot3dPicaDecodedDrawState& state,
+    Oot3dPicaGeneratedVertexShader& shader, std::string* error,
+    bool requireTranslatedProgram) {
+    shader = {};
+    if (packet.VertexShader.ProgramWordCount == 0U ||
+        packet.VertexShader.ProgramWordCount > packet.VertexShader.Program.size() ||
+        packet.VertexShader.SwizzleWordCount > packet.VertexShader.Swizzles.size() ||
+        state.ShaderInterface.VertexMainOffset >=
+            packet.VertexShader.ProgramWordCount) {
+        SetError(error, "PICA vertex program or entrypoint is invalid");
+        return false;
+    }
+    std::string body;
+    if (requireTranslatedProgram) {
+        for (const auto& program : kTranslatedVertexPrograms) {
+            if (program.Matches(
+                    {packet.VertexShader.Program.data(), packet.VertexShader.ProgramWordCount},
+                    {packet.VertexShader.Swizzles.data(), packet.VertexShader.SwizzleWordCount},
+                    state.ShaderInterface.VertexMainOffset, kAccuratePicaMultiplication)) {
+                body = program.Body;
+                break;
+            }
+        }
+        if (body.empty()) {
+            SetError(error, "native vertex program is not in the translated title family; runtime translation is disabled");
+            return false;
+        }
+    } else {
+        body = Pica::Shader::Generator::GLSL::DecompileProgram(
+            packet.VertexShader.Program.Values(),
+            packet.VertexShader.Swizzles.Values(),
+            state.ShaderInterface.VertexMainOffset, InputRegisterName,
+            OutputRegisterName, kAccuratePicaMultiplication);
+    }
+    if (body.empty()) {
+        SetError(error, "PICA vertex program could not be decompiled");
+        return false;
+    }
+
+    using Oot3d::Renderer::PicaVertexShaderHook;
+    using Oot3d::Renderer::PicaVertexShaderSemantic;
+    auto temporalProgram =
+        std::make_shared<Oot3dPicaTemporalVertexProgram>();
+    temporalProgram->AffineLayout = DescribeOot3dAffineUniforms(packet, state);
+    temporalProgram->CmbTextureCoordinates = DescribeOot3dCmbTextureCoordinates(packet, state);
+    auto& hooks = temporalProgram->Hooks;
+    hooks.SchemaVersion =
+        Oot3d::Renderer::kPicaShaderHookSchemaVersion;
+    hooks.Semantics =
+        PicaVertexShaderSemantic::PicaRegisterState |
+        PicaVertexShaderSemantic::VertexUniformState |
+        PicaVertexShaderSemantic::ClipPositionOutput;
+    const auto setHook = [&](PicaVertexShaderHook hook, size_t offset) {
+        hooks.Offsets[static_cast<size_t>(hook)] = offset;
+    };
+
+    std::array<SemanticSource, 24> semantics{};
+    size_t packedOutput = 0;
+    for (size_t outputRegister = 0; outputRegister < 16U;
+         ++outputRegister) {
+        if ((state.ShaderInterface.OutputMask & (1U << outputRegister)) == 0U) {
+            continue;
+        }
+        if (packedOutput < 7U) {
+            const uint32_t map = packet.Registers[0x50U + packedOutput];
+            for (size_t component = 0; component < 4U; ++component) {
+                const uint8_t semantic =
+                    static_cast<uint8_t>((map >> (component * 8U)) & 0x1FU);
+                if (semantic < semantics.size()) {
+                    semantics[semantic] =
+                        {true, static_cast<uint8_t>(outputRegister),
+                         static_cast<uint8_t>(component)};
+                }
+            }
+        }
+        ++packedOutput;
+    }
+    if (semantics[18U].Present && semantics[19U].Present &&
+        semantics[20U].Present) {
+        hooks.Semantics |=
+            PicaVertexShaderSemantic::ViewPositionOutput;
+    }
+    auto textureCoordinate0 = DecodeCmbTextureCoordinate0Layout(packet, semantics);
+    if (!textureCoordinate0) textureCoordinate0 = DecodeIndexedAffineUv0(packet, state, semantics);
+    if (textureCoordinate0.has_value()) {
+        hooks.TextureCoordinates[0U] = *textureCoordinate0;
+        hooks.Semantics |=
+            PicaVertexShaderSemantic::TextureCoordinateProgram;
+    }
+    const auto transformPrograms = DecodeCmbTransformPrograms(packet, semantics);
+    if (transformPrograms.Transform.has_value()) {
+        hooks.Transform = *transformPrograms.Transform;
+        hooks.Semantics |= PicaVertexShaderSemantic::TransformProgram;
+    }
+    if (transformPrograms.Skeleton.has_value()) {
+        hooks.Skeleton = *transformPrograms.Skeleton;
+        hooks.Semantics |= PicaVertexShaderSemantic::SkeletonProgram;
+    }
+    if (const auto surface = DecodeCmbSurface(packet, transformPrograms)) {
+        hooks.Surface = *surface;
+        hooks.Semantics |= PicaVertexShaderSemantic::SurfaceProgram;
+    } else if (const auto fourLights = DecodeFourLightSurface(packet, transformPrograms)) {
+        hooks.Surface = *fourLights;
+        hooks.Semantics |= PicaVertexShaderSemantic::SurfaceProgram;
+    }
+
+    std::ostringstream source;
+    source << "#version 450\n";
+    for (size_t index = 0; index < 16U; ++index) {
+        source << "layout(location=" << index << ") in vec4 "
+               << InputRegisterName(static_cast<uint32_t>(index)) << ";\n";
+    }
+    source << "layout(location=0) out vec4 pica_primary_color;\n"
+              "layout(location=1) out vec2 pica_texcoord0;\n"
+              "layout(location=2) out vec2 pica_texcoord1;\n"
+              "layout(location=3) out vec2 pica_texcoord2;\n"
+              "layout(location=4) out float pica_texcoord0_w;\n"
+              "layout(location=5) out vec4 pica_normquat;\n"
+              "layout(location=6) out vec3 pica_view;\n"
+              "layout(set=0,binding=0,std140) uniform PicaVertexUniforms {\n"
+              "    uint b;\n"
+              "    int flip_viewport;\n"
+              "    vec2 clip_scale_delta;\n"
+              "    uvec4 i[4];\n"
+              "    vec4 f[96];\n"
+              "} uniforms;\n";
+    const size_t registerStateBegin = StreamOffset(source);
+    setHook(PicaVertexShaderHook::GlobalDeclarations,
+            registerStateBegin);
+    setHook(PicaVertexShaderHook::RegisterStateBegin,
+            registerStateBegin);
+    for (size_t index = 0; index < 16U; ++index) {
+        source << "vec4 " << OutputRegisterName(static_cast<uint32_t>(index))
+               << " = vec4(0.0);\n";
+    }
+    source << body << '\n';
+    setHook(PicaVertexShaderHook::RegisterStateEnd,
+            StreamOffset(source));
+
+    const auto component = [&](size_t semantic, const char* fallback) {
+        if (!semantics[semantic].Present) {
+            return std::string(fallback);
+        }
+        return OutputRegisterName(semantics[semantic].Register) + "." +
+               "xyzw"[semantics[semantic].Component];
+    };
+    source << "void main() {";
+    setHook(PicaVertexShaderHook::MainBodyBegin,
+            StreamOffset(source));
+    source << "\n"
+              "    exec_shader();\n"
+           << "    vec4 pica_position = vec4(" << component(0, "1.0") << ", "
+           << component(1, "1.0") << ", " << component(2, "1.0") << ", "
+           << component(3, "1.0") << ");\n"
+              "    float pica_ndc_z = pica_position.z / pica_position.w;\n"
+              "    if (pica_ndc_z > 0.0 && pica_ndc_z < 0.000001) "
+              "pica_position.z = 0.0;\n"
+              "    if (pica_ndc_z < -1.0 && pica_ndc_z > -1.00001) "
+              "pica_position.z = -pica_position.w;\n"
+              "    pica_position.xy *= vec2(1.0) + uniforms.clip_scale_delta;\n"
+              "    if (uniforms.flip_viewport != 0) pica_position.y = "
+              "-pica_position.y;\n"
+              "    gl_Position = vec4(pica_position.x, pica_position.y, "
+              "-pica_position.z, pica_position.w);\n"
+           << "    pica_normquat = vec4(" << component(4, "1.0") << ", "
+           << component(5, "1.0") << ", " << component(6, "1.0") << ", "
+           << component(7, "1.0") << ");\n"
+           << "    vec4 pica_raw_primary_color = vec4(" << component(8, "1.0") << ", "
+           << component(9, "1.0") << ", " << component(10, "1.0") << ", "
+           << component(11, "1.0") << ");\n"
+              "    pica_primary_color = min(abs(pica_raw_primary_color), "
+              "vec4(1.0));\n"
+           << "    pica_texcoord0 = vec2(" << component(12, "1.0") << ", "
+           << component(13, "1.0") << ");\n"
+           << "    pica_texcoord1 = vec2(" << component(14, "1.0") << ", "
+           << component(15, "1.0") << ");\n"
+           << "    pica_texcoord0_w = " << component(16, "1.0") << ";\n"
+           << "    pica_view = vec3(" << component(18, "1.0") << ", "
+           << component(19, "1.0") << ", " << component(20, "1.0") << ");\n"
+           << "    pica_texcoord2 = vec2(" << component(22, "1.0") << ", "
+           << component(23, "1.0") << ");\n";
+    setHook(PicaVertexShaderHook::MainBodyEnd,
+            StreamOffset(source));
+    source << "}\n";
+
+    shader.StateKey = ComputeOot3dPicaVertexShaderStateKey(packet);
+    shader.Source = source.str();
+    shader.SourceIdentity =
+        Oot3d::Renderer::IdentifyPicaShaderSource(shader.Source);
+    hooks.SourceSize = shader.Source.size();
+    const std::string_view sourceView = shader.Source;
+    if (!hooks.ValidFor(sourceView)) {
+        SetError(error, "generated PICA vertex hook layout is invalid");
+        return false;
+    }
+    const size_t registerStateEnd = hooks.Offset(
+        PicaVertexShaderHook::RegisterStateEnd);
+    const size_t mainBodyBegin = hooks.Offset(
+        PicaVertexShaderHook::MainBodyBegin);
+    const size_t mainBodyEnd = hooks.Offset(
+        PicaVertexShaderHook::MainBodyEnd);
+    temporalProgram->PreviousRegisterState = PreviousScopedSource(
+        sourceView.substr(registerStateBegin,
+                          registerStateEnd - registerStateBegin));
+    temporalProgram->PreviousMainBody = PreviousScopedSource(
+        sourceView.substr(mainBodyBegin,
+                          mainBodyEnd - mainBodyBegin));
+    shader.TemporalProgram = std::move(temporalProgram);
+    shader.Uniforms = BuildOot3dPicaVertexUniformState(packet);
+    return true;
+}
+
+} // namespace Oot3dNativeGame
