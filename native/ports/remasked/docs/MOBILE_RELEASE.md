@@ -22,12 +22,18 @@ particular, the following must never enter a public package or CI upload:
 - Private title-input bundles, local-only generated title archives, logs or
   user folder bookmarks and preferences.
 
-A source-only runtime tree is distinct from an approved translated-title source
-package. Existing local-only generated title outputs remain private. Before a
-public full-game build, a reviewed, hash-bound translated-logic source package
-must exist with matching runtime ABI, hook boundaries and reproducible source.
-It must include no original data image or assets and cannot be substituted by a
-private device library. Release tooling must reject `local_only` title inputs.
+The public app must run the player's own game executable from local storage.
+This excludes both generated title source and any compiled title module from
+the release. The existing mobile targets link a private title archive and
+reject public builds while that dependency remains. ReMasked retains the
+TriAevum runtime on Android and iOS.
+
+TriAevum already exposes an explicit Android title plugin loader. The ReMasked
+host currently uses static linkage instead. An Android integration needs a
+local preparation path and must verify the runtime ABI and ReMasked hooks
+before launching. For iOS, the current host also links statically and the
+non-AOT fallback faults on missing blocks. A local execution path must be
+demonstrated independently on iPhone.
 
 ## Remaining release gates
 
