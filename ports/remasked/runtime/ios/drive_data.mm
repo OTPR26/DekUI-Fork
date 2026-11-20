@@ -16,12 +16,12 @@ NSString* Digest(NSURL* url){
  while((read=[stream read:bytes maxLength:sizeof(bytes)])>0)CC_SHA256_Update(&context,bytes,(CC_LONG)read);
  [stream close];Require(read==0,@"A file could not be read. Download it in Files and try again.");unsigned char digest[CC_SHA256_DIGEST_LENGTH];CC_SHA256_Final(digest,&context);NSMutableString* s=[NSMutableString string];for(auto b:digest)[s appendFormat:@"%02x",b];return s;
 }
-NSArray<NSString*>* Directories(){return @[@"saves",@"models",@"textures/load",@"GameContent"] ;}
-NSArray<NSString*>* Settings(){return @[@"presentation.json",@"game_language.json",@"oot3d_controls.json",@"remasked-models.json"];}
+NSArray<NSString*>* Directories(){return @[@"saves",@"models",@"textures/load",@"GameContent/PrivateGame",@"GameContent/RestorationHud"] ;}
+NSArray<NSString*>* Settings(){return @[@"presentation.json",@"game_language.json",@"oot3d_controls.json"];}
 void Regular(NSURL* url, bool directory){NSDictionary* a=[NSFileManager.defaultManager attributesOfItemAtPath:url.path error:nil];Require([a[NSFileType] isEqual:(directory?NSFileTypeDirectory:NSFileTypeRegular)],@"Data folders cannot contain symbolic links or special files.");}
 NSDictionary* Scan(NSURL* root){
  NSFileManager* fm=NSFileManager.defaultManager;Regular(root,true);NSMutableDictionary* hashes=[NSMutableDictionary dictionary];__block uint64_t total=0;__block NSUInteger count=0;
- void (^add)(NSURL*,NSString*)=^(NSURL* url,NSString* relative){Regular(url,false);NSNumber* size=nil;[url getResourceValue:&size forKey:NSURLFileSizeKey error:nil];total+=size.unsignedLongLongValue;Require(++count<=100000&&total<=32ULL*1024*1024*1024,@"The selected data exceeds the 32 GiB or file-count limit.");if([relative hasPrefix:@"saves/"]){Require([@[@"saves/save0.bin",@"saves/save1.bin",@"saves/save2.bin"] containsObject:relative]&&size.unsignedLongLongValue==79384,@"The folder contains an unsupported or invalid native save.");}hashes[relative]=Digest(url);};
+ void (^add)(NSURL*,NSString*)=^(NSURL* url,NSString* relative){Regular(url,false);NSNumber* size=nil;[url getResourceValue:&size forKey:NSURLFileSizeKey error:nil];total+=size.unsignedLongLongValue;Require(++count<=100000&&total<=32ULL*1024*1024*1024,@"The selected data exceeds the 32 GiB or file-count limit.");if([Settings() containsObject:relative]){Require(size.unsignedLongLongValue<=2*1024*1024,@"A settings file is too large.");id document=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfURL:url] options:0 error:nil];Require([document isKindOfClass:NSDictionary.class],@"A settings file is invalid. Neither copy was changed.");}if([relative hasPrefix:@"saves/"]){Require([@[@"saves/save0.bin",@"saves/save1.bin",@"saves/save2.bin"] containsObject:relative]&&size.unsignedLongLongValue==79384,@"The folder contains an unsupported or invalid native save.");}hashes[relative]=Digest(url);};
  for(NSString* relative in Settings()){NSURL* url=[root URLByAppendingPathComponent:relative];if([fm fileExistsAtPath:url.path])add(url,relative);}
  for(NSString* directory in Directories()){
   // Validate each ancestor as well (textures could itself be a symlink).

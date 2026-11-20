@@ -5,6 +5,8 @@ on:
     paths:
       - 'ports/remasked/runtime/ios/drive_data.*'
       - 'ports/remasked/tests/drive_data.mm'
+      - 'ports/remasked/tools/audit_public_mobile.py'
+      - 'ports/remasked/tests/test_public_mobile.py'
       - '.github/workflows/mobile-release-checks.yml'
 permissions:
   contents: read
@@ -35,3 +37,5 @@ jobs:
           xcrun --sdk iphoneos clang++ -std=c++20 -fobjc-arc \
             -target arm64-apple-ios16.0 -Wno-deprecated-declarations \
             -fsyntax-only ports/remasked/runtime/ios/drive_data.mm
+      - name: Test public mobile package privacy gates
+        run: python3 -m unittest discover -s ports/remasked/tests -p test_public_mobile.py -v
