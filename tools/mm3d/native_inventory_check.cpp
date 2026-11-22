@@ -93,8 +93,11 @@ void FaceSlotLabelChecks() {
     assert(m.words==before);
 
     const auto lower_hud=m.Layout("Hud2"),lower_set=m.Layout("HudItemIconSet");
+    const auto wrapper=m.Layout("LayoutContainer"),outer_embed=m.Widget("lower_hud");
     const auto lower_embed=m.Widget("item_icon_set");
     m.words[lower_embed+0x20]=lower_set;
+    m.words[outer_embed+0x20]=lower_hud;
+    m.Children(wrapper+8,{outer_embed});
     m.Children(lower_hud+8,{lower_embed});
     m.Children(lower_set+8,{x_label,y_label,l_label,r_label});
     for(auto label:{x_label,y_label,l_label,r_label})m.words[label+4]=lower_set;
@@ -102,7 +105,7 @@ void FaceSlotLabelChecks() {
     hook.Begin(m,lower_hud);
     assert(m.words==before_lower);
     hook.End(m);
-    hook.BeginNative(m,lower_hud,true);
+    hook.BeginNative(m,wrapper,true);
     for(auto label:{x_label,y_label})assert(m.Read(label+0xd4)==14);
     for(auto label:{l_label,r_label})assert(m.Read(label+0xd4)==15);
     hook.End(m);

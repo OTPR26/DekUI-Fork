@@ -877,9 +877,10 @@ struct Hook {
     }
     template<class Memory> void HideFaceSlotLabels(Memory& m,U32 layout,std::vector<Write>& writes,
                                                   bool lower_hud=false) {
-        if(!LayoutNamed(m,layout,"MenuItem")&&!LayoutNamed(m,layout,"MenuMask")&&
-           !LayoutNamed(m,layout,"ItemIconSet")&&!LayoutNamed(m,layout,"ItemIconSet2")&&
-           !(lower_hud&&(LayoutNamed(m,layout,"HudItemIconSet")||LayoutNamed(m,layout,"Hud2"))))return;
+        // In dual screen the gameplay item set can be nested inside another
+        // submitted layout. Match its label owners regardless of the root.
+        if(!lower_hud&&!LayoutNamed(m,layout,"MenuItem")&&!LayoutNamed(m,layout,"MenuMask")&&
+           !LayoutNamed(m,layout,"ItemIconSet")&&!LayoutNamed(m,layout,"ItemIconSet2"))return;
         std::vector<U32> seen,pending{layout+8};
         while(!pending.empty()&&seen.size()<1024) {
             const U32 pane=pending.back();

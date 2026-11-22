@@ -159,7 +159,7 @@ public:
     MM3D::MenuTabs::Hook menu_tabs_hook;
     MM3D::NativeInventory::Hook inventory_hook;
     bool native_inventory_draw=false;
-    bool native_lower_draw=false;
+    bool native_dual_draw=false;
     MM3D::OptionsMenu::Hook options_hook;
     MM3D::MenuPageSwitch::Hook menu_page_switch;
     MM3D::MenuMemory::Hook menu_memory;
@@ -1161,7 +1161,7 @@ public:
 #ifdef ANDROID
                 {
                     const bool dual=MM3D::AndroidCast::native_dual_screen.load();
-                    native_lower_draw=dual&&regs[1]>=4;
+                    native_dual_draw=dual;
                     native_inventory_draw=dual&&inventory_hook.inventory_owner&&
                         guest.Read(MM3D::MenuBackdrop::ScreenContext+8)==inventory_hook.inventory_owner&&
                         inventory_hook.CurrentPanel(guest);
@@ -1206,11 +1206,11 @@ public:
                 regs[4]=regs[0]; break;
             case 2:
                 if(native_inventory_draw) {
-                    inventory_hook.BeginNative(guest,regs[4],native_lower_draw);
+                    inventory_hook.BeginNative(guest,regs[4],native_dual_draw);
                     regs[2]=regs[4]+8;
                     break;
                 }
-                classic_save_hook.BeginCycleDraw(guest,regs[4]); minigame_hook.Begin(guest,regs[4]); hud_buttons_hook.Begin(guest,regs[4]); song_reset_hook.Begin(guest,regs[4]); banner_hook.Begin(guest,regs[4],MM3D::Widescreen::Active()); double_time_hook.Begin(guest,regs[4]); dungeon_map_hook.Begin(guest,regs[4]); song_hook.Begin(guest,regs[4]); item_present_hook.Begin(guest,regs[4]); loading_icon_hook.Begin(guest,regs[4]); press_hook.Begin(guest,regs[4]); inventory_hook.Begin(guest,regs[4],MM3D::Widescreen::Active(),native_lower_draw); notebook_hook.Begin(guest,regs[4],MM3D::Widescreen::Active()); file_select_hook.Begin(guest,regs[4],MM3D::Widescreen::Active());
+                classic_save_hook.BeginCycleDraw(guest,regs[4]); minigame_hook.Begin(guest,regs[4]); hud_buttons_hook.Begin(guest,regs[4]); song_reset_hook.Begin(guest,regs[4]); banner_hook.Begin(guest,regs[4],MM3D::Widescreen::Active()); double_time_hook.Begin(guest,regs[4]); dungeon_map_hook.Begin(guest,regs[4]); song_hook.Begin(guest,regs[4]); item_present_hook.Begin(guest,regs[4]); loading_icon_hook.Begin(guest,regs[4]); press_hook.Begin(guest,regs[4]); inventory_hook.Begin(guest,regs[4],MM3D::Widescreen::Active(),native_dual_draw); notebook_hook.Begin(guest,regs[4],MM3D::Widescreen::Active()); file_select_hook.Begin(guest,regs[4],MM3D::Widescreen::Active());
                 if(MM3D::ClassicSaving::enabled && classic_save_hook.cycle) {
                     static std::vector<u32> traced_layouts;
                     static u32 traced_cycle=0;
