@@ -3,7 +3,8 @@ set -euo pipefail
 
 repo="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$repo"
-work="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/remasked-ios.XXXXXXXX")"
+temp_root="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+work="$(mktemp -d "${temp_root%/}/remasked-ios.XXXXXXXX")"
 
 fetch() {
     local name="$1" url="$2" digest="$3"
