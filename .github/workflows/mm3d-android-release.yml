@@ -154,7 +154,7 @@ jobs:
           import os, re, shutil, subprocess, zipfile
           from pathlib import Path
           sdk = Path(os.environ['ANDROID_HOME'])/'build-tools/36.1.0'
-          apks = list(Path('src/android/app/build').glob('outputs/apk/vanilla/performance/*.apk'))
+          apks = list(Path('src/android/app/build').glob('intermediates/apk/vanilla/performance/*.apk'))
           if len(apks) != 1:
               raise SystemExit('Expected one optimized APK')
           apk = apks[0]
