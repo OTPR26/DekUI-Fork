@@ -5,6 +5,9 @@
 #import <AVFoundation/AVFoundation.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #include "RetroVideo.h"
+#ifdef MM3D_EUR_PREVIEW
+#include "EuropeanSetup.h"
+#endif
 #include "drive_data.h"
 #include "AzaharTouchHost.h"
 #include "RemaskedTouchBridge.h"
@@ -53,7 +56,14 @@ static NSString* PreferenceKey(const char* key) {
     return [@"ReMasked.Azahar." stringByAppendingString:@(key)];
 }
 
+#ifdef MM3D_EUR_PREVIEW
+static constexpr bool EuropeanPreview = true;
+#else
+static constexpr bool EuropeanPreview = false;
+#endif
+
 static int Preference(const char* key, int fallback) {
+    if (EuropeanPreview && std::string_view(key) == "ICloudDriveEnabled") return 0;
     NSNumber* value = [NSUserDefaults.standardUserDefaults objectForKey:PreferenceKey(key)];
     return value ? value.intValue : fallback;
 }
@@ -87,15 +97,15 @@ static void LoadGamePreferences() {
     gameSettings.magicHeight = Preference("HudMagicHeight", 0);
     gameSettings.heartSpacing = Preference("HudHeartSpacing", 0);
     gameSettings.hideMenuPrompts = Preference("HideItemMenuPrompts", 0);
-    gameSettings.singleScreenInstructions = Preference("SingleScreenInstructions", 1);
-    gameSettings.controllerNeutralItemPrompts = Preference("ControllerNeutralItemPrompts", 1);
+    gameSettings.singleScreenInstructions = !EuropeanPreview && Preference("SingleScreenInstructions", 1);
+    gameSettings.controllerNeutralItemPrompts = !EuropeanPreview && Preference("ControllerNeutralItemPrompts", 1);
     gameSettings.disableTatlReminders = Preference("TatlRemindersOff", 0);
     gameSettings.muteMusic = Preference("MuteMusic", 0);
     gameSettings.disableLowHealthBeep = Preference("LowHealthBeepOff", 0);
     auto& gameplay = gameSettings.gameplay;
     gameplay.disableBomberApproach = Preference("BomberApproachOff", 0);
     gameplay.swordActivateOwls = Preference("SwordActivateOwls", 0);
-    gameplay.classicDoubleTime = Preference("ClassicDoubleTime", 0);
+    gameplay.classicDoubleTime = !EuropeanPreview && Preference("ClassicDoubleTime", 0);
     gameplay.fastTime = Preference("FastTime", 0);
     gameplay.damageMultiplier = Preference("DamageMultiplier", 1);
     gameplay.weakerEnhancedDefense = Preference("WeakerEnhancedDefense", 0);
@@ -107,8 +117,8 @@ static void LoadGamePreferences() {
     gameplay.loseRupeesOnDeath = Preference("LoseRupeesOnDeath", 0);
     gameplay.endWorldOnDeath = Preference("EndWorldOnDeath", 0);
     gameplay.advanceTimeOnDeath = Preference("AdvanceTimeOnDeath", 0);
-    gameplay.doubleShopPrices = Preference("DoubleShopPrices", 0);
-    gameplay.classicSaving = Preference("ClassicSaving", 0);
+    gameplay.doubleShopPrices = !EuropeanPreview && Preference("DoubleShopPrices", 0);
+    gameplay.classicSaving = !EuropeanPreview && Preference("ClassicSaving", 0);
     gameplay.redPotionHearts = Preference("RedPotionHearts", 20);
     gameplay.bluePotionHearts = Preference("BluePotionHearts", 20);
     gameplay.bottledFairyHearts = Preference("BottledFairyHearts", 10);
@@ -135,14 +145,25 @@ static void LoadGamePreferences() {
 }
 
 constexpr int MaxInternalResolutionScale = 6;
-static constexpr std::array GameLanguages{"English", "Japanese", "French", "Spanish", "German",
-    "Italian", "Dutch", "Portuguese", "Russian", "Korean", "Traditional Chinese", "Simplified Chinese"};
+#ifdef MM3D_EUR_PREVIEW
+static constexpr std::array GameLanguages{"English", "French", "Spanish", "German", "Italian"};
+static constexpr std::array GameLanguagePreferences{0, 2, 3, 4, 5};
+#else
+static constexpr std::array GameLanguages{"English", "French", "Spanish"};
+// Keep 0.4.5's stored option indices so existing French and Spanish choices survive.
+static constexpr std::array GameLanguagePreferences{0, 2, 3};
+#endif
+
+static int GameLanguageChoice() {
+    const auto stored = Preference("GameLanguage", 0);
+    const auto found = std::find(GameLanguagePreferences.begin(), GameLanguagePreferences.end(), stored);
+    return found == GameLanguagePreferences.end() ? 0 : int(found - GameLanguagePreferences.begin());
+}
 
 static void UpdateGraphicsOptions() {
     const auto toggle = [](const char* key) { return Preference(key, 1) ? "enabled" : "disabled"; };
     const std::array filters{"none", "Bicubic", "ScaleForce", "xBRZ", "MMPX"};
-    options["citra_language_value"] = GameLanguages[std::clamp(Preference("GameLanguage", 0),
-        0, int(GameLanguages.size()) - 1)];
+    options["citra_language_value"] = GameLanguages[GameLanguageChoice()];
     options["citra_resolution_factor"] = std::to_string(std::clamp(Preference("Resolution", 0), 0, MaxInternalResolutionScale - 1) + 1);
     options["citra_texture_filter"] = filters[std::clamp(Preference("TextureFilter", 0), 0, 4)];
     options["citra_custom_textures"] = toggle("CustomTextures");
@@ -603,6 +624,9 @@ void ReMaskedAzaharPublishTouchHud(const CGRect* controls) {
     double _launcherInputTime;
 }
 @property(nonatomic,strong) NSURL* root;
+#ifdef MM3D_EUR_PREVIEW
+@property(nonatomic) BOOL importingEuropeanROM;
+#endif
 @property(nonatomic,strong) MTKView* screen;
 @property(nonatomic,strong) UIView* airPlayBackdrop;
 @property(nonatomic,strong) ReMaskedBottomTouchView* bottomTouchView;
@@ -1026,7 +1050,9 @@ static constexpr std::array<const char*, 13> TouchControlNames{
 }
 
 - (NSURL*)saveDirectory {
-    return [self.root URLByAppendingPathComponent:ReMaskedDrive::AzaharSavesPath() isDirectory:YES];
+    NSString* path = ReMaskedDrive::AzaharSavesPath();
+    if (EuropeanPreview) path = [path stringByReplacingOccurrencesOfString:@"/00125500/" withString:@"/00125600/"];
+    return [self.root URLByAppendingPathComponent:path isDirectory:YES];
 }
 
 - (void)syncDrive:(ReMaskedDrive::Content)content
@@ -1267,13 +1293,32 @@ static constexpr std::array<const char*, 13> TouchControlNames{
         self.status.text = @"A local ROM is already imported.";
         return;
     }
+#ifdef MM3D_EUR_PREVIEW
+    if (self.importingEuropeanROM) return;
+    self.importingEuropeanROM = YES;
+    self.status.text = @"Verifying European Rev 1 and preparing the ReMasked HUD…";
+    NSURL* root = self.root;
+    NSURL* destination = self.rom;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSString* error = ImportEuropeanROM(inputURL, root, destination);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.importingEuropeanROM = NO;
+            self.status.text = error ?: @"European Rev 1 ready";
+        });
+    });
+#else
     BOOL access = [inputURL startAccessingSecurityScopedResource];
     NSError* error = nil;
     BOOL ok = [NSFileManager.defaultManager copyItemAtURL:inputURL toURL:self.rom error:&error];
     if (access) [inputURL stopAccessingSecurityScopedResource];
     self.status.text = ok ? @"ROM ready" : error.localizedDescription;
+#endif
 }
 - (void)startGame {
+#ifdef MM3D_EUR_PREVIEW
+    if (self.importingEuropeanROM) return;
+    setenv("REMASKED_EUR_PREVIEW", "1", 1);
+#endif
     if (self.syncingDrive && !self.live) return;
     if (self.live) {
         launcherConfirmHeldOnStart = gameplayController().extendedGamepad.buttonA.pressed;
@@ -1484,9 +1529,9 @@ static constexpr std::array<const char*, 13> TouchControlNames{
     controlsTab.Rows.push_back(heading("Game prompts"));
     controlsTab.Rows.push_back(PreferenceToggle("HideItemMenuPrompts", "Hide item menu button prompts", false,
                                              settingsChanged));
-    controlsTab.Rows.push_back(PreferenceToggle("SingleScreenInstructions", "Single-screen game instructions", true,
+    if (!EuropeanPreview) controlsTab.Rows.push_back(PreferenceToggle("SingleScreenInstructions", "Single-screen game instructions", true,
                                              settingsChanged));
-    controlsTab.Rows.push_back(PreferenceToggle("ControllerNeutralItemPrompts", "Controller neutral item prompts", true,
+    if (!EuropeanPreview) controlsTab.Rows.push_back(PreferenceToggle("ControllerNeutralItemPrompts", "Controller neutral item prompts", true,
                                              settingsChanged));
     controlsTab.Rows.push_back(heading("Controller bindings"));
     for (const auto& binding : Controller::Bindings) {
@@ -1752,12 +1797,12 @@ static constexpr std::array<const char*, 13> TouchControlNames{
     Menu::Tab restoration{"Restoration Fixes", {}};
     restoration.Rows.push_back(PreferenceToggle("BomberApproachOff", "Bombers don't approach automatically", false, settingsChanged));
     restoration.Rows.push_back(PreferenceToggle("SwordActivateOwls", "Activate owl statues with a sword", false, settingsChanged));
-    restoration.Rows.push_back(PreferenceToggle("ClassicDoubleTime", "Classic Song of Double Time", false, settingsChanged));
+    if (!EuropeanPreview) restoration.Rows.push_back(PreferenceToggle("ClassicDoubleTime", "Classic Song of Double Time", false, settingsChanged));
     auto classicSaving = PreferenceToggle("ClassicSaving", "Classic saving", false, settingsChanged);
     classicSaving.Available = stopped;
     classicSaving.UnavailableReason = "Change this from startup Settings.";
     classicSaving.Help = "Use the Song of Time to establish a permanent save. Owl statues then provide a one-use local save.";
-    restoration.Rows.push_back(std::move(classicSaving));
+    if (!EuropeanPreview) restoration.Rows.push_back(std::move(classicSaving));
     Menu::Tab difficulty{"Difficulty", {}};
     difficulty.Rows.push_back(PreferenceRow("DamageMultiplier", "Damage taken", 1, 1, 16,
         settingsChanged, [](int value) { return std::to_string(value) + "×"; }));
@@ -1780,7 +1825,7 @@ static constexpr std::array<const char*, 13> TouchControlNames{
     doublePrices.Available = stopped;
     doublePrices.UnavailableReason = "Change this from startup Settings.";
     doublePrices.Help = "Applies when you next start the game.";
-    difficulty.Rows.push_back(std::move(doublePrices));
+    if (!EuropeanPreview) difficulty.Rows.push_back(std::move(doublePrices));
     auto resetDifficulty = action("Reset difficulty", "", [settingsChanged] {
         for (const char* key : {"WeakerEnhancedDefense", "HeartDropsOff", "RupeeDropsOff",
                 "FairyDropsOff", "MagicDropsOff", "AmmoPickupsOff", "LoseRupeesOnDeath",
@@ -1822,7 +1867,7 @@ static constexpr std::array<const char*, 13> TouchControlNames{
     syncStatus.DynamicText = [] {
         return Preference("ICloudDriveEnabled", 1) ? std::string(ReMaskedDrive::Status().UTF8String) : "Using local data";
     };
-    dataTab.Rows.push_back(std::move(syncStatus));
+    if (!EuropeanPreview) dataTab.Rows.push_back(std::move(syncStatus));
     const auto driveReady = [self] { return !self.live && !self.syncingDrive; };
     auto drive = PreferenceToggle("ICloudDriveEnabled", "Use iCloud Drive", true, [self] {
         if (Preference("ICloudDriveEnabled", 1)) [self prepareDriveSaves];
@@ -1830,13 +1875,15 @@ static constexpr std::array<const char*, 13> TouchControlNames{
     drive.Help = "ReMasked creates and manages its own folder. Gameplay uses local working copies.";
     drive.Available = driveReady;
     drive.UnavailableReason = "Available from startup Settings.";
-    dataTab.Rows.push_back(std::move(drive));
+    if (!EuropeanPreview) dataTab.Rows.push_back(std::move(drive));
     auto sync = action("Sync data folder now", "Syncs saves, textures and prepared models. ReMasked checks for newer saves when you reopen the app.",
                        [self] { [self syncDrive:Content::AzaharData resolution:Resolution::Ask showResult:YES]; });
     sync.Available = [driveReady] { return driveReady() && Preference("ICloudDriveEnabled", 1); };
     sync.UnavailableReason = "Enable iCloud Drive from startup Settings.";
-    dataTab.Rows.push_back(std::move(sync));
-    auto rom = action("Choose ROM", "Select your local game file in Files.", [self] { [self chooseROM]; });
+    if (!EuropeanPreview) dataTab.Rows.push_back(std::move(sync));
+    auto rom = action("Choose ROM", EuropeanPreview ?
+        "Select a decrypted European Rev 1 cartridge dump. Setup also reads verified Project Restoration inputs from the app’s restoration folder in Files." :
+        "Select your local game file in Files.", [self] { [self chooseROM]; });
     rom.Available = stopped;
     rom.UnavailableReason = "Choose the ROM from startup Settings.";
     dataTab.Rows.push_back(std::move(rom));
@@ -1887,7 +1934,12 @@ static constexpr std::array<const char*, 13> TouchControlNames{
     auto language = PreferenceRow("GameLanguage", "Game language", 0, 0, int(GameLanguages.size()) - 1);
     language.Kind = Menu::RowKind::Choice;
     language.Choices.assign(GameLanguages.begin(), GameLanguages.end());
-    language.Help = "Applies at the next game launch. Available translations depend on your ROM.";
+    language.Read = GameLanguageChoice;
+    language.Write = [](int index) {
+        SavePreference("GameLanguage", GameLanguagePreferences.at(index));
+        return Menu::WriteResult{};
+    };
+    language.Help = "Applies at the next game launch.";
     language.Available = stopped;
     language.UnavailableReason = "Change the game language from startup Settings.";
     generalTab.Rows.push_back(std::move(language));

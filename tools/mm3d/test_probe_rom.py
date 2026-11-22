@@ -1,11 +1,21 @@
 import hashlib
+import json
 from pathlib import Path
 import struct
 import tempfile
 import unittest
-from probe_rom import probe
+from probe_rom import FINGERPRINT_FIELDS, FINGERPRINT_FILE, identify, probe
 
 class ProbeTest(unittest.TestCase):
+    def test_regional_reference_is_identified_only_by_exact_fingerprint(self):
+        manifest = json.loads(FINGERPRINT_FILE.read_text())
+        self.assertEqual(identify(manifest, manifest), {'region': 'USA', 'status': 'supported'})
+        [europe] = [item for item in manifest['regional_candidates'] if item['region'] == 'EUR']
+        self.assertEqual(identify(europe, manifest), {'region': 'EUR', 'status': 'reference-only'})
+        for field in FINGERPRINT_FIELDS:
+            with self.subTest(field=field):
+                self.assertIsNone(identify({**europe, field: 'different'}, manifest))
+
     def test_synthetic_container_and_rejections(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'fixture.cci'

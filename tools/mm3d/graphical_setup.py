@@ -10,13 +10,13 @@ from build_release_assets import RESOURCES
 from setup_game_folder import setup, validate
 
 
-def complete_setup(root, rom, restoration):
+def complete_setup(root, rom, restoration, **region):
     """Fill an unprepared user folder without replacing existing settings or saves."""
     user = root/'user'
     if user.is_symlink() or not user.is_dir():
         raise ValueError('The user folder must be a real directory; it was not changed.')
     with tempfile.TemporaryDirectory(prefix='.mm3d-recover-', dir=root) as tmp:
-        prepared = setup(Path(tmp), restoration, rom, copy_game=False, reference_game=True)
+        prepared = setup(Path(tmp), restoration, rom, copy_game=False, reference_game=True, **region)
         files = sorted(p for p in prepared.rglob('*') if p.is_file())
         marker = prepared/'setup/ready.json'
         files.remove(marker)
@@ -51,11 +51,13 @@ def complete_setup(root, rom, restoration):
     return user
 
 
-def prepare(root, rom, patch=None, exheader=None, hud=None, in_place=False, upgrade_existing=False, reference_game=False):
+def prepare(root, rom, patch=None, exheader=None, hud=None, in_place=False, upgrade_existing=False,
+            reference_game=False, *, experimental_eur=False):
     if (root/'user').exists() and not upgrade_existing:
         raise ValueError('This folder already has user data. Choose a fresh application folder; existing saves will not be replaced.')
     if not rom.is_file(): raise ValueError('Select your decrypted game file (.cci or .3ds).')
-    validate(rom)
+    region = {'experimental_eur': True} if experimental_eur else {}
+    fingerprint = validate(rom, **region)
     bundled = RESOURCES/'project-restoration'
     patch = patch if patch is not None else bundled/'code.bps'
     exheader = exheader if exheader is not None else bundled/'exheader.bin'
@@ -78,12 +80,25 @@ def prepare(root, rom, patch=None, exheader=None, hud=None, in_place=False, upgr
         for name,path in selected.items():
             target=restoration/name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(path,target)
         if (root/'user').exists() and not (root/'user/setup/ready.json').exists():
-            result = complete_setup(root, rom, restoration)
+            result = complete_setup(root, rom, restoration, **region)
         elif (root/'user').exists():
-            from upgrade_game_resources import upgrade
-            result = upgrade(root,rom,restoration)
+            if experimental_eur:
+                from upgrade_game_resources import RESOURCE_VERSION
+                import layout_migration
+                result = root/'user'
+                ready = json.loads((result/'setup/ready.json').read_bytes())
+                if (result.is_symlink() or ready.get('version') != 1 or
+                    ready.get('program_id') != fingerprint['program_id'] or
+                    ready.get('rom_sha256') != fingerprint['main_partition_sha256'] or
+                    ready.get('resource_version') != RESOURCE_VERSION or
+                    ready.get('layout_version') != layout_migration.VERSION or
+                    (result/'setup/resource-upgrade-pending').exists()):
+                    raise ValueError('Incompatible EUR preview setup. Existing saves were preserved.')
+            else:
+                from upgrade_game_resources import upgrade
+                result = upgrade(root,rom,restoration)
         else:
-            result = setup(root,restoration,rom,copy_game=not in_place,reference_game=reference_game)
+            result = setup(root,restoration,rom,copy_game=not in_place,reference_game=reference_game, **region)
         from desktop_hud import apply, apply_controls
         apply_controls(root/'user', RESOURCES)
         apply(root/'user', RESOURCES)
@@ -97,9 +112,10 @@ if __name__=='__main__':
     parser.add_argument("--reference-game",action="store_true",help="Use an explicitly selected external game without copying it")
     parser.add_argument("--in-place",action="store_true",help="Use the game beside the app without copying it")
     parser.add_argument("--upgrade-existing",action="store_true",help="Upgrade owned resources while preserving user data")
+    parser.add_argument("--experimental-eur", action="store_true", help="Prepare the isolated EUR Rev 1 preview")
     args=parser.parse_args()
     try:
-        prepare(args.root,args.rom,args.patch,args.exheader,args.hud,in_place=args.in_place,upgrade_existing=args.upgrade_existing,reference_game=args.reference_game)
+        prepare(args.root,args.rom,args.patch,args.exheader,args.hud,in_place=args.in_place,upgrade_existing=args.upgrade_existing,reference_game=args.reference_game,experimental_eur=args.experimental_eur)
         print('Setup complete. Starting the game.')
     except (ValueError,OSError) as error:
         parser.exit(1,str(error)+'\n')

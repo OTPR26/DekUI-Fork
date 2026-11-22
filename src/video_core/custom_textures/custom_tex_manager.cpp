@@ -14,6 +14,7 @@
 #include "core/frontend/image_interface.h"
 #include "core/hle/kernel/kernel.h"
 #include "core/hle/kernel/process.h"
+#include "mm3d/rom_region.h"
 #include "video_core/custom_textures/custom_tex_manager.h"
 #include "video_core/rasterizer_cache/surface_params.h"
 #include "video_core/rasterizer_cache/utils.h"
@@ -115,7 +116,8 @@ void CustomTexManager::FindCustomTextures() {
         CreateWorkers();
     }
 
-    const u64 title_id = system.Kernel().GetCurrentProcess()->codeset->program_id;
+    const u64 title_id = MM3D::RomRegion::PresentationAssetTitle(
+        system.Kernel().GetCurrentProcess()->codeset->program_id);
     const auto textures = GetTextures(title_id);
     if (!ReadConfig(title_id)) {
         use_new_hash = false;

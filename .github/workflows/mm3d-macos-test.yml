@@ -1,11 +1,18 @@
 name: Majora ReMasked macOS (Apple Silicon)
 on:
   workflow_dispatch:
+    inputs:
+      experimental_eur:
+        description: Build the isolated European Rev 1 preview
+        type: boolean
+        default: false
 concurrency:
-  group: mm3d-macos-${{ github.ref }}
+  group: mm3d-macos-${{ github.ref }}-${{ inputs.experimental_eur }}
   cancel-in-progress: true
 permissions:
   contents: read
+env:
+  REMASKED_EXPERIMENTAL_EUR: ${{ inputs.experimental_eur && 'true' || 'false' }}
 jobs:
   macos:
     runs-on: macos-15
@@ -28,7 +35,7 @@ jobs:
           git log -1 --format='%H %s' >> "$GITHUB_STEP_SUMMARY"
       - name: Read release version
         id: release
-        run: echo "version=$(python3 tools/mm3d/release_version.py)" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(python3 tools/mm3d/release_version.py --artifact)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v5
         with:
           path: .ccache-macos

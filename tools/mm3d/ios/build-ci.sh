@@ -48,8 +48,12 @@ cmake -S "$work/upstream" -B "$work/core" -G Ninja \
 grep -qx 'ENABLE_BUILTIN_KEYBLOB:BOOL=OFF' "$work/core/CMakeCache.txt"
 cmake --build "$work/core" --target azahar_libretro --parallel "${REMASKED_IOS_JOBS:-4}"
 
-version="$(python3 tools/mm3d/release_version.py)"
+version="$(python3 tools/mm3d/release_version.py --artifact)"
+REMASKED_EUR_FLAG=
+if [[ "${REMASKED_EXPERIMENTAL_EUR:-false}" == true ]]; then
+    REMASKED_EUR_FLAG=1
+fi
 python3 tools/mm3d/ios/package_unsigned.py \
     --core-library "$work/core/bin/Release/azahar_libretro.dylib" \
     --moltenvk "$work/MoltenVK/MoltenVK" \
-    --output "artifacts/Majora-ReMasked-$version-iOS-arm64-Unsigned.ipa"
+    --output "artifacts/Majora-ReMasked-$version-iOS-arm64-Unsigned.ipa" ${REMASKED_EUR_FLAG:+--experimental-eur}

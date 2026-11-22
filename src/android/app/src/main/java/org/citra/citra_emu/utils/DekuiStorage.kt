@@ -5,6 +5,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import org.citra.citra_emu.BuildConfig
 import android.util.AtomicFile
 import androidx.preference.PreferenceManager
 import java.io.File
@@ -14,7 +15,8 @@ import org.citra.citra_emu.NativeLibrary
 
 /** Shared, user-visible game data. App runtime libraries remain in app-private storage. */
 object DekuiStorage {
-    fun sharedRoot()=File(Environment.getExternalStorageDirectory(),"mm3dport")
+    fun sharedRoot() = File(Environment.getExternalStorageDirectory(),
+        if (BuildConfig.EUR_PREVIEW) "mm3dport-eur-preview" else "mm3dport")
     fun hasAccess(context:Context)=if(Build.VERSION.SDK_INT>=30)Environment.isExternalStorageManager()
         else androidx.core.content.ContextCompat.checkSelfPermission(context,android.Manifest.permission.WRITE_EXTERNAL_STORAGE)==android.content.pm.PackageManager.PERMISSION_GRANTED
     fun root(context:Context):File {
@@ -24,10 +26,10 @@ object DekuiStorage {
     fun game(context:Context)=if(context.getSharedPreferences("dekui-storage",Context.MODE_PRIVATE).getBoolean("shared-v1",false))
         File(root(context),"game/game.cci") else File(context.filesDir,"dekui-game/game.cci")
     fun migrate(context:Context){
-        check(hasAccess(context)){"Allow file access to use Internal storage/mm3dport"}
+        check(hasAccess(context)){"Allow file access to use Internal storage/${sharedRoot().name}"}
         val target=sharedRoot()
         if(context.getSharedPreferences("dekui-storage",Context.MODE_PRIVATE).getBoolean("shared-v1",false)) {
-            check(File(target,".dekui-storage-v1").isFile){"The mm3dport data folder is missing. Restore your current folder before starting; the older private backup was retained."}
+            check(File(target,".dekui-storage-v1").isFile){"The ${target.name} data folder is missing. Restore your current folder before starting; the older private backup was retained."}
         } else DekuiStorageMigration.migrate(File(context.filesDir,"dekui"),File(context.filesDir,"dekui-game/game.cci"),target)
         check(context.getSharedPreferences("dekui-storage",Context.MODE_PRIVATE).edit().putBoolean("shared-v1",true).commit())
         check(PreferenceManager.getDefaultSharedPreferences(context).edit().putString(PermissionsHandler.CITRA_DIRECTORY,Uri.fromFile(target).toString()).commit())

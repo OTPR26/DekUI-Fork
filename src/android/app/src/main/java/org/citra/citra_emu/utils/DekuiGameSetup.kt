@@ -8,6 +8,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.MessageDigest
 import org.json.JSONObject
+import org.citra.citra_emu.BuildConfig
 
 /** Reconstructs only fingerprint-approved layout files from the selected game. */
 object DekuiGameSetup {
@@ -21,7 +22,13 @@ object DekuiGameSetup {
         return result
     }
     fun prepare(context: Context, rom: File, root: File) {
-        val expected = json(context, "supported-rom.json")
+        val manifest = json(context, "supported-rom.json")
+        val preview = BuildConfig.EUR_PREVIEW
+        val expected = if (preview) {
+            val regions = manifest.getJSONArray("regional_candidates")
+            (0 until regions.length()).map(regions::getJSONObject).single { it.getString("region") == "EUR" }
+        } else manifest
+        val revision = if (preview) "European Rev 1" else "USA Rev 1"
         val recipe = json(context, "android-layout-recipe.json")
         val inputs = recipe.getJSONObject("inputs")
         val sources = mutableMapOf<String, ByteArray>()
@@ -37,6 +44,10 @@ object DekuiGameSetup {
             require(base >= 512 && length == expected.getLong("main_partition_bytes")) { "Unsupported game revision" }
             require(String(read(base + 0x100,4), Charsets.US_ASCII) == "NCCH") { "Invalid game partition" }
             require(read(base + 0x18f,1)[0].toInt() and 4 != 0) { "The selected game must be decrypted" }
+            val id = ByteBuffer.wrap(read(base + 0x118, 8)).order(ByteOrder.LITTLE_ENDIAN).long
+            require(id == expected.getString("program_id").toLong(16)) { "Select a decrypted $revision cartridge dump" }
+            val remaster = ByteBuffer.wrap(read(base + 0x20e, 2)).order(ByteOrder.LITTLE_ENDIAN).short.toInt()
+            require(remaster == expected.getInt("remaster_version")) { "Unsupported game revision" }
             val digest = MessageDigest.getInstance("SHA-256")
             var offset = 0L
             while (offset < length) {
@@ -44,7 +55,7 @@ object DekuiGameSetup {
                 digest.update(bytes); offset += bytes.size
             }
             require(digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) } ==
-                expected.getString("main_partition_sha256")) { "Unsupported game: select the decrypted USA Rev 1 version" }
+                expected.getString("main_partition_sha256")) { "Unsupported game: select the decrypted $revision version" }
             val start = base + u32(base + 0x1b0) * 512 + 0x1000
             val romfsLength = u32(base + 0x1b4) * 512 - 0x1000
             fun rr(at: Long, count: Int): ByteArray {
@@ -57,7 +68,7 @@ object DekuiGameSetup {
             val dt = header.getInt(12).toLong(); val ft = header.getInt(28).toLong()
             val payload = header.getInt(36).toLong()
             val wanted = inputs.keys().asSequence().filter { it.startsWith("original/") }.toSet() +
-                listOf("use", "usf", "uss").map { "original/romfs/message/us/$it.gmsg" }
+                (if (preview) emptyList() else listOf("use", "usf", "uss")).map { "original/romfs/message/us/$it.gmsg" }
             val visited = mutableSetOf<Long>()
             fun directory(at: Long, parent: String, depth: Int): Long {
                 require(depth <= 32 && visited.add(at)) { "Invalid directory tree" }
@@ -115,7 +126,7 @@ object DekuiGameSetup {
                 val target = mods.child(item.getString("output")); target.parentFile!!.mkdirs(); target.writeBytes(output)
             }
             // Expand message storage from the verified user ROM, never from bundled game data.
-            val messageHashes = mapOf(
+            val messageHashes = if (preview) emptyMap() else mapOf(
                 "use" to "70bd72f961a6ff168604249b4c76f893f1cad6fbd9da0290e85f49cd319a1314",
                 "usf" to "b848188634a5bf6c9f2cd837102420dbe0a3275d7fd17bbe0057e8dcbd173a77",
                 "uss" to "3310a03cf6d67a4ce7c054d7fff2b31fd309fcf966e91610f83ffdd92281a688")

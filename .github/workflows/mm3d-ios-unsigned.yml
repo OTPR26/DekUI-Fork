@@ -3,11 +3,18 @@ on:
   push:
     branches: [ios-unsigned-release]
   workflow_dispatch:
+    inputs:
+      experimental_eur:
+        description: Build the isolated European Rev 1 preview
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
-  group: mm3d-ios-${{ github.ref }}
+  group: mm3d-ios-${{ github.ref }}-${{ inputs.experimental_eur }}
   cancel-in-progress: true
+env:
+  REMASKED_EXPERIMENTAL_EUR: ${{ inputs.experimental_eur && 'true' || 'false' }}
 jobs:
   ios:
     runs-on: macos-26

@@ -8,28 +8,33 @@ from pathlib import Path
 import shutil
 import struct
 import tempfile
-from probe_rom import probe
+from probe_rom import matches_fingerprint, probe
 from build_release_assets import build, RESOURCES
 from release_setup import write
 from upgrade_game_resources import RESOURCE_VERSION
 import layout_migration
 
 
-def validate(rom):
+def validate(rom, *, experimental_eur=False):
     expected = json.loads((RESOURCES / 'supported-rom.json').read_text())
     actual = probe(rom)
-    for key in ('program_id', 'remaster_version', 'main_partition_bytes', 'main_partition_sha256'):
-        if actual[key] != expected[key]:
-            raise ValueError('Unsupported ROM revision/content; expected the verified decrypted USA Rev 1 dump')
+    if experimental_eur:
+        expected = next(entry for entry in expected['regional_candidates'] if entry['region'] == 'EUR')
+        if not matches_fingerprint(actual, expected):
+            raise ValueError('The EUR preview requires the verified decrypted European Rev 1 cartridge dump.')
+        return actual
+    if not matches_fingerprint(actual, expected):
+        raise ValueError('Unsupported ROM revision/content; expected the verified decrypted USA Rev 1 dump')
     return actual
 
 
-def extract(rom, output):
+def extract(rom, output, *, preserve_native_messages=False):
     # NCSD -> main NCCH -> standard IVFC level 3. Only required layout and message files are emitted.
     manifest = json.loads((RESOURCES / 'setup-fingerprints.json').read_text())
     wanted = {e['input'][6:] for e in manifest['files'] if e['input_root'] == 'original'}
     wanted.add('layout/Joker.Main.Play.gar')
-    wanted.update('message/us/'+name+'.gmsg' for name in ('use', 'usf', 'uss'))
+    if not preserve_native_messages:
+        wanted.update('message/us/'+name+'.gmsg' for name in ('use', 'usf', 'uss'))
     with rom.open('rb') as stream:
         size = rom.stat().st_size
         def read(at, count):
@@ -74,24 +79,29 @@ def extract(rom, output):
         if found != wanted: raise ValueError('Required game layouts missing')
 
 
-def setup(root, restoration, selected_rom=None, copy_game=True, reference_game=False):
+def setup(root, restoration, selected_rom=None, copy_game=True, reference_game=False, *,
+          experimental_eur=False):
     rom = selected_rom or root/'game/mm3d.cci'
     if not copy_game and not reference_game and rom.resolve().parent != root.resolve() and rom.resolve() != (root/'game/mm3d.cci').resolve():
         raise ValueError('Place the game beside the application before starting setup.')
     layout_policy = layout_migration.policy(RESOURCES)
-    validate(rom)
+    actual = validate(rom, experimental_eur=experimental_eur)
+    expected_hash = (actual['main_partition_sha256'] if experimental_eur else
+                     json.loads((RESOURCES/'supported-rom.json').read_text())['main_partition_sha256'])
     output = root/'user'
     if output.exists(): raise ValueError('user directory already exists; refusing to replace settings or saves')
     destination = root/'game/mm3d.cci'
     if copy_game and destination.exists() and destination.resolve() != rom.resolve():
-        validate(destination)  # Never replace an existing game file.
+        validate(destination, experimental_eur=experimental_eur)  # Never replace an existing game file.
     stage = Path(tempfile.mkdtemp(prefix='.mm3d-setup-',dir=root))
     installed_rom = False
     try:
         original = stage/'setup/original'
-        extract(rom,original)
+        # Both regions use the shared HUD assets. EUR keeps its original language archives.
+        regional_assets = {'preserve_native_messages': True} if experimental_eur else {}
+        extract(rom, original, **regional_assets)
         mod_root=stage/'load/mods/0004000000125500'
-        build(original,restoration,mod_root)
+        build(original, restoration, mod_root, **regional_assets)
         write(stage, layout_migration.BASELINE, layout_migration.baseline(layout_policy))
         (stage/'load/textures/0004000000125500').mkdir(parents=True)
         shutil.copytree(RESOURCES/'defaults',stage/'config/mm3d-local')
@@ -100,10 +110,14 @@ def setup(root, restoration, selected_rom=None, copy_game=True, reference_game=F
         obj['source_archive']='setup/original/romfs/layout/Joker.Main.Play.SubMenu.gar'
         obj['fade_source']='setup/original/romfs/layout/Joker.gar'
         p.write_text(json.dumps(obj,indent=2)+'\n')
-        (stage/'setup/ready.json').write_text(json.dumps({'version':1,'resource_version':RESOURCE_VERSION,'layout_version':layout_migration.VERSION,'rom_sha256':json.loads((RESOURCES/'supported-rom.json').read_text())['main_partition_sha256']})+'\n')
+        ready = {'version': 1, 'resource_version': RESOURCE_VERSION,
+                 'layout_version': layout_migration.VERSION, 'rom_sha256': expected_hash}
+        if experimental_eur:
+            ready['program_id'] = actual['program_id']
+        (stage/'setup/ready.json').write_text(json.dumps(ready)+'\n')
         if copy_game and not destination.exists():
             shutil.copyfile(rom, stage/'game-copy.cci')
-            validate(stage/'game-copy.cci')
+            validate(stage/'game-copy.cci', experimental_eur=experimental_eur)
             destination.parent.mkdir(parents=True, exist_ok=True)
             # Exclusive creation prevents an overlapping setup from replacing a ROM.
             with destination.open('xb') as target:

@@ -2,16 +2,22 @@ name: Majora ReMasked Linux
 on:
   workflow_dispatch:
     inputs:
+      experimental_eur:
+        description: Build the isolated European Rev 1 preview
+        type: boolean
+        default: false
       architecture:
         description: Desktop CPU architecture
         type: choice
         options: [all, x64, arm64]
         default: all
 concurrency:
-  group: mm3d-deck-${{ github.ref }}-${{ inputs.architecture }}
+  group: mm3d-deck-${{ github.ref }}-${{ inputs.architecture }}-${{ inputs.experimental_eur }}
   cancel-in-progress: true
 permissions:
   contents: read
+env:
+  REMASKED_EXPERIMENTAL_EUR: ${{ inputs.experimental_eur && 'true' || 'false' }}
 jobs:
   deck:
     if: inputs.architecture != 'arm64'
@@ -37,7 +43,7 @@ jobs:
         id: release
         shell: bash
         run: |
-          release_version=$(python3 tools/mm3d/release_version.py)
+          release_version=$(python3 tools/mm3d/release_version.py --artifact)
           echo "version=$release_version" >> "$GITHUB_OUTPUT"
       - name: Verify build revision
         shell: bash
@@ -58,7 +64,7 @@ jobs:
             -v "$GITHUB_WORKSPACE:/workspace" -w /workspace \
             -e CCACHE_DIR=/workspace/.ccache -e CCACHE_BASEDIR=/workspace \
             -e CCACHE_MAXSIZE -e CCACHE_COMPILERCHECK \
-            -e EXTRA_QT_PLUGINS -e EXTRA_PLATFORM_PLUGINS \
+            -e EXTRA_QT_PLUGINS -e EXTRA_PLATFORM_PLUGINS -e REMASKED_EXPERIMENTAL_EUR \
             opensauce04/azahar-build-environment:latest \
             bash tools/mm3d/deck/build-ci.sh
           df -h /

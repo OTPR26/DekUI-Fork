@@ -334,9 +334,10 @@ class DekuiSettingsActivity : AppCompatActivity() {
                 addButton("Reset menu size") { saveMenuSize(100f) }
                 iconSelection()
                 section("Language")
-                val languages=listOf(1,2,5)
+                val languages = if (BuildConfig.EUR_PREVIEW) listOf(1, 2, 5, 3, 4) else listOf(1, 2, 5)
+                val names = listOf("English", "Français", "Español", "Deutsch", "Italiano").take(languages.size)
                 val language=NativeLibrary.getDekuiGameLanguage()
-                choice("Game language",listOf("English","Français","Español"),languages.indexOf(language).coerceAtLeast(0)) { index->
+                choice("Game language",names,languages.indexOf(language).coerceAtLeast(0)) { index->
                     if(!NativeLibrary.setDekuiGameLanguage(languages[index])) {
                         error(IllegalStateException("Could not save the game language. Try selecting it again."))
                     }
@@ -484,9 +485,11 @@ class DekuiSettingsActivity : AppCompatActivity() {
             "Difficulty" -> difficulty()
             "Restoration Fixes" -> {
                 bool("Bombers don't approach automatically","disable_bomber_approach");bool("Activate owl statues with a sword","sword_activate_owls")
-                bool("Classic Song of Double Time","classic_double_time")
-                if (inGame) note("Classic saving can be changed from startup Settings.")
-                else bool("Classic saving","classic_saving")
+                if (!BuildConfig.EUR_PREVIEW) {
+                    bool("Classic Song of Double Time","classic_double_time")
+                    if (inGame) note("Classic saving can be changed from startup Settings.")
+                    else bool("Classic saving","classic_saving")
+                }
             }
             "Quality of Life" -> {
                 section("Link movement")
@@ -502,7 +505,7 @@ class DekuiSettingsActivity : AppCompatActivity() {
                 info("Build", BuildConfig.VERSION_CODE.toString())
             }
             "Data" -> {
-                val location = if (DekuiStorage.root(this) == DekuiStorage.sharedRoot()) "Internal storage/mm3dport"
+                val location = if (DekuiStorage.root(this) == DekuiStorage.sharedRoot()) "Internal storage/${DekuiStorage.sharedRoot().name}"
                     else "App storage"
                 info("Current data folder", location)
                 if (DekuiStorage.game(this).isFile) info("Game file", "Ready")
@@ -685,8 +688,11 @@ class DekuiSettingsActivity : AppCompatActivity() {
     }
     private fun controls() {
         section("Game prompts")
-        bool("Hide item menu button prompts","player_hud_hide_menu_prompts");bool("Single-screen game instructions","single_screen_text",true)
-        bool("Controller neutral item prompts","controller_neutral_item_prompts",true)
+        bool("Hide item menu button prompts","player_hud_hide_menu_prompts")
+        if (!BuildConfig.EUR_PREVIEW) {
+            bool("Single-screen game instructions","single_screen_text",true)
+            bool("Controller neutral item prompts","controller_neutral_item_prompts",true)
+        }
         section("Controller bindings")
         val labels=listOf("A","B","X","Y","Select","Start","Home","ZL / L2: targeting","ZR / R2: shield","L / L1: item I","R / R1: item II","D-pad up","D-pad down","D-pad left","D-pad right","Left stick vertical","Left stick horizontal","Right stick vertical","Right stick horizontal","D-pad vertical axis","D-pad horizontal axis","Pictograph Box")
         fun binding(index: Int) {

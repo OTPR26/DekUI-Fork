@@ -19,6 +19,7 @@
 #include "core/hw/aes/key.h"
 #include "core/hw/unique_data.h"
 #include "core/loader/loader.h"
+#include "mm3d/rom_region.h"
 #ifdef ENABLE_MM3D_PRESENTATION
 #include "mm3d/model_mod.h"
 #include "mm3d/sword_icon.h"
@@ -33,9 +34,9 @@ static const int kBlockSize = 0x200; ///< Size of ExeFS blocks (in bytes)
 u64 GetModId(u64 program_id) {
     constexpr u64 UPDATE_MASK = 0x0000000e'00000000;
     if ((program_id & 0x000000ff'00000000) == UPDATE_MASK) { // Apply the mods to updates
-        return program_id & ~UPDATE_MASK;
+        program_id &= ~UPDATE_MASK;
     }
-    return program_id;
+    return MM3D::RomRegion::PresentationAssetTitle(program_id);
 }
 
 /**

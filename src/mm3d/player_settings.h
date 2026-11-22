@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 #include <atomic>
+#include "mm3d/rom_region.h"
 namespace MM3D::PlayerSettings {
 // Render thread requests; the frontend applies/saves through its settings API.
 inline std::atomic<int> resolution{4}, volume{100}, vsync{1}, cache{1};
@@ -14,7 +15,10 @@ inline std::atomic<bool> startup_hint_requested{false};
 // Native CFG language IDs; requests are applied on the emulation thread.
 inline std::atomic<int> game_language{1}, set_game_language{-1};
 inline std::atomic<int> game_language_status{0}; // 0 idle, 1 pending, 2 saved, 3 failed
-inline constexpr bool SupportedLanguage(int value){return value==1||value==2||value==5;}
+inline bool SupportedLanguage(int value) {
+    return value == 1 || value == 2 || value == 5 ||
+           (RomRegion::EuropeanPreview() && (value == 3 || value == 4));
+}
 inline std::atomic<bool> fullscreen_shortcut{false}, textures_shortcut{false};
 inline std::atomic<bool> mod_setup_requested{false};
 inline std::atomic<bool> controls{false}, fullscreen{false}, quit{false}, about{false};

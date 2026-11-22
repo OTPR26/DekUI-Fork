@@ -1,13 +1,32 @@
 #!/usr/bin/env python3
 """Read-only local NCSD fingerprint. Emits metadata/hashes only; never extracts content.
 Offsets are from Azahar src/core/file_sys/ncch_container.h and .cpp at the recorded baseline.
-This is a candidate probe, NOT a revision whitelist or proof of an unmodified game.
+A regional fingerprint match records identification, never gameplay compatibility.
 """
 import argparse
 import hashlib
 import json
 from pathlib import Path
 import struct
+
+
+FINGERPRINT_FIELDS = (
+    'program_id', 'remaster_version', 'main_partition_bytes', 'main_partition_sha256',
+)
+FINGERPRINT_FILE = Path(__file__).resolve().parents[2] / 'resources/mm3d/supported-rom.json'
+
+
+def matches_fingerprint(actual, expected):
+    return all(actual[field] == expected[field] for field in FINGERPRINT_FIELDS)
+
+
+def identify(actual, manifest):
+    if matches_fingerprint(actual, manifest):
+        return {'region': 'USA', 'status': 'supported'}
+    for candidate in manifest.get('regional_candidates', []):
+        if matches_fingerprint(actual, candidate):
+            return {'region': candidate['region'], 'status': 'reference-only'}
+    return None
 
 
 def probe(path):
@@ -57,7 +76,10 @@ if __name__ == '__main__':
     parser.add_argument('rom', type=Path)
     args = parser.parse_args()
     try:
-        print(json.dumps(probe(args.rom), indent=2))
+        result = probe(args.rom)
+        manifest = json.loads(FINGERPRINT_FILE.read_text())
+        result['fingerprint_match'] = identify(result, manifest)
+        print(json.dumps(result, indent=2))
     except (OSError, ValueError) as error:
         # Avoid exposing local paths in output intended for sharing.
         parser.exit(1, f'Probe failed: {error.__class__.__name__}: '

@@ -13,7 +13,7 @@ import zipfile
 from package_deck import ROOT, SCRIPTS
 
 
-def package(bundle, output, python_archive, architecture='x64', strip_tool=None):
+def package(bundle, output, python_archive, architecture='x64', strip_tool=None, experimental_eur=False):
     verify_layout_policy(ROOT / 'resources/mm3d')
     if output.exists():
         raise ValueError('Refusing to overwrite package')
@@ -61,6 +61,9 @@ def package(bundle, output, python_archive, architecture='x64', strip_tool=None)
         notices = bundle / 'licenses'
         if notices.is_dir():
             shutil.copytree(notices, root / 'licenses/toolchain')
+        if experimental_eur:
+            shutil.copy2(ROOT / "resources/mm3d/release-docs/EUR-PREVIEW.md", root / "EUR-PREVIEW.md")
+            (root / "eur-preview").write_text("European Rev 1 preview\n", encoding="utf-8")
         output.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:
             for p in sorted(root.rglob('*')):
@@ -74,5 +77,6 @@ if __name__ == '__main__':
     parser.add_argument("--python-archive", type=Path, required=True)
     parser.add_argument('--architecture', choices=('x64', 'arm64'), default='x64')
     parser.add_argument('--strip-tool', type=Path)
+    parser.add_argument("--experimental-eur", action="store_true")
     args = parser.parse_args()
-    package(args.bundle, args.output, args.python_archive, args.architecture, args.strip_tool)
+    package(args.bundle, args.output, args.python_archive, args.architecture, args.strip_tool, args.experimental_eur)

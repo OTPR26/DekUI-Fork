@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Read the shared release version used by build scripts and CI artifact names."""
+import argparse
+import os
 from pathlib import Path
 import re
 
@@ -13,4 +15,8 @@ def version():
 
 
 if __name__ == '__main__':
-    print(version())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--artifact', action='store_true')
+    args = parser.parse_args()
+    suffix = '-EUR-Preview' if args.artifact and os.getenv('REMASKED_EXPERIMENTAL_EUR') == 'true' else ''
+    print(version() + suffix)

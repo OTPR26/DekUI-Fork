@@ -17,13 +17,15 @@ inline QString Prepare() {
     const auto helper=PackageRoot()+QStringLiteral("/tools/mm3d/graphical_setup.py");
     if(!QFileInfo::exists(helper))return QStringLiteral("Setup files are missing. Extract the entire Dekui download and keep the app beside its tools and resources folders.");
 #ifdef Q_OS_WIN
-    const auto python=Root()+QStringLiteral("/runtime/python/python.exe");
+    const auto python=PackageRoot()+QStringLiteral("/runtime/python/python.exe");
     if(!QFileInfo(python).isFile())return QStringLiteral("The bundled setup runtime is missing. Extract the complete Majora ReMasked ZIP again, keeping its runtime folder beside Majora-ReMasked.exe.");
 #elif defined(Q_OS_MACOS)
     const auto python=QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(QStringLiteral("../Resources/runtime/python/bin/python3"));
     if(!QFileInfo(python).isExecutable())return QStringLiteral("The bundled setup runtime is missing. Extract the complete Majora ReMasked ZIP again; do not remove files inside Majora ReMasked.app.");
 #else
-    const auto python=QStandardPaths::findExecutable(QStringLiteral("python3"));
+    const auto bundled=PackageRoot()+QStringLiteral("/runtime/tp-python/python/bin/python3");
+    const auto python=RomRegion::EuropeanPreview() && QFileInfo(bundled).isExecutable()
+        ? bundled : QStandardPaths::findExecutable(QStringLiteral("python3"));
     if(python.isEmpty())return QStringLiteral("Python 3.9 or newer is required for setup and resource checks.");
 #endif
     std::unique_ptr<QProgressDialog> progress;
@@ -54,7 +56,9 @@ inline QString Prepare() {
     });
     process.setWorkingDirectory(Root());
     QTimer::singleShot(0,&loop,[&]{
-        process.start(python,{QStringLiteral("-E"),QStringLiteral("-s"),QStringLiteral("-B"),helper,QStringLiteral("--root"),Root(),QStringLiteral("--rom"),rom,QStringLiteral("--in-place"),QStringLiteral("--reference-game"),QStringLiteral("--upgrade-existing")});
+        QStringList arguments{QStringLiteral("-E"),QStringLiteral("-s"),QStringLiteral("-B"),helper,QStringLiteral("--root"),Root(),QStringLiteral("--rom"),rom,QStringLiteral("--in-place"),QStringLiteral("--reference-game"),QStringLiteral("--upgrade-existing")};
+        if (RomRegion::EuropeanPreview()) arguments << QStringLiteral("--experimental-eur");
+        process.start(python, arguments);
     });
     loop.exec();
     return error;

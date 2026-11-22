@@ -17,9 +17,13 @@ cmake --build build-macos --parallel 3
 ctest --test-dir build-macos -C Release --output-on-failure
 cmake --build build-macos --target bundle --parallel 3
 python3 tools/mm3d/macos_python.py build-macos/python-runtime.tar.gz
-release_version=$(python3 tools/mm3d/release_version.py)
+release_version=$(python3 tools/mm3d/release_version.py --artifact)
 package_path="artifacts/Majora-ReMasked-${release_version}-macOS-arm64.zip"
+REMASKED_EUR_FLAG=
+if [[ "${REMASKED_EXPERIMENTAL_EUR:-false}" == true ]]; then
+    REMASKED_EUR_FLAG=1
+fi
 python3 tools/mm3d/package_macos.py build-macos/bundle/azahar.app "$package_path" \
-  --python-archive build-macos/python-runtime.tar.gz
+  --python-archive build-macos/python-runtime.tar.gz ${REMASKED_EUR_FLAG:+--experimental-eur}
 python3 tools/mm3d/macos/smoke_setup.py "$package_path"
 ccache -s

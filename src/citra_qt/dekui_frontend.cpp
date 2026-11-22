@@ -404,7 +404,7 @@ class SettingsDialog final : public QDialog {
             QDir(QCoreApplication::applicationDirPath())
                 .absoluteFilePath(QStringLiteral("../Resources/runtime/python/bin/python3"));
 #elif defined(Q_OS_WIN)
-        const QString python = Root() + QStringLiteral("/runtime/python/python.exe");
+        const QString python = GameFolder::PackageRoot() + QStringLiteral("/runtime/python/python.exe");
 #else
         const QString python =
             GameFolder::PackageRoot() + QStringLiteral("/runtime/tp-python/python/bin/python3");
@@ -510,7 +510,7 @@ class SettingsDialog final : public QDialog {
         const auto python = QDir(QCoreApplication::applicationDirPath())
             .absoluteFilePath(QStringLiteral("../Resources/runtime/python/bin/python3"));
 #elif defined(Q_OS_WIN)
-        const auto python = Root() + QStringLiteral("/runtime/python/python.exe");
+        const auto python = GameFolder::PackageRoot() + QStringLiteral("/runtime/python/python.exe");
 #else
         const auto python = GameFolder::PackageRoot() +
             QStringLiteral("/runtime/tp-python/python/bin/python3");
@@ -845,11 +845,18 @@ class SettingsDialog final : public QDialog {
         Heading(box, page);
         if (page == QStringLiteral("General")) {
             const int language = DesktopImport::GameLanguage();
+            QStringList languages{QStringLiteral("English"), QStringLiteral("Français"),
+                                  QStringLiteral("Español")};
+            std::vector<int> language_ids{1, 2, 5};
+            if (RomRegion::EuropeanPreview()) {
+                languages << QStringLiteral("Deutsch") << QStringLiteral("Italiano");
+                language_ids.insert(language_ids.end(), {3, 4});
+            }
+            const auto current = std::find(language_ids.begin(), language_ids.end(), language);
             Choice(QStringLiteral("Game language"),
-                   {QStringLiteral("English"), QStringLiteral("Français"), QStringLiteral("Español")},
-                   language == 2 ? 1 : language == 5 ? 2 : 0, [this](int index) {
-                       constexpr int languages[]{1, 2, 5};
-                       if (!DesktopImport::SetGameLanguage(languages[index])) {
+                   languages, current == language_ids.end() ? 0 : int(current - language_ids.begin()),
+                   [this, language_ids](int index) {
+                       if (!DesktopImport::SetGameLanguage(language_ids.at(index))) {
                            QMessageBox::warning(this, QStringLiteral("Game language"),
                                                 QStringLiteral("Could not save the game language. Try selecting it again."));
                            Render();
@@ -889,7 +896,7 @@ class SettingsDialog final : public QDialog {
             Note(box, QStringLiteral("MM3D ROM: ") + GameFolder::Rom());
             Button(box, QStringLiteral("Choose MM3D ROM"), [this] {
                 const auto file = QFileDialog::getOpenFileName(
-                    this, QStringLiteral("Select your decrypted MM3D USA Rev 1 ROM"), {},
+                    this, GameFolder::MissingGameMessage(), {},
                     QStringLiteral("Game-card dumps (*.3ds *.cci)"));
                 if (!file.isEmpty()) {
                     SetPreference(QStringLiteral("mm_rom"), file);
@@ -901,6 +908,8 @@ class SettingsDialog final : public QDialog {
                  QStringLiteral(
                      "Settings save as you change them and are shared with the in-game menu."));
 #ifdef Q_OS_MACOS
+        } else if (page == QStringLiteral("Data") && RomRegion::EuropeanPreview()) {
+            Note(box, QStringLiteral("EUR preview saves are stored locally in a separate folder."));
         } else if (page == QStringLiteral("Data")) {
             auto* drive = new QCheckBox(QStringLiteral("Sync saves with iCloud Drive"));
             drive->setChecked(Read(PrefsPath()).value(QStringLiteral("icloud_sync_saves")).toBool());
@@ -952,10 +961,12 @@ class SettingsDialog final : public QDialog {
         else if (page == QStringLiteral("Controls")) {
             Bool(QStringLiteral("Hide item menu button prompts"),
                  QStringLiteral("player_hud_hide_menu_prompts"));
-            Bool(QStringLiteral("Single-screen game instructions"),
-                 QStringLiteral("single_screen_text"), true);
-            Bool(QStringLiteral("Controller neutral item prompts"),
-                 QStringLiteral("controller_neutral_item_prompts"), true);
+            if (!RomRegion::EuropeanPreview()) {
+                Bool(QStringLiteral("Single-screen game instructions"),
+                     QStringLiteral("single_screen_text"), true);
+                Bool(QStringLiteral("Controller neutral item prompts"),
+                     QStringLiteral("controller_neutral_item_prompts"), true);
+            }
             DesktopImport::BindingControls(box, this);
         } else if (page == QStringLiteral("Audio")) {
             Bool(QStringLiteral("Accurate HLE audio"), QStringLiteral("accurate_hle_audio"), true);
@@ -987,15 +998,18 @@ class SettingsDialog final : public QDialog {
                      {QStringLiteral("Increase purchase prices and fees"),
                       QStringLiteral("double_prices")}})
                 Bool(item.first, item.second);
-            Number(QStringLiteral("Price multiplier"), QStringLiteral("price_multiplier"), 2, 2, 3);
+            if (!RomRegion::EuropeanPreview())
+                Number(QStringLiteral("Price multiplier"), QStringLiteral("price_multiplier"), 2, 2, 3);
         } else if (page == QStringLiteral("Restoration Fixes")) {
             Bool(QStringLiteral("Bombers don’t approach automatically"),
                  QStringLiteral("disable_bomber_approach"));
             Bool(QStringLiteral("Activate owl statues with a sword"),
                  QStringLiteral("sword_activate_owls"));
-            Bool(QStringLiteral("Classic Song of Double Time"),
-                 QStringLiteral("classic_double_time"));
-            Bool(QStringLiteral("Classic saving"), QStringLiteral("classic_saving"));
+            if (!RomRegion::EuropeanPreview()) {
+                Bool(QStringLiteral("Classic Song of Double Time"),
+                     QStringLiteral("classic_double_time"));
+                Bool(QStringLiteral("Classic saving"), QStringLiteral("classic_saving"));
+            }
             Note(box, QStringLiteral("These options change gameplay and saving rules."));
         } else if (page == QStringLiteral("Quality of life")) {
             Number(QStringLiteral("Walk speed (x)"), QStringLiteral("walk_speed"), 1, .5, 3, .25);
@@ -1206,7 +1220,7 @@ public:
                    [this, launch = std::move(launch)] {
                        if (GameFolder::Rom().isEmpty()) {
                            const auto file = QFileDialog::getOpenFileName(
-                               this, QStringLiteral("Select your decrypted MM3D USA Rev 1 ROM"), {},
+                               this, GameFolder::MissingGameMessage(), {},
                                QStringLiteral("Game-card dumps (*.3ds *.cci)"));
                            if (file.isEmpty())
                                return;
@@ -1309,7 +1323,8 @@ void OpenCloudSettings(QWidget* parent, bool running) {
 
 void SyncCloudSaves(QWidget* parent, bool manual) {
     using namespace DesktopCloud;
-    if (!Read(PrefsPath()).value(QStringLiteral("icloud_sync_saves")).toBool())
+    if (RomRegion::EuropeanPreview() ||
+        !Read(PrefsPath()).value(QStringLiteral("icloud_sync_saves")).toBool())
         return;
 
     auto result = Sync(GameFolder::User());
