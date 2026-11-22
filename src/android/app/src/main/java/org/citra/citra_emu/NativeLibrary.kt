@@ -112,7 +112,7 @@ object NativeLibrary {
     external fun pollDekuiSettings(): IntArray?
 
     external fun updateDekuiAndroidUi(bindings: Array<String>, textures: String, status: String,
-        capture: Int, touch: Boolean, opacity: Int, scale: Int, haptics: Boolean)
+        capture: Int, touch: Boolean, opacity: Int, scale: Int, haptics: Boolean, castLayout: Int)
     external fun dekuiScrollbarCenter(x: Float, y: Float): Float
     external fun onDekuiMenuKey(key: Int, down: Boolean)
     external fun requestDekuiPictograph()
@@ -121,6 +121,8 @@ object NativeLibrary {
     external fun onDekuiScroll(x: Float, y: Float, amount: Float)
 
     external fun setReMaskedTouchHud(anchors: FloatArray, enabled: Boolean)
+    external fun getReMaskedTouchStartKey(): Int
+    external fun requestDekuiSettingsReload()
     external fun closeDekuiSettings()
     external fun hasDekuiSettings(): Boolean
     external fun openDekuiSettings(): Boolean
@@ -202,6 +204,8 @@ object NativeLibrary {
     // Second window
     external fun secondarySurfaceChanged(secondary_surface: Surface)
     external fun secondarySurfaceDestroyed()
+    external fun setReMaskedCastMode(mode: Int)
+    external fun getReMaskedCastTouchBounds(): FloatArray?
 
     /**
      * Unpauses emulation from a paused state.

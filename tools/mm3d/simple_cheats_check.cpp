@@ -21,6 +21,20 @@ Memory Fixture() {
 int main(int argc,char** argv) {
     auto m=Fixture();Reset();const auto initial=m.words;
     Tick(m,true);assert(ready&&m.words==initial);
+#ifdef __ANDROID__
+    assert(gameplay_context);
+    assert(TouchStartUsesItems());
+    RecordTitleFrame();assert(!TouchStartUsesItems());
+    title_frame=0;assert(TouchStartUsesItems());
+    auto transitions=Fixture();
+    transitions.words[0x910013c]=0x0400; // Scene still owns the pause UI.
+    Tick(transitions,true);assert(gameplay_context&&!ready);
+    transitions.words[0x910013c]=0x0102; // Startup.
+    Tick(transitions,true);assert(!gameplay_context);
+    Tick(m,true);assert(gameplay_context);
+    Tick(m,false);assert(!gameplay_context);
+    Tick(m,true);Reset();assert(!gameplay_context);
+#endif
     for(int bad=0;bad<5;++bad) {
         m=Fixture();Reset();Queue(Rupees500);continuous=511;
         if(bad==1)m.words[Guards[0].first]^=1;

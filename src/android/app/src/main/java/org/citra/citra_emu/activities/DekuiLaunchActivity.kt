@@ -28,6 +28,13 @@ class DekuiLaunchActivity : AppCompatActivity() {
     private val picker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) importGame(uri)
     }
+    private val settings = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == RESULT_OK &&
+            result.data?.getStringExtra(DekuiSettingsActivity.GAME_ACTION) == DekuiSettingsActivity.CHOOSE_ROM &&
+            !game.isFile) {
+            picker.launch(arrayOf("*/*"))
+        }
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prepareSharedStorage()
@@ -81,7 +88,6 @@ class DekuiLaunchActivity : AppCompatActivity() {
     private fun buildLauncher() {
         val density=resources.displayMetrics.density
         fun dp(value: Int)=(value*density).toInt()
-        val light=android.graphics.Color.rgb(242,242,242)
         val dim=android.graphics.Color.rgb(204,204,204)
         val purple=android.graphics.Color.rgb(185,125,242)
         val bold=androidx.core.content.res.ResourcesCompat.getFont(this,org.citra.citra_emu.R.font.dekui_sans_bold)
@@ -100,19 +106,13 @@ class DekuiLaunchActivity : AppCompatActivity() {
         }
         frame.addView(pane,android.widget.FrameLayout.LayoutParams(
             (resources.displayMetrics.widthPixels*.69f).toInt(),-1,android.view.Gravity.END))
-        val titleLabel=TextView(this).apply {
-            text="A DekUI Fork";typeface=android.graphics.Typeface.create(normal,android.graphics.Typeface.ITALIC);textSize=16f;setTextColor(purple)
-            gravity=android.view.Gravity.END;letterSpacing=.07f
-            importantForAccessibility=android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        }
         val title=TextView(this).apply {
-            text="Majora ReMasked";typeface=bold;textSize=34f;setTextColor(light)
+            text="Majora ReMasked";typeface=bold;textSize=34f;setTextColor(android.graphics.Color.WHITE)
             gravity=android.view.Gravity.END;letterSpacing=.03f
             maxLines=1
             setAutoSizeTextTypeUniformWithConfiguration(22,34,1,android.util.TypedValue.COMPLEX_UNIT_SP)
         }
         pane.addView(title,LinearLayout.LayoutParams(-1,dp(52)))
-        pane.addView(titleLabel,LinearLayout.LayoutParams(-1,dp(24)))
         pane.addView(android.view.View(this),LinearLayout.LayoutParams(1,0,1f))
         fun menuButton(label: String, action: () -> Unit): Button {
             return Button(this).apply {
@@ -123,7 +123,7 @@ class DekuiLaunchActivity : AppCompatActivity() {
                 setPadding(dp(12),0,dp(12),0)
                 setTextColor(android.content.res.ColorStateList(
                     arrayOf(intArrayOf(android.R.attr.state_focused),intArrayOf(android.R.attr.state_pressed),intArrayOf()),
-                    intArrayOf(purple,purple,dim)))
+                    intArrayOf(purple,purple,android.graphics.Color.WHITE)))
                 val highlight=android.graphics.drawable.GradientDrawable(
                     android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
                     intArrayOf(android.graphics.Color.TRANSPARENT,0x33B97DF2)).apply { cornerRadius=dp(4).toFloat() }
@@ -140,15 +140,6 @@ class DekuiLaunchActivity : AppCompatActivity() {
                 if(game.isFile&&prefs.getBoolean("ready",false))openGame() else picker.launch(arrayOf("*/*"))
             }
             menuButton("Settings") { openSettings() }
-            menuButton("About") {
-                androidx.appcompat.app.AlertDialog.Builder(this)
-                    .setTitle("Majora ReMasked")
-                    .setMessage("A DekUI Fork\n\nMajora’s Mask 3D\n\n"+
-                        "Swipe from the left edge during play for settings.\n\n"+
-                        ""+
-                        org.citra.citra_emu.BuildConfig.VERSION_NAME)
-                    .setPositiveButton("Close",null).show()
-            }
             menuButton("Exit") { finishAndRemoveTask() }
         status=TextView(this).apply {
             typeface=normal;textSize=12f;setTextColor(dim);gravity=android.view.Gravity.END
@@ -220,7 +211,7 @@ class DekuiLaunchActivity : AppCompatActivity() {
         }
     }
     private fun openSettings(page: String="General") {
-        startActivity(Intent(this,DekuiSettingsActivity::class.java).putExtra("page",page))
+        settings.launch(Intent(this,DekuiSettingsActivity::class.java).putExtra("page",page))
     }
     private fun openGame() {
         if(org.citra.citra_emu.utils.DekuiAdultLinkSetup.generating || org.citra.citra_emu.utils.DekuiTwilightLinkSetup.generating) {

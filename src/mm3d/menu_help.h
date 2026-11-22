@@ -33,6 +33,7 @@ template<class M> bool GearChooseAvailable(M& m,U32 layout) {
 struct Hook {
     ItemsMapPrompt::Hook source;
     NotebookPrompt::Hook scratch;
+    bool direct_item_bumpers=false;
     template<class M> U32 Root(M& m,NativeInventory::Hook& inventory,U32 layout,U32 sp,U32 content,NativeItemPresent::Hook* present=nullptr) {
         scratch.frames.emplace_back();auto& frame=scratch.frames.back();
         const bool gear=LayoutNamed(m,layout,"MenuCollect");
@@ -47,8 +48,18 @@ struct Hook {
            std::find(inventory.routed.begin(),inventory.routed.end(),layout)==inventory.routed.end())return content;
         }
         auto& prompt=source.prompt;prompt.icon=prompt.text=0;prompt.texture=prompt.Parts(m);
-        std::string alphabet=present?"ChooseCancel":"Change tabChooseReturnEquip to IIZR +/";
-        for(const auto label:Labels)alphabet+=PromptText::Get(m,label);
+        const auto label = [&](unsigned row) {
+            std::string text(PromptText::Get(m,Labels[row]));
+            if (direct_item_bumpers && row >= 3) {
+                const auto roman = row == 3 ? std::string_view{" I"} : std::string_view{" II"};
+                if (text.ends_with(roman)) text.replace(text.size() - roman.size() + 1,
+                                                      roman.size() - 1, row == 3 ? "L" : "R");
+            }
+            return text;
+        };
+        std::string alphabet=present?"ChooseCancel":"Change tabChooseReturnEquip to II";
+        if(!present)alphabet+=direct_item_bumpers?"ZL / ZR":"ZR +/";
+        for(unsigned row=0;row<Labels.size();++row)alphabet+=label(row);
         alphabet+=PromptText::Get(m,"Cancel");
         source.Templates(m,inventory,layout,alphabet);
         if(!prompt.text&&source.description_panel==layout&&LayoutNamed(m,source.description,"MessageWindow"))
@@ -79,11 +90,11 @@ struct Hook {
                 if(height<=0||!std::isfinite(height))return false;
                 text_width+=width*12*ts/height;return true;
             };
-            for(auto label:Labels)if(!measure(label))return content;
-            if(!measure("/")||!measure("ZR +")||!measure("ZR +"))return content;
+            for(unsigned row=0;row<Labels.size();++row)if(!measure(label(row)))return content;
+            if (direct_item_bumpers ? !measure("ZL / ZR") :
+                (!measure("/") || !measure("ZR +") || !measure("ZR +"))) return content;
             const float available=std::max(1.f,(396.f-x)/scale);
-            // Six icons, eight text spans, nine internal gaps, four row gaps.
-            const float fixed=6*16*bs+9*inner;
+            const float fixed=(direct_item_bumpers?4:6)*16*bs+(direct_item_bumpers?5:9)*inner;
             gap=std::min(gap,std::max(0.f,(available-fixed-text_width)/4));
             if(text_width>0)ts*=std::min(1.f,std::max(1.f,available-fixed-4*gap)/text_width);
         }
@@ -144,10 +155,12 @@ struct Hook {
                 }px+=(pen*fs+inner)*s;return true;
             };
             if(present){if(!icon(row==0?112:128))return content;}
-            else if(row==0){if(!icon(176)||!text("/")||!icon(192))return content;}
-            else if(row<3){if(!icon(row==1?112:128))return content;}
+            else if(row==0){
+                if(direct_item_bumpers ? !text("ZL / ZR") : (!icon(176)||!text("/")||!icon(192)))return content;
+            }else if(row<3){if(!icon(row==1?112:128))return content;}
+            else if(direct_item_bumpers){if(!icon(row==3?176:192))return content;}
             else {if(!text("ZR +")||!icon(row==3?144:160))return content;}
-            if(!text(present?(row==0?"Choose":"Cancel"):Labels[row]))return content;
+            if(!text(present?(row==0?"Choose":"Cancel"):label(row)))return content;
             if(across)cursor_x=px+(gap-inner)*s;
             else cursor_y+=(row_height+gap)*s;
         }

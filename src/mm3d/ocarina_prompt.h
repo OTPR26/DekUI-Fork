@@ -10,7 +10,7 @@ inline std::atomic<bool> enabled{true};
 inline std::atomic<float> x{0},y{0},scale{1},icon_scale{1},spacing{22};
 inline std::atomic<unsigned> status{0};
 inline void Apply(const Options& o){enabled=o.enabled;x=o.x;y=o.y;scale=o.scale;icon_scale=o.icon_scale;spacing=o.spacing;}
-struct SinglePrompt { ButtonPose pose; U32 content_root; U32 arrow_texture=0; std::array<ButtonPose,3> elements{}; bool reverse=false; std::string_view label{}; U32 button_u=144; };
+struct SinglePrompt { ButtonPose pose; U32 content_root; U32 arrow_texture=0; std::array<ButtonPose,3> elements{}; bool reverse=false; std::string_view label{}; U32 button_u=144; std::string_view arrow_label{}; };
 struct PairPrompt { Options options; U32 content_root; std::array<std::string_view,2> labels; std::array<U32,2> buttons; };
 struct Hook {
     NotebookPrompt::Hook scratch;
@@ -105,7 +105,7 @@ struct Hook {
         for(U32 at=base-Size;at<sp;at+=4)if(!m.Read(at))return root;
         auto ig=m.Read(icon+0x28),tg=m.Read(text+0x28);if(!ig||!tg)return root;
         auto font=m.Read(*tg+0x28);if(!font||!Pointer(*font,0x14))return root;
-        const std::array<std::string_view,2> labels=pair?pair->labels:single?std::array<std::string_view,2>{flat?single->label:single->reverse?"Items":"Map",""}:map_mode?
+        const std::array<std::string_view,2> labels=pair?pair->labels:single?std::array<std::string_view,2>{flat?single->label:!single->arrow_label.empty()?single->arrow_label:single->reverse?"Items":"Map",""}:map_mode?
             std::array<std::string_view,2>{"Move cursor","Return"}:std::array<std::string_view,2>{"Songs",list_mode?"Back":"Cancel"};
         std::array<std::vector<NotebookFont::Glyph>,2> glyphs;
         float height=0,width=0;

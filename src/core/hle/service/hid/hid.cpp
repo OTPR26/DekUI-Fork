@@ -125,6 +125,11 @@ DirectionState GetStickDirectionState(s16 circle_pad_x, s16 circle_pad_y) {
 
 void Module::LoadInputDevices() {
     LOG_DEBUG(Frontend, "Loading input devices");
+#ifdef ENABLE_MM3D_GAME_FOLDER
+    const Common::ParamPackage select_binding(
+        Settings::values.current_input_profile.buttons[Settings::NativeButton::Start]);
+    desktop_select_to_settings = select_binding.Get("engine", "") == "sdl";
+#endif
     std::transform(Settings::values.current_input_profile.buttons.begin() +
                        Settings::NativeButton::BUTTON_HID_BEGIN,
                    Settings::values.current_input_profile.buttons.begin() +
@@ -243,6 +248,22 @@ void Module::UpdatePadCallback(std::uintptr_t user_data, s64 cycles_late) {
         state.select.Assign(buttons[Select - BUTTON_HID_BEGIN]->GetStatus());
         state.debug.Assign(buttons[Debug - BUTTON_HID_BEGIN]->GetStatus());
         state.gpio14.Assign(buttons[Gpio14 - BUTTON_HID_BEGIN]->GetStatus());
+
+#ifdef ENABLE_MM3D_GAME_FOLDER
+        // The Desktop controller profile binds physical Select to native Start.
+        // Intercept it before the guest sees the Notebook shortcut.
+        if (desktop_select_to_settings) {
+            const bool pressed = state.start;
+            if (pressed && state.r) {
+                // The minimap shortcut uses native Select with the right trigger.
+                state.select.Assign(1);
+            } else if (pressed && !desktop_select_held) {
+                MM3D::ToggleOverlayView(true);
+            }
+            desktop_select_held = pressed;
+            state.start.Assign(0);
+        }
+#endif
 
         // Get current circle pad position and update circle pad direction
         float circle_pad_x_f, circle_pad_y_f;

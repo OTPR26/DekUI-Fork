@@ -174,6 +174,12 @@ private:
     bool LoadROM(const QString& filename);
     void BootGame(const QString& filename);
     void ShutdownGame();
+#ifdef ENABLE_MM3D_GAME_FOLDER
+    void StartDesktopGame();
+    void ShowDesktopLauncher();
+    QWidget* desktop_launcher{};
+    bool desktop_launching{};
+#endif
 
 #ifdef ENABLE_DISCORD_RPC
     void SetDiscordEnabled(bool state);

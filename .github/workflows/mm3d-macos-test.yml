@@ -39,16 +39,6 @@ jobs:
         run: |
           set -o pipefail
           bash tools/mm3d/macos/build-ci.sh 2>&1 | tee macos-build.log
-      - name: Upload diagnostics
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: Majora-ReMasked-macOS-Diagnostics-${{ github.sha }}
-          path: |
-            macos-build.log
-            build-macos/CMakeFiles/CMakeConfigureLog.yaml
-            build-macos/Testing/Temporary/LastTest.log
-          if-no-files-found: ignore
       - name: Check package privacy
         run: python tools/mm3d/check_release_privacy.py artifacts/Majora-ReMasked-${{ steps.release.outputs.version }}-macOS-arm64.zip
       - uses: actions/upload-artifact@v7

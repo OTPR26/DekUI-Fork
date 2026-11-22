@@ -10,6 +10,9 @@
 #include "common/microprofile.h"
 #include "core/loader/loader.h"
 #include "video_core/pica/pica_core.h"
+#ifdef ENABLE_MM3D_PRESENTATION
+#include "mm3d/hud_texture_sampling.h"
+#endif
 #include "video_core/renderer_opengl/gl_rasterizer.h"
 #include "video_core/renderer_opengl/pica_to_gl.h"
 #include "video_core/renderer_opengl/renderer_opengl.h"
@@ -721,12 +724,14 @@ void RasterizerOpenGL::SyncTextureUnits(const Framebuffer* framebuffer) {
             }
         }
 
-        // Sync texture unit sampler
-        Sampler& sampler = res_cache.GetSampler(texture.config);
-        state.texture_units[texture_index].sampler = sampler.Handle();
-
-        // Bind the texture provided by the rasterizer cache
+        // Bind the texture and its sampler.
         Surface& surface = res_cache.GetTextureSurface(texture);
+        auto sample_config = texture.config;
+#ifdef ENABLE_MM3D_PRESENTATION
+        MM3D::ApplyHudTextureSampling(surface, sample_config);
+#endif
+        Sampler& sampler = res_cache.GetSampler(sample_config);
+        state.texture_units[texture_index].sampler = sampler.Handle();
         if (!IsFeedbackLoop(texture_index, framebuffer, surface)) {
             BindMaterial(texture_index, surface);
             state.texture_units[texture_index].texture_2d = surface.Handle();

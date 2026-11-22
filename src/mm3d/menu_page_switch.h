@@ -43,6 +43,13 @@ template<class M> std::optional<U32> Byte(M& m,U32 at) {
 inline U32 GearBackdropAlpha() {
     return std::bit_cast<U32>(GearMenu::enabled.load()?.75f:.5f);
 }
+constexpr U32 NotebookVtable=0x0063a3bc;
+template<class M> bool NotebookCodeMatches(M& m) {
+    return m.Read(0x005b49d0)==NotebookVtable &&
+           m.Read(NotebookVtable+0x1c)==0x005b4444 &&
+           m.Read(NotebookVtable+0x20)==0x005b475c &&
+           m.Read(NotebookVtable+0x24)==0x005b3ff8;
+}
 struct Hook {
     U32 context=0,source=0,target=0,target_vtable=0;
     unsigned opening_ticks=0,waiting_ticks=0;
@@ -78,6 +85,35 @@ struct Hook {
             if(owner&&state&&Pointer(*owner,0x188)&&*owner==*state)r[15]=0x5a6000;
         }
     }
+    template<class M> bool NotebookTurn(M& m,U32 ctx,U32 current,U32 game,U32 map,U32 pressed) {
+        // Android sends ZL/ZR as native trigger bits. Also accept the shoulder
+        // bits used by the pause-menu mapping, as on iOS.
+        constexpr U32 Left=0x4200,Right=0x8100;
+        const U32 edge=pressed&(Left|Right);
+        const auto notebook=m.Read(0x656b08);
+        const bool on_notebook=notebook && *notebook==current;
+        if((current==map||on_notebook)&&(edge&Left)&&(edge&Right))return true;
+        const bool forward=current==map && (edge&Right);
+        const bool back=on_notebook && (edge&Left);
+        if((!forward&&!back)||!notebook||!Pointer(*notebook,0x7b0)||
+           m.Read(*notebook)!=NotebookVtable||!NotebookCodeMatches(m))return false;
+        if(forward) {
+            const auto layout=m.Read(map+0x18);
+            if(!(m.Read(0x7751d8+0x1f8).value_or(0)&(1u<<18))||
+               Byte(m,map+0x78e)!=0||!layout||!LayoutNamed(m,*layout,"MenuMapDungeon"))
+                return false;
+        } else {
+            const auto layout=m.Read(*notebook+0x40);
+            const auto mode=m.Read(map+0x78c);
+            if(Byte(m,*notebook+0xc)!=0||!layout||!LayoutNamed(m,*layout,"MenuQuestlist")||!mode)
+                return false;
+            m.Write(map+0x78c,*mode&~0x00ff0000u);
+        }
+        // Notebook has its own capture lifetime and asynchronous open path.
+        m.Write(ctx+12,forward?*notebook:map);
+        m.Write(game+0x34,pressed&~edge);
+        return true;
+    }
     template<class M> void Tick(M& m,U32 ctx,bool retained_gear_scene=false) {
         if(context) {
             if(ctx!=context||++waiting_ticks>120) {*this={};return;}
@@ -99,8 +135,9 @@ struct Hook {
            !Pointer(*items,0xc4)||!Pointer(*masks,0xc4)||!Pointer(*gear,0x198)||!Pointer(*map,0x794)||
            m.Read(*items)!=ItemsVtable||m.Read(*masks)!=MasksVtable||
            m.Read(*gear)!=GearVtable||m.Read(*map)!=MapVtable)return;
-        // Gear <- Masks <-> Items -> Map. The middle pair remains native.
+        // Gear <- Masks <-> Items -> Map -> Notebook. The middle pair remains native.
         if(*pressed&0xc0f)return;
+        if(NotebookTurn(m,ctx,*current,*game,*map,*pressed))return;
         const U32 shoulder=*pressed&0x300;
         if((*current==*items&&shoulder==0x100)||(*current==*masks&&shoulder==0x200)) {
             // Native inventory accepts shoulders in both browsing (2) and

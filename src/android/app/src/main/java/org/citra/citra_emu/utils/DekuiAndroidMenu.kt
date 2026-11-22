@@ -123,6 +123,7 @@ object DekuiAndroidMenu {
     fun sync() {
         NativeLibrary.updateDekuiAndroidUi(keys.indices.map { bindingLabel(it) }.toTypedArray(),
             DekuiTextureStorage.description(),status,capture,EmulationMenuSettings.showOverlay,
-            prefs.getInt("controlOpacity",50),prefs.getInt("controlScale",50),EmulationMenuSettings.hapticFeedback)
+            prefs.getInt("controlOpacity",50),prefs.getInt("controlScale",50),EmulationMenuSettings.hapticFeedback,
+            org.citra.citra_emu.display.ReMaskedCast.mode(CitraApplication.appContext))
     }
 }

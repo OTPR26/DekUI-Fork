@@ -4,11 +4,15 @@
 #include <functional>
 #include <stdexcept>
 #include <QApplication>
+#include <QAbstractButton>
+#include <QAbstractSpinBox>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QDesktopServices>
+#include <QUrl>
 #include <QDoubleSpinBox>
 #include <QElapsedTimer>
 #include <QFileDialog>
@@ -43,6 +47,9 @@
 #include "citra_qt/dekui_frontend.h"
 #include "citra_qt/launcher_icon.h"
 #include "citra_qt/dekui_import.h"
+#ifdef Q_OS_MACOS
+#include "citra_qt/dekui_icloud.h"
+#endif
 #include "common/param_package.h"
 #include "common/scm_rev.h"
 #include "common/settings.h"
@@ -201,7 +208,10 @@ void Heading(QVBoxLayout* box, const QString& text) {
     label->setObjectName(QStringLiteral("Heading"));
     box->addWidget(label);
 }
-// Resolve logical buttons through the saved profile, rather than guessing Xbox/Nintendo.
+bool NavigateSettingsPane(QWidget* dialog, QWidget* target, int key);
+bool NavigateLauncher(QWidget* target, int key);
+
+// Resolve logical buttons through the saved controller profile.
 class MenuInput final : public QObject {
     QTimer timer;
     QElapsedTimer clock;
@@ -211,11 +221,14 @@ class MenuInput final : public QObject {
     QString signature;
 
 public:
-    MenuInput(QObject* parent) : QObject(parent) {
+    MenuInput(QWidget* launcher) : QObject(launcher) {
         clock.start();
-        connect(&timer, &QTimer::timeout, this, [this] {
-            auto* dialog = QApplication::activeModalWidget();
-            if (!dialog || dialog->property("dekuiMenu").toBool() == false)
+        connect(&timer, &QTimer::timeout, this, [this, launcher] {
+            auto* surface = QApplication::activeModalWidget();
+            if (!surface && launcher && launcher->isVisible() &&
+                QApplication::activeWindow() == launcher->window())
+                surface = launcher;
+            if (!surface || !surface->isEnabled() || !surface->property("dekuiMenu").toBool())
                 return;
             QSettings ini(DesktopImport::NativeSettingsPath(), QSettings::IniFormat);
             const int profile = ini.value(QStringLiteral("Controls/profile"), 0).toInt() + 1;
@@ -251,20 +264,47 @@ public:
                                     : i == 4           ? Qt::Key_Down
                                     : i == 5           ? Qt::Key_Left
                                                        : Qt::Key_Right;
-                    auto* target = QApplication::focusWidget();
-                    if (!target)
-                        target = dialog;
-                    if ((key == Qt::Key_Up || key == Qt::Key_Down) &&
-                        qobject_cast<QPushButton*>(target)) {
-                        QKeyEvent press(QEvent::KeyPress, Qt::Key_Tab,
-                                        key == Qt::Key_Up ? Qt::ShiftModifier : Qt::NoModifier);
-                        QApplication::sendEvent(target, &press);
+                    auto* target = QApplication::activePopupWidget();
+                    if (target) {
+                        if (auto* focused = QApplication::focusWidget();
+                            focused && (focused == target || target->isAncestorOf(focused))) {
+                            target = focused;
+                        }
                     } else {
-                        QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier),
-                            release(QEvent::KeyRelease, key, Qt::NoModifier);
-                        QApplication::sendEvent(target, &press);
-                        QApplication::sendEvent(target, &release);
+                        target = surface->focusWidget();
+                        if (!target)
+                            target = surface;
+                        if (NavigateLauncher(surface, key) ||
+                            NavigateSettingsPane(surface, target, key)) {
+                            previous[i] = down;
+                            continue;
+                        }
+                        if (key == Qt::Key_Return) {
+                            if (auto* button = qobject_cast<QAbstractButton*>(target)) {
+                                QTimer::singleShot(0, button, &QAbstractButton::click);
+                                previous[i] = down;
+                                continue;
+                            }
+                            if (auto* choice = qobject_cast<QComboBox*>(target)) {
+                                choice->showPopup();
+                                previous[i] = down;
+                                continue;
+                            }
+                        }
+                        if ((key == Qt::Key_Up || key == Qt::Key_Down) &&
+                            qobject_cast<QPushButton*>(target)) {
+                            QKeyEvent press(QEvent::KeyPress, Qt::Key_Tab,
+                                            key == Qt::Key_Up ? Qt::ShiftModifier
+                                                             : Qt::NoModifier);
+                            QApplication::sendEvent(target, &press);
+                            previous[i] = down;
+                            continue;
+                        }
                     }
+                    QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier);
+                    QKeyEvent release(QEvent::KeyRelease, key, Qt::NoModifier);
+                    QApplication::sendEvent(target, &press);
+                    QApplication::sendEvent(target, &release);
                 }
                 previous[i] = down;
             }
@@ -278,6 +318,7 @@ class SettingsDialog final : public QDialog {
     QVBoxLayout* box{};
     bool running;
     QString page = QStringLiteral("General");
+    QWidget* number_edit = nullptr;
     void Bool(const QString& label, const QString& key, bool fallback = false) {
         auto* c = new QCheckBox(label);
         c->setChecked(Presentation().value(key).toBool(fallback));
@@ -529,7 +570,8 @@ class SettingsDialog final : public QDialog {
             QStringLiteral(". Start the game to use it."));
         Render();
     }
-    void Mods() {
+    void Models() {
+        Heading(box, QStringLiteral("Appearance"));
         const auto data = Presentation();
         int model = data.value(QStringLiteral("pak_link_model")).toBool() ? 4
                     : data.value(QStringLiteral("twilight_link_model")).toBool() ? 3
@@ -858,17 +900,55 @@ class SettingsDialog final : public QDialog {
             Note(box,
                  QStringLiteral(
                      "Settings save as you change them and are shared with the in-game menu."));
+#ifdef Q_OS_MACOS
+        } else if (page == QStringLiteral("Data")) {
+            auto* drive = new QCheckBox(QStringLiteral("Sync saves with iCloud Drive"));
+            drive->setChecked(Read(PrefsPath()).value(QStringLiteral("icloud_sync_saves")).toBool());
+            box->addWidget(drive);
+            auto* sync = Button(box, QStringLiteral("Sync saves now"), [this] { SyncCloudSaves(this, true); });
+            sync->setEnabled(!running && drive->isChecked());
+            connect(drive, &QCheckBox::toggled, this, [this, sync](bool enabled) {
+                auto prefs = Read(PrefsPath());
+                prefs.insert(QStringLiteral("icloud_sync_saves"), enabled);
+                try {
+                    Write(PrefsPath(), prefs);
+                    sync->setEnabled(!running && enabled);
+                } catch (const std::exception& error) {
+                    QMessageBox::warning(this, QStringLiteral("iCloud Drive"), QString::fromUtf8(error.what()));
+                }
+            });
+            Button(box, QStringLiteral("Open ReMasked in iCloud Drive"), [this] {
+                const auto folder = DesktopCloud::DriveFolder();
+                if (folder.isEmpty() ||
+                    !QDesktopServices::openUrl(QUrl::fromLocalFile(folder))) {
+                    QMessageBox::information(this, QStringLiteral("iCloud Drive"),
+                        QStringLiteral("Enable iCloud Drive on this Mac and use the same Apple Account as your iPhone."));
+                }
+            });
+            Note(box, QStringLiteral("Uses the same folder as ReMasked on iPhone. Saves sync when you start or quit a game. Gameplay uses local copies."));
+#endif
         } else if (page == QStringLiteral("Graphics"))
             Graphics();
         else if (page == QStringLiteral("HUD"))
             Hud();
         else if (page == QStringLiteral("Touch")) {
+            QSettings ini(DesktopImport::NativeSettingsPath(), QSettings::IniFormat);
+            const int separate = int(Settings::LayoutOption::SeparateWindows);
+            const int single = int(Settings::LayoutOption::SingleScreen);
+            Choice(QStringLiteral("Screen layout"),
+                   {QStringLiteral("Single screen"), QStringLiteral("Separate windows")},
+                   ini.value(QStringLiteral("Layout/layout_option"), single).toInt() == separate,
+                   [separate, single](int value) {
+                       QSettings out(DesktopImport::NativeSettingsPath(), QSettings::IniFormat);
+                       out.setValue(QStringLiteral("Layout/layout_option"), value ? separate : single);
+                       out.setValue(QStringLiteral("Layout/layout_option/default"), false);
+                   });
             NativeBool(QStringLiteral("Swap screens"), QStringLiteral("Layout"),
                        QStringLiteral("swap_screen"), false);
             Note(box, QStringLiteral("Shows the game’s touchscreen. Use your mouse to interact "
                                      "with it, then turn Swap screens off to return to gameplay."));
-        } else if (page == QStringLiteral("Mods"))
-            Mods();
+        } else if (page == QStringLiteral("Models"))
+            Models();
         else if (page == QStringLiteral("Controls")) {
             Bool(QStringLiteral("Hide item menu button prompts"),
                  QStringLiteral("player_hud_hide_menu_prompts"));
@@ -908,7 +988,7 @@ class SettingsDialog final : public QDialog {
                       QStringLiteral("double_prices")}})
                 Bool(item.first, item.second);
             Number(QStringLiteral("Price multiplier"), QStringLiteral("price_multiplier"), 2, 2, 3);
-        } else if (page == QStringLiteral("Restoration")) {
+        } else if (page == QStringLiteral("Restoration Fixes")) {
             Bool(QStringLiteral("Bombers don’t approach automatically"),
                  QStringLiteral("disable_bomber_approach"));
             Bool(QStringLiteral("Activate owl statues with a sword"),
@@ -937,11 +1017,7 @@ class SettingsDialog final : public QDialog {
                      "Cheats require a loaded save. During gameplay, use the Cheats page in this "
                      "same settings menu; availability is checked against the running game."));
         else if (page == QStringLiteral("About"))
-            Note(
-                box,
-                QStringLiteral(
-                    "Majora ReMasked uses DekUI, Azahar, and Project Restoration. This is an "
-                    "emulator-based fork, not a recompilation. See bundled credits and licenses."));
+            Note(box, QStringLiteral("Majora ReMasked %1").arg(QString::fromUtf8(Common::g_build_version)));
         box->addStretch();
         // A setting can rebuild its own page from a widget signal. setWidget()
         // deletes the previous page immediately, invalidating the emitting
@@ -955,7 +1031,7 @@ class SettingsDialog final : public QDialog {
     }
 
 public:
-    SettingsDialog(QWidget* parent, bool active, bool open_mods = false)
+    SettingsDialog(QWidget* parent, bool active, const QString& initial_page = {})
         : QDialog(parent), running(active) {
         setProperty("dekuiMenu", true);
         setWindowTitle(QStringLiteral("Majora ReMasked / Settings"));
@@ -980,9 +1056,12 @@ public:
         for (const auto& name : QStringList{
                  QStringLiteral("General"), QStringLiteral("Controls"), QStringLiteral("Touch"),
                  QStringLiteral("Graphics"), QStringLiteral("Audio"), QStringLiteral("HUD"),
-                 QStringLiteral("Difficulty"), QStringLiteral("Restoration"),
-                 QStringLiteral("Quality of life"), QStringLiteral("Mods"),
-                 QStringLiteral("Cheats"), QStringLiteral("About")})
+                 QStringLiteral("Difficulty"), QStringLiteral("Restoration Fixes"),
+                 QStringLiteral("Quality of life"), QStringLiteral("Models"), QStringLiteral("About"),
+#ifdef Q_OS_MACOS
+                 QStringLiteral("Data"),
+#endif
+                 QStringLiteral("Cheats")})
             rail->addItem(name);
         body->addWidget(rail, 1);
         scroll = new QScrollArea;
@@ -993,11 +1072,81 @@ public:
             page = name;
             Render();
         });
-        rail->setCurrentRow(open_mods ? 9 : 0);
+        const auto match = rail->findItems(initial_page, Qt::MatchExactly);
+        connect(qApp, &QApplication::focusChanged, this,
+                [this](QWidget*, QWidget* now) {
+                    if (number_edit && now != number_edit)
+                        number_edit = nullptr;
+                });
+        rail->setCurrentRow(match.isEmpty() ? 0 : rail->row(match.front()));
+        rail->setFocus();
+    }
+
+    bool NavigatePane(QWidget* target, int key) {
+        auto* content = scroll->widget();
+        if (!content)
+            return false;
+        const bool in_rail = target == rail || rail->isAncestorOf(target);
+        const bool in_content = target == content || content->isAncestorOf(target);
+        if (in_content) {
+            if (auto* number = qobject_cast<QAbstractSpinBox*>(target)) {
+                if (key == Qt::Key_Return) {
+                    number_edit = number_edit == target ? nullptr : target;
+                    if (number_edit)
+                        number->selectAll();
+                    else
+                        number->interpretText();
+                    return true;
+                }
+                if (number_edit == target) {
+                    if (key == Qt::Key_Up || key == Qt::Key_Down) {
+                        if (key == Qt::Key_Up)
+                            number->stepUp();
+                        else
+                            number->stepDown();
+                        return true;
+                    }
+                    if (key == Qt::Key_Escape) {
+                        number->interpretText();
+                        number_edit = nullptr;
+                        return true;
+                    }
+                }
+            }
+        }
+        if (in_content && key == Qt::Key_Left) {
+            rail->setFocus(Qt::OtherFocusReason);
+            return true;
+        }
+
+        const bool enter = in_rail && (key == Qt::Key_Right || key == Qt::Key_Return);
+        const bool move = in_content && (key == Qt::Key_Up || key == Qt::Key_Down);
+        if (!enter && !move)
+            return false;
+        auto* start = enter ? content : target;
+        const auto next = [key](QWidget* widget) {
+            return key == Qt::Key_Up ? widget->previousInFocusChain() : widget->nextInFocusChain();
+        };
+        for (auto* candidate = next(start); candidate != start; candidate = next(candidate)) {
+            if (content->isAncestorOf(candidate) && candidate->isEnabled() &&
+                candidate->isVisibleTo(content) && (candidate->focusPolicy() & Qt::TabFocus)) {
+                candidate->setFocus(Qt::OtherFocusReason);
+                scroll->ensureWidgetVisible(candidate);
+                break;
+            }
+        }
+        return true;
     }
 };
-class Backdrop final : public QDialog {
+
+bool NavigateSettingsPane(QWidget* dialog, QWidget* target, int key) {
+    auto* settings = dynamic_cast<SettingsDialog*>(dialog);
+    return settings && settings->NavigatePane(target, key);
+}
+
+class Backdrop final : public QWidget {
     QPixmap image;
+    std::array<QPushButton*, 3> actions{};
 
 protected:
     void paintEvent(QPaintEvent*) override {
@@ -1018,31 +1167,43 @@ protected:
     }
 
 public:
-    Backdrop(QWidget* parent, bool open_mods)
-        : QDialog(parent), image(QStringLiteral(":/dekui/startup.png")) {
+    bool Navigate(int key) {
+        // At the launcher root, leaving the app is an explicit Exit action.
+        if (key == Qt::Key_Escape)
+            return true;
+        if (key != Qt::Key_Up && key != Qt::Key_Down && key != Qt::Key_Return)
+            return false;
+        const auto focused = std::ranges::find(actions, focusWidget());
+        if (key == Qt::Key_Return) {
+            auto* action = focused == actions.end() ? actions.front() : *focused;
+            QTimer::singleShot(0, action, &QAbstractButton::click);
+        } else {
+            const auto index = focused == actions.end() ? 0 : focused - actions.begin();
+            const auto step = key == Qt::Key_Up ? actions.size() - 1 : 1;
+            actions[(index + step) % actions.size()]->setFocus(Qt::OtherFocusReason);
+        }
+        return true;
+    }
+
+    Backdrop(QWidget* parent, std::function<void()> launch, std::function<void()> quit)
+        : QWidget(parent), image(QStringLiteral(":/dekui/startup.png")) {
         setProperty("dekuiMenu", true);
         setObjectName(QStringLiteral("Startup"));
-        setWindowTitle(QStringLiteral("Majora ReMasked"));
         setStyleSheet(QString::fromUtf8(Theme));
-        resize(1200, 720);
         auto* all = new QHBoxLayout(this);
         all->setContentsMargins(36, 30, 40, 32);
         all->addStretch(3);
         auto* menu = new QVBoxLayout;
-        auto* brand = new QLabel(QStringLiteral("A DekUI Fork"));
-        brand->setAlignment(Qt::AlignRight);
-        brand->setStyleSheet(QStringLiteral("color:#b97df2;font-style:italic;font-size:24px;"));
         auto* title = new QLabel(QStringLiteral("Majora ReMasked"));
         title->setAlignment(Qt::AlignRight);
         title->setStyleSheet(QStringLiteral("font-weight:bold;font-size:44px;"));
         menu->addWidget(title);
-        menu->addWidget(brand);
         menu->addStretch();
         auto* start =
             Button(menu,
                    GameFolder::Rom().isEmpty() ? QStringLiteral("Select ROM")
                                                : QStringLiteral("Start game"),
-                   [this] {
+                   [this, launch = std::move(launch)] {
                        if (GameFolder::Rom().isEmpty()) {
                            const auto file = QFileDialog::getOpenFileName(
                                this, QStringLiteral("Select your decrypted MM3D USA Rev 1 ROM"), {},
@@ -1051,19 +1212,14 @@ public:
                                return;
                            SetPreference(QStringLiteral("mm_rom"), file);
                        }
-                       accept();
+                       launch();
                    });
         start->setStyleSheet(
             QStringLiteral("text-align:right;font-size:28px;background:transparent;padding:14px;"));
-        Button(menu, QStringLiteral("Settings"), [this] { SettingsDialog(this, false).exec(); });
-        Button(menu, QStringLiteral("About"), [this] {
-            QMessageBox::information(
-                this, QStringLiteral("Majora ReMasked"),
-                QStringLiteral(
-                    "Majora ReMasked\nA DekUI Fork\n\nMajora’s Mask 3D\nBuilt on DekUI, Azahar and Project "
-                    "Restoration.\nYour game and optional OoT3D mod inputs are supplied by you."));
-        });
-        Button(menu, QStringLiteral("Quit"), [this] { reject(); });
+        auto* settings_action =
+            Button(menu, QStringLiteral("Settings"), [this] { SettingsDialog(this, false).exec(); });
+        auto* exit = Button(menu, QStringLiteral("Exit"), std::move(quit));
+        actions = {start, settings_action, exit};
         for (int i = 0; i < menu->count(); ++i)
             if (auto* button = qobject_cast<QPushButton*>(menu->itemAt(i)->widget())) {
                 button->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Preferred);
@@ -1071,30 +1227,34 @@ public:
                 button->setMinimumWidth(0);
                 button->setStyleSheet(QStringLiteral(
                     "QPushButton{text-align:right;font-size:26px;background:transparent;padding:"
-                    "12px 6px;border:0;} "
-                    "QPushButton:hover,QPushButton:focus{color:#d9b5ff;background:#291c38;}"));
+                    "12px 6px;border:0;color:#f2f2f2;} "
+                    "QPushButton:hover,QPushButton:focus{color:#f2f2f2;background:#3d1468;}"));
             }
         menu->addSpacing(20);
         all->addLayout(menu, 2);
-        auto* settings = new QShortcut(QKeySequence::Preferences, this);
-        connect(settings, &QShortcut::activated, this,
-                [this] { SettingsDialog(this, false).exec(); });
+        setFocusProxy(start);
         start->setFocus();
-        ApplyIcon(); // The startup window now exists, so publish its Windows taskbar properties.
-        if (open_mods)
-            QTimer::singleShot(0, this, [this] { SettingsDialog(this, false, true).exec(); });
     }
 };
+
+bool NavigateLauncher(QWidget* dialog, int key) {
+    auto* launcher = dynamic_cast<Backdrop*>(dialog);
+    return launcher && launcher->Navigate(key);
+}
 } // namespace
 void ApplySelectedIcon() {
     ApplyIcon();
 }
-bool Startup(QWidget* parent, bool open_mods) {
+QWidget* CreateLauncher(QWidget* parent, std::function<void()> start, std::function<void()> quit) {
     QFontDatabase::addApplicationFont(QStringLiteral(":/dekui/font.ttf"));
     DesktopImport::EnsureController();
+    auto* launcher = new Backdrop(parent, std::move(start), std::move(quit));
+    new MenuInput(launcher);
     ApplyIcon();
-    MenuInput input(qApp);
-    return Backdrop(parent, open_mods).exec() == QDialog::Accepted;
+    return launcher;
+}
+void OpenLauncherMods(QWidget* launcher) {
+    SettingsDialog(launcher, false, QStringLiteral("Models")).exec();
 }
 void RuntimeInput() {
     if (!presentation_available.load() || QApplication::activeModalWidget())
@@ -1126,7 +1286,9 @@ void RuntimeInput() {
     std::array<bool, 11> down{};
     for (int i = 0; i < 11; ++i)
         down[i] = devices[i] && devices[i]->GetStatus();
-    if (down[8] && down[9] && !(previous[8] && previous[9]))
+    const Common::ParamPackage select_binding(bindings[Settings::NativeButton::Start]);
+    if (select_binding.Get("engine", "") != "sdl" && down[8] && down[9] &&
+        !(previous[8] && previous[9]))
         ToggleOverlayView(true);
     if (overlay_visible.load()) {
         for (int i = 0; i < 7; ++i)
@@ -1140,6 +1302,33 @@ void RuntimeInput() {
     if (overlay_visible.load()) Pictograph::Cancel();
     previous = down;
 }
+#ifdef Q_OS_MACOS
+void OpenCloudSettings(QWidget* parent, bool running) {
+    SettingsDialog(parent, running, QStringLiteral("Data")).exec();
+}
+
+void SyncCloudSaves(QWidget* parent, bool manual) {
+    using namespace DesktopCloud;
+    if (!Read(PrefsPath()).value(QStringLiteral("icloud_sync_saves")).toBool())
+        return;
+
+    auto result = Sync(GameFolder::User());
+    if (result.conflict) {
+        QMessageBox choice(QMessageBox::Warning, QStringLiteral("iCloud save conflict"),
+                           result.message, QMessageBox::Cancel, parent);
+        auto* local = choice.addButton(QStringLiteral("Keep local"), QMessageBox::ActionRole);
+        auto* cloud = choice.addButton(QStringLiteral("Keep iCloud"), QMessageBox::ActionRole);
+        choice.exec();
+        if (choice.clickedButton() != local && choice.clickedButton() != cloud)
+            return;
+        result = Sync(GameFolder::User(), choice.clickedButton() == local ? Resolution::Local
+                                                                         : Resolution::Drive);
+    }
+    if (manual || !result.ok)
+        QMessageBox::information(parent, QStringLiteral("ReMasked iCloud Drive"), result.message);
+}
+#endif
+
 void Settings(QWidget* parent, bool running) {
     SettingsDialog(parent, running).exec();
 }

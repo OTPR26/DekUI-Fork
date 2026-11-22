@@ -386,6 +386,10 @@ private:
     Core::TimingEventType* gyroscope_update_event;
 
     std::atomic<bool> is_device_reload_pending{true};
+#ifdef ENABLE_MM3D_GAME_FOLDER
+    bool desktop_select_to_settings = false;
+    bool desktop_select_held = false;
+#endif
     std::array<std::unique_ptr<Input::ButtonDevice>, Settings::NativeButton::NUM_BUTTONS_HID>
         buttons;
     std::unique_ptr<Input::AnalogDevice> circle_pad;

@@ -875,32 +875,68 @@ struct Hook {
         return Transform(m,layout+8,writes,seen,{p.scale,0,0,p.scale,
             p.x+200.f*(1-p.scale),p.y+120.f*(1-p.scale)});
     }
+    template<class Memory> void HideFaceSlotLabels(Memory& m,U32 layout,std::vector<Write>& writes) {
+        if(!LayoutNamed(m,layout,"MenuItem")&&!LayoutNamed(m,layout,"MenuMask")&&
+           !LayoutNamed(m,layout,"ItemIconSet")&&!LayoutNamed(m,layout,"ItemIconSet2"))return;
+        std::vector<U32> seen,pending{layout+8};
+        while(!pending.empty()&&seen.size()<1024) {
+            const U32 pane=pending.back();
+            pending.pop_back();
+            if(!Pointer(pane,0x140)||std::find(seen.begin(),seen.end(),pane)!=seen.end())continue;
+            seen.push_back(pane);
+            const U32 owner=m.Read(pane+4).value_or(0);
+            if((Named(m,pane,"disp_x_pane")||Named(m,pane,"disp_y_pane"))&&
+               (LayoutNamed(m,owner,"ItemIconSet")||LayoutNamed(m,owner,"ItemIconSet2"))) {
+                if(const auto flags=m.Read(pane+0xd4);flags&&(*flags&1u))
+                    writes.push_back({pane+0xd4,*flags,*flags&~1u});
+            }
+            if(const auto embedded=m.Read(pane+0x20).value_or(0);Pointer(embedded,0x148)) {
+                pending.push_back(embedded+8);
+                continue;
+            }
+            const auto group=m.Read(pane+0x24).value_or(0xffff)&0xffff;
+            if(group!=0xffff) {
+                if(!Pointer(owner,0x14c))continue;
+                const auto count=m.Read(owner+0x148).value_or(0),list=m.Read(owner+0x144).value_or(0);
+                if(group<count&&count<=1024&&Pointer(list,count*4))
+                    if(const auto child=m.Read(list+group*4).value_or(0);Pointer(child,0x144))
+                        pending.push_back(child+4);
+                continue;
+            }
+            const auto count=m.Read(pane+0x18).value_or(0),list=m.Read(pane+0x14).value_or(0);
+            if(!count||count>256||!Pointer(list,count*4))continue;
+            for(U32 i=0;i<count;++i)pending.push_back(m.Read(list+i*4).value_or(0));
+        }
+    }
     template<class Memory> void Begin(Memory& m,U32 layout,bool widescreen=false) {
         frames.emplace_back();
+        auto& labels=frames.back();
+        HideFaceSlotLabels(m,layout,labels);
+        for(const auto& write:labels)m.Write(write.address,write.after);
         if(GearPhoto(m,layout)) {
             std::vector<Write> writes;
             if(!PrepareGearPhoto(m,layout,writes))return;
             for(const auto& w:writes)m.Write(w.address,w.after);
-            frames.back()=std::move(writes);return;
+            frames.back().insert(frames.back().end(),writes.begin(),writes.end());return;
         }
         if(widescreen&&pass==0&&LayoutNamed(m,layout,"UpCommonBG")) {
             std::vector<Write> writes;
             if(!PrepareMenuBackdrop(m,layout,writes)) return;
             for(const auto& w:writes) m.Write(w.address,w.after);
-            frames.back()=std::move(writes);
+            frames.back().insert(frames.back().end(),writes.begin(),writes.end());
             return;
         }
         if(layout==shadow_layout&&shadow_layout&&pass==background_pass) {
             std::vector<Write> writes;
             if(!PrepareShadow(m,shadow_draw++%2==1,writes))return;
             for(const auto& w:writes)m.Write(w.address,w.after);
-            frames.back()=std::move(writes);return;
+            frames.back().insert(frames.back().end(),writes.begin(),writes.end());return;
         }
         if(slide_active&&layout==transition_header&&pass<4) {
             std::vector<Write> writes;std::vector<U32> seen;
             if(!Transform(m,layout+8,writes,seen,{1,0,0,1,0,bar_slide_y-header_native_y}))return;
             for(const auto& w:writes)m.Write(w.address,w.after);
-            frames.back()=std::move(writes);return;
+            frames.back().insert(frames.back().end(),writes.begin(),writes.end());return;
         }
         const bool bg=layout==routed_background&&routed_background&&pass==background_pass;
         if(!bg&&(std::find(routed.begin(),routed.end(),layout)==routed.end() || (pass!=3 && pass!=5))) return;
@@ -908,13 +944,13 @@ struct Hook {
         if(bg&&background_draw<brown_shadow_steps) {
             if(!PrepareBrownShadow(m,layout,background_draw++,writes))return;
             for(const auto& w:writes)m.Write(w.address,w.after);
-            frames.back()=std::move(writes);return;
+            frames.back().insert(frames.back().end(),writes.begin(),writes.end());return;
         }
         upper_background=bg&&(inventory_page||gear)&&(background_draw++%2==1);
         const bool prepared=Prepare(m,layout,pass,writes);upper_background=false;
         if(!prepared) { status.store(4);return; }
         for(const auto& w:writes) m.Write(w.address,w.after);
-        frames.back()=std::move(writes);
+        frames.back().insert(frames.back().end(),writes.begin(),writes.end());
     }
     template<class M> U32 SubmittedInterpolationOwner(M& m,U32 manager,bool world_map_only=false) {
         if(!Pointer(manager,0x20))return 0;

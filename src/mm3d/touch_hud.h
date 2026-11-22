@@ -3,6 +3,7 @@
 #include <array>
 #include <cmath>
 #include <mutex>
+#include "mm3d/widescreen.h"
 #ifdef __ANDROID__
 #include <android/log.h>
 #endif
@@ -20,12 +21,13 @@ inline void Trace(unsigned slot,const char* stage,const Anchor& target,float a=0
 inline void Publish(const State& next){std::scoped_lock lock(mutex);current=next;}
 inline State Snapshot(){std::scoped_lock lock(mutex);return current;}
 inline Anchor Project(float x,float y,float diameter,float windowWidth,float windowHeight,
-                      float left,float top,float width,float height,bool){
+                      float left,float top,float width,float height,bool widescreen){
     if(width<=0||height<=0||windowWidth<=0||windowHeight<=0)return {};
-    // The game HUD uses a 400x240 orthographic projection even when the
-    // world camera is widescreen. Invert the actual top-screen viewport.
+    // Undo the viewport mapping and the renderer's centered clip compression
+    // so the game artwork lands on the Android overlay's button centers.
     constexpr float nativeWidth=400.f;
-    return {200.f+((x*windowWidth-left)/width-.5f)*nativeWidth,
+    const float horizontalScale=widescreen ? Widescreen::HorizontalScale : 1.f;
+    return {200.f+((x*windowWidth-left)/width-.5f)*nativeWidth/horizontalScale,
         (y*windowHeight-top)/height*240.f,diameter*windowWidth/height*240.f};
 }
 }

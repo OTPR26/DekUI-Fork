@@ -2,6 +2,9 @@
 #pragma once
 #include <array>
 #include <atomic>
+#ifdef __ANDROID__
+#include <chrono>
+#endif
 #include <cstdint>
 #include <optional>
 #include <utility>
@@ -38,12 +41,28 @@ inline constexpr std::array<Ammo,7> Ammunition{{
 }};
 inline std::atomic<U32> pending{0}, continuous{0};
 inline std::atomic<bool> ready{false};
+#ifdef __ANDROID__
+inline std::atomic<bool> gameplay_context{false};
+inline std::atomic<std::chrono::steady_clock::duration::rep> title_frame{0};
+inline void RecordTitleFrame() { title_frame=std::chrono::steady_clock::now().time_since_epoch().count(); }
+inline bool TouchStartUsesItems() {
+    const auto title = title_frame.load();
+    return gameplay_context.load() && (title==0 ||
+        std::chrono::steady_clock::now().time_since_epoch()-std::chrono::steady_clock::duration(title)>
+            std::chrono::milliseconds(500));
+}
+#endif
 enum class Availability { Waiting, Title, Code, Context, Health, SaveMemory, Available };
 inline std::atomic<Availability> availability{Availability::Waiting};
 inline std::atomic<U32> failed_address{0}, expected_word{0}, actual_word{0};
 inline std::atomic<bool> actual_readable{false};
 inline std::atomic<int> result{0}; // 0 idle, 1 applied, -1 not in a supported save.
-inline void Reset(){pending=0;continuous=0;ready=false;result=0;availability=Availability::Waiting;failed_address=0;expected_word=0;actual_word=0;actual_readable=false;}
+inline void Reset(){pending=0;continuous=0;ready=false;result=0;availability=Availability::Waiting;failed_address=0;expected_word=0;actual_word=0;actual_readable=false;
+#ifdef __ANDROID__
+    gameplay_context=false;
+    title_frame=0;
+#endif
+}
 inline void Queue(Action a){if(a<Count)pending.fetch_or(1u<<a);}
 inline constexpr std::array<std::pair<U32,U32>,7> Guards{{
     {0x4bfab4,0xe92d4ff0},{0x4bfabc,0xe1a04000},{0x4bfdbc,0x7752d8},
@@ -109,11 +128,12 @@ template<class M> void Tick(M& m,bool supported_title) {
             actual_word=actual.value_or(0);status=Availability::Code;break;
         }
     }
+    std::optional<U32> state;
     if(status==Availability::Available) {
         const auto context=m.Read(0x72f5c0);
         const auto game=context&&*context>=0x100000&&*context<=0x3ffff000&&!(*context&3)
             ?m.Read(*context+0x16c):std::optional<U32>{};
-        const auto state=game&&*game>=0x100000&&*game<=0x3ffff000&&!(*game&3)
+        state=game&&*game>=0x100000&&*game<=0x3ffff000&&!(*game&3)
             ?m.Read(*game+0x13c):std::optional<U32>{};
         if(!state||(*state&65535)!=0x0402)status=Availability::Context;
         else {
@@ -121,6 +141,11 @@ template<class M> void Tick(M& m,bool supported_title) {
             if(!health||*health<16||*health>320)status=Availability::Health;
         }
     }
+#ifdef __ANDROID__
+    // Gameplay and its pause pages share the scene state. Startup and
+    // file selection still need the original 3DS Start input.
+    gameplay_context=state && ((*state>>8)&255)==4;
+#endif
     // Preflight every save word used by these cheats before making any writes.
     if(status==Availability::Available)for(U32 at=0x775300;at<=0x7753d0;at+=4)
         if(!m.Read(at)){failed_address=at;status=Availability::SaveMemory;break;}

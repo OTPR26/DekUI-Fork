@@ -9,6 +9,10 @@
 #include "core/frontend/emu_window.h"
 #include "core/frontend/input.h"
 
+#if defined(ANDROID) && defined(ENABLE_MM3D_PRESENTATION)
+#include "mm3d/android_cast.h"
+#endif
+
 namespace Frontend {
 /// We need a global touch state that is shared across the different window instances
 static std::weak_ptr<EmuWindow::TouchState> global_touch_state;
@@ -209,6 +213,21 @@ void EmuWindow::TouchMoved(unsigned framebuffer_x, unsigned framebuffer_y) {
 }
 
 void EmuWindow::UpdateCurrentFramebufferLayout(u32 width, u32 height, bool is_portrait_mode) {
+#if defined(ANDROID) && defined(ENABLE_MM3D_PRESENTATION)
+    const int cast_mode = MM3D::AndroidCast::mode.load();
+    if (cast_mode != MM3D::AndroidCast::Off && width > 0 && height > 0) {
+        auto cast_layout = Layout::SingleFrameLayout(width, height, !is_secondary, false);
+        cast_layout.render_3d_mode = Settings::StereoRenderOption::Off;
+        if (!is_secondary && cast_mode == MM3D::AndroidCast::SingleScreen) {
+            cast_layout.bottom_screen_enabled = false;
+        } else if (!is_secondary) {
+            const auto [x, y, w, h] = MM3D::AndroidCast::LowerScreenBounds(width, height);
+            cast_layout.bottom_screen = {x, y, x + w, y + h};
+        }
+        NotifyFramebufferLayoutChanged(cast_layout);
+        return;
+    }
+#endif
     Layout::FramebufferLayout layout;
     const Settings::LayoutOption layout_option = Settings::values.layout_option.GetValue();
     const Settings::StereoRenderOption stereo_option = get3DMode();

@@ -20,6 +20,12 @@ public:
     /// Called by the onSurfaceChanges() method to change the surface
     bool OnSurfaceChanged(ANativeWindow* surface);
 
+#ifdef ENABLE_MM3D_PRESENTATION
+    static int ReMaskedCastMode();
+    static void SetReMaskedCastMode(int mode);
+    void RefreshReMaskedCastLayout() { OnFramebufferSizeChanged(); }
+#endif
+
     /// Handles touch event that occur.(Touched or released)
     bool OnTouchEvent(int x, int y, bool pressed);
 

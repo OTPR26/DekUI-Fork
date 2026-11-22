@@ -525,22 +525,21 @@ GMainWindow::GMainWindow(Core::System& system_)
     auto* settings_action=dekui_menu->addAction(tr("Settings…"));
     settings_action->setMenuRole(QAction::PreferencesRole);
     settings_action->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Comma));
-    connect(settings_action,&QAction::triggered,this,[]{MM3D::ToggleOverlayView(true);});
+    connect(settings_action, &QAction::triggered, this, [this] {
+        if (emulation_running)
+            MM3D::ToggleOverlayView(true);
+        else if (!desktop_launching)
+            MM3D::DesktopFrontend::Settings(this, false);
+    });
     auto* quit_action=dekui_menu->addAction(tr("Quit"));
     quit_action->setMenuRole(QAction::QuitRole);
     connect(quit_action,&QAction::triggered,this,&QWidget::close);
     ui->menubar->show();
-    // Startup has already loaded the user's selected icon. Keep it when the
-    // gameplay windows replace the startup dialog, including the second screen.
-    MM3D::DesktopFrontend::ApplySelectedIcon();
     ui->action_Show_Status_Bar->setChecked(false);
     statusBar()->hide();
-
-    game_list->hide();
-    game_list_placeholder->hide();
-    game_path = MM3D::GameFolder::Rom();
-#endif
+#else
     show();
+#endif
 
 #if defined(__APPLE__) && !defined(ENABLE_MM3D_GAME_FOLDER)
     if (AppleUtils::IsRunningFromTerminal()) {
@@ -588,9 +587,16 @@ GMainWindow::GMainWindow(Core::System& system_)
     physical_devices = GetVulkanPhysicalDevices();
 #endif
 
+#ifdef ENABLE_MM3D_GAME_FOLDER
+    desktop_launcher = MM3D::DesktopFrontend::CreateLauncher(
+        this, [this] { StartDesktopGame(); }, [this] { close(); });
+    ui->horizontalLayout->addWidget(desktop_launcher);
+    ShowDesktopLauncher();
+#else
     if (!game_path.isEmpty()) {
         BootGame(game_path);
     }
+#endif
 }
 
 GMainWindow::~GMainWindow() {
@@ -1339,6 +1345,14 @@ void GMainWindow::ConnectWidgetEvents() {
             } else if(action==MM3D::AndroidMenu::SwapScreens){
                 Settings::values.swap_screen.SetGlobal(true);Settings::values.swap_screen=value!=0;
                 system.ApplySettings();config->Save();UpdateUISettings();
+            } else if(action==MM3D::AndroidMenu::SeparateWindows){
+                Settings::values.layout_option.SetGlobal(true);
+                Settings::values.layout_option=value?Settings::LayoutOption::SeparateWindows:Settings::LayoutOption::SingleScreen;
+                system.ApplySettings();config->Save();UpdateSecondaryWindowVisibility();
+#ifdef Q_OS_MACOS
+            } else if(action==MM3D::AndroidMenu::CloudSaves){
+                MM3D::DesktopFrontend::OpenCloudSettings(this,emulation_running);
+#endif
             } else if(action==MM3D::AndroidMenu::Textures||action==MM3D::AndroidMenu::ClearTextures){
                 try{MM3D::DesktopImport::ChooseTextures(this,action==MM3D::AndroidMenu::ClearTextures);}
                 catch(const std::exception& error){QMessageBox::warning(this,tr("Textures"),QString::fromUtf8(error.what()));}
@@ -1346,7 +1360,12 @@ void GMainWindow::ConnectWidgetEvents() {
             render_window->setFocus();
         }
         if(controller_ticks%15==0)MM3D::DesktopImport::RefreshBindings();
-        {std::scoped_lock lock{MM3D::AndroidMenu::mutex};MM3D::AndroidMenu::state.touch=Settings::values.swap_screen.GetValue();}
+        {
+            std::scoped_lock lock{MM3D::AndroidMenu::mutex};
+            MM3D::AndroidMenu::state.touch=Settings::values.swap_screen.GetValue();
+            MM3D::AndroidMenu::state.separate_windows =
+                Settings::values.layout_option.GetValue()==Settings::LayoutOption::SeparateWindows;
+        }
 #endif
         using namespace MM3D::PlayerSettings;
         ApplyPending(Settings::values, [&] { system.ApplySettings(); },
@@ -1440,19 +1459,10 @@ void GMainWindow::ConnectWidgetEvents() {
         if(quit.exchange(false)) {
 #ifdef ENABLE_MM3D_GAME_FOLDER
             // The overlay confirmation explicitly warns about unsaved progress.
-            qApp->setQuitOnLastWindowClosed(false);
-            config->Save();ShutdownGame();game_list->hide();game_list_placeholder->hide();
-            bool open_mods=mod_setup_requested.exchange(false),started=false;
-            while(MM3D::DesktopFrontend::Startup(this,open_mods)) {
-                open_mods=false;
-                auto error=MM3D::GameFolder::Prepare();if(error.isEmpty())error=MM3D::GameFolder::Validate();
-                if(!error.isEmpty()){QMessageBox::warning(this,tr("Game setup"),error);continue;}
-                try{MM3D::DesktopImport::ApplyPendingSettings();}
-                catch(const std::exception& failure){QMessageBox::warning(this,tr("Settings"),QString::fromUtf8(failure.what()));continue;}
-                config->Reload();system.ApplySettings();BootGame(MM3D::GameFolder::Rom());started=true;break;
-            }
-            qApp->setQuitOnLastWindowClosed(true);
-            if(!started){const QScopedValueRollback<bool> confirmed{close_already_confirmed,true};close();}
+            config->Save();
+            ShutdownGame();
+            if (mod_setup_requested.exchange(false))
+                MM3D::DesktopFrontend::OpenLauncherMods(desktop_launcher);
 #else
             const QScopedValueRollback<bool> confirmed{close_already_confirmed,true};close();
 #endif
@@ -1829,6 +1839,42 @@ bool GMainWindow::LoadROM(const QString& filename) {
     return true;
 }
 
+#ifdef ENABLE_MM3D_GAME_FOLDER
+void GMainWindow::ShowDesktopLauncher() {
+    game_list->hide();
+    game_list_placeholder->hide();
+    desktop_launcher->setEnabled(true);
+    desktop_launcher->show();
+    desktop_launcher->setFocus();
+}
+
+void GMainWindow::StartDesktopGame() {
+    if (desktop_launching || emulation_running)
+        return;
+    const QScopedValueRollback<bool> launching(desktop_launching, true);
+    desktop_launcher->setEnabled(false);
+    auto error = MM3D::GameFolder::Prepare();
+    if (error.isEmpty())
+        error = MM3D::GameFolder::Validate();
+    if (error.isEmpty()) {
+        try {
+            MM3D::DesktopImport::ApplyPendingSettings();
+        } catch (const std::exception& failure) {
+            error = QString::fromUtf8(failure.what());
+        }
+    }
+    if (!error.isEmpty()) {
+        QMessageBox::warning(this, tr("ReMasked game setup"), error);
+    } else {
+        config->Reload();
+        system.ApplySettings();
+        BootGame(MM3D::GameFolder::Rom());
+    }
+    if (!emulation_running)
+        ShowDesktopLauncher();
+}
+#endif
+
 void GMainWindow::BootGame(const QString& filename) {
 #ifdef ENABLE_MM3D_PRESENTATION
     MM3D::PlayerSettings::startup_hint_requested.store(false);
@@ -1847,6 +1893,11 @@ void GMainWindow::BootGame(const QString& filename) {
     if (emu_thread) {
         ShutdownGame();
     }
+
+#if defined(ENABLE_MM3D_GAME_FOLDER) && defined(Q_OS_MACOS)
+    if (!emu_thread)
+        MM3D::DesktopFrontend::SyncCloudSaves(this);
+#endif
 
     const bool is_artic = filename.startsWith(QString::fromStdString("articbase:/")) ||
                           filename.startsWith(QString::fromStdString("articinio:/")) ||
@@ -1916,7 +1967,8 @@ void GMainWindow::BootGame(const QString& filename) {
     Settings::values.swap_screen.SetGlobal(true);
 
     Settings::values.layout_option.SetGlobal(true);
-    Settings::values.layout_option=Settings::LayoutOption::SingleScreen;
+    if (Settings::values.layout_option.GetValue()!=Settings::LayoutOption::SeparateWindows)
+        Settings::values.layout_option=Settings::LayoutOption::SingleScreen;
     Settings::values.graphics_api.SetGlobal(true);
     Settings::values.graphics_api=Settings::GraphicsAPI::Vulkan;
 #endif
@@ -1963,6 +2015,18 @@ void GMainWindow::BootGame(const QString& filename) {
 
     // Create and start the emulation thread
     emu_thread = std::make_unique<EmuThread>(system, *render_window);
+#ifdef ENABLE_MM3D_GAME_FOLDER
+    connect(emu_thread.get(), &EmuThread::LoadProgress, this,
+            [this](VideoCore::LoadCallbackStage stage, std::size_t, std::size_t,
+                   const std::string&) {
+                if (stage != VideoCore::LoadCallbackStage::Complete || !emulation_running)
+                    return;
+                desktop_launcher->hide();
+                render_window->show();
+                render_window->setFocus();
+            },
+            Qt::QueuedConnection);
+#endif
     emit EmulationStarting(emu_thread.get());
     emu_thread->start();
 
@@ -1982,12 +2046,14 @@ void GMainWindow::BootGame(const QString& filename) {
     connect(emu_thread.get(), &EmuThread::DebugModeLeft, waitTreeWidget,
             &WaitTreeWidget::OnDebugModeLeft, Qt::BlockingQueuedConnection);
 
-    connect(emu_thread.get(), &EmuThread::LoadProgress, loading_screen,
-            &LoadingScreen::OnLoadProgress, Qt::QueuedConnection);
     connect(emu_thread.get(), &EmuThread::SwitchDiskResources, this,
             &GMainWindow::OnSwitchDiskResources, Qt::QueuedConnection);
+#ifndef ENABLE_MM3D_GAME_FOLDER
+    connect(emu_thread.get(), &EmuThread::LoadProgress, loading_screen,
+            &LoadingScreen::OnLoadProgress, Qt::QueuedConnection);
     connect(emu_thread.get(), &EmuThread::HideLoadingScreen, loading_screen,
             &LoadingScreen::OnLoadComplete);
+#endif
 
     // Update the GUI
     registersWidget->OnDebugModeEntered();
@@ -2002,8 +2068,10 @@ void GMainWindow::BootGame(const QString& filename) {
         setMouseTracking(true);
     }
 
+#ifndef ENABLE_MM3D_GAME_FOLDER
     loading_screen->Prepare(system.GetAppLoader());
     loading_screen->show();
+#endif
 
     emulation_running = true;
     if (ui->action_Fullscreen->isChecked()) {
@@ -2080,12 +2148,16 @@ void GMainWindow::ShutdownGame() {
     loading_screen->hide();
     loading_screen->Clear();
 
+#ifdef ENABLE_MM3D_GAME_FOLDER
+    ShowDesktopLauncher();
+#else
     if (game_list->IsEmpty()) {
         game_list_placeholder->show();
     } else {
         game_list->show();
     }
     game_list->SetFilterFocus();
+#endif
 
     setMouseTracking(false);
 
@@ -2116,6 +2188,9 @@ void GMainWindow::ShutdownGame() {
     // When closing the game, destroy the GLWindow to clear the context after the game is closed
     render_window->ReleaseRenderTarget();
     secondary_window->ReleaseRenderTarget();
+#if defined(ENABLE_MM3D_GAME_FOLDER) && defined(Q_OS_MACOS)
+    MM3D::DesktopFrontend::SyncCloudSaves(this);
+#endif
 }
 
 #ifdef ENABLE_DEVELOPER_OPTIONS
@@ -3073,7 +3148,11 @@ void GMainWindow::OnStopGame() {
 }
 
 void GMainWindow::OnLoadComplete() {
+#ifdef ENABLE_MM3D_GAME_FOLDER
+    MM3D::PlayerSettings::startup_hint_requested.store(true);
+#else
     loading_screen->OnLoadComplete();
+#endif
     UpdateSecondaryWindowVisibility();
 }
 
@@ -4433,16 +4512,23 @@ bool GMainWindow::ConfirmClose() {
     }
 
     QMessageBox::StandardButton answer =
-        QMessageBox::question(this, QStringLiteral("Azahar"), tr("Would you like to exit now?"),
+        QMessageBox::question(this, QCoreApplication::applicationName(), tr("Would you like to exit now?"),
                               QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
     return answer != QMessageBox::No;
 }
 
 void GMainWindow::closeEvent(QCloseEvent* event) {
+#ifdef ENABLE_MM3D_GAME_FOLDER
+    if (desktop_launching) {
+        event->ignore();
+        return;
+    }
+#else
     if (!ConfirmClose()) {
         event->ignore();
         return;
     }
+#endif
 
     UpdateUISettings();
     game_list->SaveInterfaceLayout();
@@ -4961,26 +5047,10 @@ int LaunchQtFrontend(int argc, char* argv[]) {
         QMessageBox::critical(nullptr,QStringLiteral("Majora ReMasked storage"),error);
         return 1;
     }
-    // Existing startup settings read the same NAND used by gameplay. A fresh
-    // installation stages its language until setup has created the user tree.
-    if (QFileInfo::exists(MM3D::GameFolder::User() + QStringLiteral("setup/ready.json")))
-        FileUtil::SetUserPath(MM3D::GameFolder::User().toStdString());
-    Q_INIT_RESOURCE(dekui_frontend);
-    InputCommon::Init();
-    const bool start_game=MM3D::DesktopFrontend::Startup();
-    InputCommon::Shutdown();
-    if(!start_game)return 0;
-    if (const auto error=MM3D::GameFolder::Prepare(); !error.isEmpty()) {
-        QMessageBox::critical(nullptr, QStringLiteral("Majora ReMasked setup"), error);
-        return 1;
-    }
-    if (const auto error=MM3D::GameFolder::Validate(); !error.isEmpty()) {
-        QMessageBox::critical(nullptr, QStringLiteral("Majora ReMasked setup"), error);
-        return 1;
-    }
+    // Initialize the window and gameplay with the same configuration directory.
+    // The setup helper can recover a user folder containing only configuration.
     FileUtil::SetUserPath(MM3D::GameFolder::User().toStdString());
-    try { MM3D::DesktopImport::ApplyPendingSettings(); }
-    catch(const std::exception& error){QMessageBox::critical(nullptr,QStringLiteral("Settings"),QString::fromUtf8(error.what()));return 1;}
+    Q_INIT_RESOURCE(dekui_frontend);
 #endif
 
     // Required when using .qrc resources from within a static library.

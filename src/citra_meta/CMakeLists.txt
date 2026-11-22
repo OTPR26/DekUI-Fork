@@ -13,8 +13,12 @@ endif()
 
 if (APPLE)
     set(DIST_DIR "../../dist/apple")
+    set(APPLE_ICON "azahar.icns")
+    if(ENABLE_MM3D_GAME_FOLDER AND NOT IOS)
+        set(APPLE_ICON "ReMasked.icns")
+    endif()
     set(APPLE_RESOURCES
-        "${DIST_DIR}/azahar.icns"
+        "${DIST_DIR}/${APPLE_ICON}"
         "${DIST_DIR}/launch_logo.png"
     )
     if (IOS)
@@ -34,7 +38,7 @@ if (APPLE)
         MACOSX_BUNDLE_BUNDLE_VERSION "${BUILD_VERSION}"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${BUILD_FULLNAME}"
         MACOSX_BUNDLE_LONG_VERSION_STRING "${BUILD_FULLNAME}"
-        MACOSX_BUNDLE_ICON_FILE "azahar.icns"
+        MACOSX_BUNDLE_ICON_FILE "${APPLE_ICON}"
         RESOURCE "${APPLE_RESOURCES}"
     )
 

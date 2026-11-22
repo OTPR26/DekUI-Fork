@@ -31,6 +31,7 @@
 #include "mm3d/bottle_healing.h"
 #include "mm3d/movement_speed.h"
 #include "mm3d/player_model_scale.h"
+#include "mm3d/camera_player_height.h"
 #include "mm3d/mounted_player.h"
 #include "mm3d/adult_stick_contact.h"
 #include "mm3d/model_mod.h"
@@ -148,7 +149,9 @@ public:
     MM3D::DungeonMap::Hook dungeon_map_hook;
     MM3D::InventoryShadow::Hook inventory_shadow_hook;
     MM3D::ItemsMapPrompt::Hook items_map_prompt_hook,map_items_prompt_hook;
-    MM3D::MenuHelp::Hook menu_help_hook,select_help_hook;
+    MM3D::ItemsMapPrompt::Hook map_notebook_prompt_hook,notebook_map_prompt_hook;
+    MM3D::MenuHelp::Hook menu_help_hook{.direct_item_bumpers=true};
+    MM3D::MenuHelp::Hook select_help_hook;
     MM3D::WorldMapPrompt::Hook world_map_prompt_hook;
     MM3D::MenuTabs::Hook menu_tabs_hook;
     MM3D::NativeInventory::Hook inventory_hook;
@@ -249,6 +252,12 @@ public:
             const auto process=parent.system.Kernel().GetCurrentProcess();
             if(process&&process->codeset&&process->codeset->program_id==0x0004000000125500ULL&&MM3D::AdultStickContact::CodeMatches(code))
                 return MM3D::AdultStickContact::Instruction(vaddr,*instruction);
+        }
+        if(instruction&&MM3D::CameraPlayerHeight::Instruction(vaddr,*instruction)!=*instruction) {
+            struct CodeMemory {Memory::MemorySystem& memory;std::optional<u32> Read(u32 at){return memory.Read32OrNullopt(at);}} code{memory};
+            const auto process=parent.system.Kernel().GetCurrentProcess();
+            if(process&&process->codeset&&process->codeset->program_id==0x0004000000125500ULL&&MM3D::CameraPlayerHeight::CodeMatches(code,vaddr))
+                return MM3D::CameraPlayerHeight::Instruction(vaddr,*instruction);
         }
         if(instruction&&MM3D::PlayerModelScale::Instruction(vaddr,*instruction)!=*instruction) {
             struct CodeMemory {Memory::MemorySystem& memory;std::optional<u32> Read(u32 at){return memory.Read32OrNullopt(at);}} code{memory};
@@ -715,6 +724,13 @@ public:
                 if(reports++<4)LOG_INFO(Core_ARM11,"Adult Link torch contact: vertical separation={}, corrected distance={}",
                     std::bit_cast<float>(before),std::bit_cast<float>(parent.jit->ExtRegs()[1]));
             }
+            return;
+        }
+        if(swi==MM3D::CameraPlayerHeight::Svc) {
+            struct GuestMemory {Memory::MemorySystem& memory;
+                std::optional<u32> Read(u32 at){return memory.Read32OrNullopt(at);}} guest{memory};
+            MM3D::CameraPlayerHeight::Apply(guest,parent.jit->Regs(),parent.jit->ExtRegs(),
+                                          MM3D::ModelMod::adult_active.load());
             return;
         }
         if(swi>=MM3D::PlayerModelScale::FirstSVC&&swi<MM3D::PlayerModelScale::FirstSVC+4) {
@@ -1215,6 +1231,12 @@ public:
                 regs[2]=map_items_prompt_hook.MapRoot(guest,dungeon_map_hook,regs[4],
                     regs[2]!=regs[4]+8?regs[2]:regs[13],regs[2],MM3D::Widescreen::Active(),
                     parent.system.CoreTiming().GetGlobalTimeUs().count());
+                regs[2]=map_notebook_prompt_hook.MapRoot(guest,dungeon_map_hook,regs[4],
+                    regs[2]!=regs[4]+8?regs[2]:regs[13],regs[2],MM3D::Widescreen::Active(),
+                    parent.system.CoreTiming().GetGlobalTimeUs().count(),true);
+                regs[2]=notebook_map_prompt_hook.NotebookRoot(guest,notebook_hook,regs[4],
+                    regs[2]!=regs[4]+8?regs[2]:regs[13],regs[2],MM3D::Widescreen::Active(),
+                    parent.system.CoreTiming().GetGlobalTimeUs().count());
                 regs[2]=world_map_prompt_hook.Root(guest,dungeon_map_hook,regs[4],
                     regs[2]!=regs[4]+8?regs[2]:regs[13],regs[2],MM3D::Widescreen::Active());
                 regs[2]=menu_tabs_hook.Root(guest,inventory_hook,regs[4],
@@ -1260,6 +1282,8 @@ public:
                 if(const auto sp=menu_help_hook.scratch.End(guest))regs[13]=sp;
                 if(const auto sp=menu_tabs_hook.scratch.End(guest))regs[13]=sp;
                 if(const auto sp=world_map_prompt_hook.End(guest))regs[13]=sp;
+                if(const auto sp=notebook_map_prompt_hook.prompt.End(guest))regs[13]=sp;
+                if(const auto sp=map_notebook_prompt_hook.prompt.End(guest))regs[13]=sp;
                 if(const auto sp=map_items_prompt_hook.prompt.End(guest))regs[13]=sp;
                 if(const auto sp=dungeon_map_hook.shadow_scratch.End(guest))regs[13]=sp;
                 if(const auto sp=dungeon_map_hook.panel_scratch.End(guest))regs[13]=sp;

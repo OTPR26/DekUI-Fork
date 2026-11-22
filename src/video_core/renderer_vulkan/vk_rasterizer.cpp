@@ -21,6 +21,7 @@
 #include "video_core/texture/texture_decode.h"
 
 #ifdef ENABLE_MM3D_PRESENTATION
+#include "mm3d/hud_texture_sampling.h"
 #include "mm3d/diagnostics.h"
 #include "mm3d/cpu_interpolation.h"
 #include "mm3d/glare_interpolation.h"
@@ -2921,7 +2922,18 @@ void RasterizerVulkan::SyncTextureUnits(const Framebuffer* framebuffer) {
 
         // Bind the texture provided by the rasterizer cache
         Surface& surface = res_cache.GetTextureSurface(texture);
-        Sampler& sampler = res_cache.GetSampler(texture.config);
+        auto sample_config = texture.config;
+#ifdef ENABLE_MM3D_PRESENTATION
+        if (MM3D::ApplyHudTextureSampling(surface, sample_config)) {
+            static bool reported_hud_sampling = false;
+            if (!reported_hud_sampling) {
+                LOG_INFO(Render_Vulkan, "ReMasked HUD atlas {:016X}: linear filtering active",
+                         surface.material->hash);
+                reported_hud_sampling = true;
+            }
+        }
+#endif
+        Sampler& sampler = res_cache.GetSampler(sample_config);
         const vk::ImageView color_view = framebuffer->ImageView(SurfaceType::Color);
         const bool is_feedback_loop = color_view == surface.FramebufferView();
         vk::ImageView texture_view =

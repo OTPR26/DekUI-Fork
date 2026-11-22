@@ -147,14 +147,21 @@ inline bool Combo(const char* label,int* v,const char* items,int height=-1) {
 }
 
 inline constexpr const char* Pages[]={"General","Controls","Touch","Graphics","Audio","HUD",
-    "Difficulty","Restoration","Quality of life","Mods","Cheats","About"};
+    "Difficulty","Restoration Fixes","Quality of life","Models","About",
+#if defined(ENABLE_MM3D_GAME_FOLDER) && defined(__APPLE__)
+    "Data",
+#endif
+    "Cheats"};
 inline constexpr const char* Descriptions[]={
     "Make Majora ReMasked comfortable on your screen.","Map your controller and game instructions.",
     "Touch controls and the game's touchscreen.","Frame rate, resolution and custom textures.",
     "Sound, music and volume.","Adjust the HUD while keeping your chosen layout.",
-    "Damage, healing and world rules.","Choose your Project Restoration features.",
-    "Small changes for a more comfortable adventure.","Optional character and equipment mods.","Game modifications and availability.",
-    "About Majora ReMasked and its contributors."};
+    "Damage, healing and world rules.","Classic saving and other gameplay fixes.",
+    "Small changes for a more comfortable adventure.","Optional character and equipment models.","About Majora ReMasked and its contributors.",
+#if defined(ENABLE_MM3D_GAME_FOLDER) && defined(__APPLE__)
+    "Sync saves with ReMasked on iPhone.",
+#endif
+    "Game modifications and availability."};
 
 // Fixed header/footer, independently scrolling category rail and content. Text
 // enlargement never scales the panel or consumes the content's scroll height.
@@ -172,7 +179,12 @@ inline void Begin(int& page,int width,int height,bool& resume,bool& quit) {
     ImGui::SetCursorPos({float(width)-gap-f*5.5f,gap});
     resume=ImGui::Button("Resume",{f*5.5f,header-gap});
     ImGui::SetCursorPos({gap,header+gap});
-    ImGui::BeginChild("Categories",{rail,body},ImGuiChildFlags_None);
+#if defined(ENABLE_MM3D_GAME_FOLDER) && !defined(__ANDROID__)
+    constexpr auto pane_navigation=ImGuiChildFlags_NavFlattened;
+#else
+    constexpr auto pane_navigation=ImGuiChildFlags_None;
+#endif
+    ImGui::BeginChild("Categories",{rail,body},pane_navigation);
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize,0);
     for(int i=0;i<int(std::size(Pages));++i) {
         ImGui::PushID(i);
@@ -190,13 +202,13 @@ inline void Begin(int& page,int width,int height,bool& resume,bool& quit) {
     quit=ImGui::Button("Quit game",{rail,footer-gap});
 #endif
     ImGui::SetCursorPos({rail+gap*2,header+gap});
-    ImGui::BeginChild("Settings panel",{float(width)-rail-gap*3,body},ImGuiChildFlags_AlwaysUseWindowPadding);
+    ImGui::BeginChild("Settings panel",{float(width)-rail-gap*3,body},ImGuiChildFlags_AlwaysUseWindowPadding | pane_navigation);
     ImGui::TextColored(Accent,"%s",Pages[page]);
     ImGui::PushStyleColor(ImGuiCol_Text,ImVec4{.69f,.65f,.74f,1});
     ImGui::TextWrapped("%s",Descriptions[page]);
     ImGui::PopStyleColor();ImGui::Separator();
     const std::string id=std::string("Page/")+Pages[page];
-    ImGui::BeginChild(id.c_str(),{0,0},ImGuiChildFlags_None);
+    ImGui::BeginChild(id.c_str(),{0,0},pane_navigation);
     ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*.62f);
 }
 inline bool Page(int current,const char* name) {

@@ -2,7 +2,9 @@
 import base64
 import hashlib
 import json
+import struct
 from pathlib import Path
+from restore_action_flips import entries, u16, u32
 from upgrade_game_resources import atomic_write, checked
 
 ARCHIVE = 'load/mods/0004000000125500/romfs/layout/Joker.Main.New.gar'
@@ -44,6 +46,32 @@ def reconstruct(source, spec):
         raise ValueError('HUD output checksum mismatch')
     return bytes(output)
 
+
+def sword_ring_texture(archive, texture_index):
+    if not archive.startswith(b'GAR\x02'):
+        return archive
+    _, address, layout = entries(archive)['BActionIcon.mfl']
+    if layout[:4] != b'MFL ' or u32(layout, 4) != 4:
+        raise ValueError('Unsupported sword button layout')
+    objects, panes = u16(layout, 10), u16(layout, 14)
+    geometry, animations, strings = struct.unpack_from('<III', layout, 20)
+    if geometry != 32 + objects * 68 or animations != geometry + panes * 48:
+        raise ValueError('Unexpected sword button geometry')
+    names = layout[strings:].split(b'\0')[:1 + panes]
+    pane = names.index(b'a_button_base_pane') - 1
+    at = geometry + pane * 48
+    # This pane draws the 38×38 B background independently of the sword.
+    # Keep its coordinates and palette, and select the same neutral atlas as iOS.
+    if (pane < 0 or u32(layout, at) != 0x002c0006 or
+            struct.unpack_from('<8f', layout, at + 4) !=
+            (-19.0, -19.0, 0.0, 38.0, 38.0, 48/512, 0.0, 38/512) or
+            u32(layout, at + 40) not in (0x000f0003, 0x002b0003)):
+        raise ValueError('Unexpected sword button artwork')
+    output = bytearray(archive)
+    struct.pack_into('<H', output, u32(archive, address) + at + 42, texture_index)
+    return bytes(output)
+
+
 def apply(user, resources):
     spec = json.loads((resources/'desktop-hud/layout.json').read_bytes())
     atlas_spec = json.loads((resources/'desktop-hud/upgrade.json').read_bytes())
@@ -62,7 +90,10 @@ def apply(user, resources):
     play_spec = json.loads((resources/'desktop-hud/play.json').read_bytes())
     play = checked(user, 'load/mods/0004000000125500/romfs/layout/Joker.Main.Play.gar')
     play_original = play.read_bytes()
-    play_updated = reconstruct(play_original, play_spec)
+    play_baseline = play_original
+    if digest(play_baseline) not in (play_spec['sha256'], play_spec['source_sha256']):
+        play_baseline = sword_ring_texture(play_baseline, 15)
+    play_updated = sword_ring_texture(reconstruct(play_baseline, play_spec), 43)
     config = checked(user, CONFIG)
     raw = config.read_bytes()
     data = json.loads(raw)

@@ -211,6 +211,9 @@ class EmulationFragment :
         savedInstanceState: Bundle?
     ): View {
         _binding = FragmentEmulationBinding.inflate(inflater)
+        if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) {
+            binding.loadingIndicator.visibility = View.GONE
+        }
         binding.inGameMenu.menu.findItem(R.id.menu_secondary_screen_layout).isVisible =
             emulationActivity.secondaryDisplayManager.availableDisplays.isNotEmpty()
         binding.inGameMenu.menu.findItem(R.id.menu_landscape_screen_layout).isVisible =
@@ -234,7 +237,7 @@ class EmulationFragment :
         binding.doneControlConfig.setOnClickListener {
             binding.doneControlConfig.visibility = View.GONE
             binding.surfaceInputOverlay.setIsInEditMode(false)
-            if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) NativeLibrary.openDekuiSettings()
+            if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) emulationActivity.openReMaskedSettings("Touch")
         }
 
         // Show/hide the "Stats" overlay
@@ -406,7 +409,9 @@ class EmulationFragment :
                 }
 
                 R.id.menu_dekui_settings -> {
-                    if (NativeLibrary.openDekuiSettings()) {
+                    if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) {
+                        if (emulationActivity.openReMaskedSettings()) binding.drawerLayout.closeDrawers()
+                    } else if (NativeLibrary.openDekuiSettings()) {
                         if (emulationState.isPaused) emulationState.unpause()
                         binding.drawerLayout.closeDrawers()
                     }
@@ -458,7 +463,7 @@ class EmulationFragment :
 
                     if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) {
                         if (NativeLibrary.isDekuiSettingsOpen()) NativeLibrary.closeDekuiSettings()
-                        else NativeLibrary.openDekuiSettings()
+                        else emulationActivity.openReMaskedSettings()
                         return
                     }
 
@@ -473,8 +478,11 @@ class EmulationFragment :
             }
         )
 
-        GameIconUtils.loadGameIcon(requireActivity(), game, binding.loadingImage)
-        binding.loadingTitle.text = game.title
+        val showLoadingCard = !org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION
+        if (showLoadingCard) {
+            GameIconUtils.loadGameIcon(requireActivity(), game, binding.loadingImage)
+            binding.loadingTitle.text = game.title
+        }
 
         viewLifecycleOwner.lifecycleScope.apply {
             launch {
@@ -510,7 +518,7 @@ class EmulationFragment :
                 }
             }
 
-            launch {
+            if (showLoadingCard) launch {
                 repeatOnLifecycle(Lifecycle.State.CREATED) {
                     emulationViewModel.shaderProgress.collectLatest {
                         if (it > 0 && it != emulationViewModel.totalShaders.value) {
@@ -535,14 +543,14 @@ class EmulationFragment :
                     }
                 }
             }
-            launch {
+            if (showLoadingCard) launch {
                 repeatOnLifecycle(Lifecycle.State.CREATED) {
                     emulationViewModel.totalShaders.collectLatest {
                         binding.loadingProgressIndicator.max = it
                     }
                 }
             }
-            launch {
+            if (showLoadingCard) launch {
                 repeatOnLifecycle(Lifecycle.State.CREATED) {
                     emulationViewModel.shaderMessage.collectLatest {
                         if (it != "") {
@@ -557,7 +565,7 @@ class EmulationFragment :
                         if (started) {
                             binding.inGameMenu.menu.findItem(R.id.menu_dekui_settings)
                                 .isVisible = NativeLibrary.hasDekuiSettings()
-                            ViewUtils.hideView(binding.loadingIndicator)
+                            if (showLoadingCard) ViewUtils.hideView(binding.loadingIndicator)
                             ViewUtils.showView(binding.surfaceInputOverlay)
                             binding.inGameMenu.menu.findItem(R.id.menu_emulation_savestates)
                                 .setVisible(NativeLibrary.getSavestateInfo() != null)
@@ -580,7 +588,7 @@ class EmulationFragment :
             val padding=(20*resources.displayMetrics.density).toInt();setPadding(padding,0,padding,0)
         }
         val layouts=android.widget.RadioGroup(requireContext())
-        val names=arrayOf("Nintendo layout", "Swapped A/B layout", "Large action button")
+        val names=arrayOf("Nintendo diamond", "Xbox diamond", "GameCube")
         names.forEachIndexed { index, name ->
             layouts.addView(android.widget.RadioButton(requireContext()).apply {id=100+index;text=name})
         }
@@ -622,6 +630,18 @@ class EmulationFragment :
             13 -> org.citra.citra_emu.utils.DekuiAndroidMenu.clear(value)
             14 -> org.citra.citra_emu.utils.DekuiTextureStorage.clear()
             15 -> showReMaskedTouchAppearance()
+            16 -> {
+                org.citra.citra_emu.display.ReMaskedCast.setMode(emulationActivity, value)
+                emulationActivity.secondaryDisplayManager.updateDisplay()
+            }
+            17 -> {
+                try {
+                    startActivity(android.content.Intent(android.provider.Settings.ACTION_CAST_SETTINGS))
+                } catch (_: android.content.ActivityNotFoundException) {
+                    Toast.makeText(requireContext(), "Open Cast in Android Quick Settings.", Toast.LENGTH_LONG).show()
+                }
+            }
+            18 -> emulationActivity.openReMaskedSettings("About")
         }
     }
 
@@ -1352,6 +1372,19 @@ class EmulationFragment :
             }
         }
         popupMenu.show()
+    }
+
+    fun onReMaskedSettingsClosed(action: String?) {
+        if (_binding == null) return
+        binding.surfaceInputOverlay.refreshControls()
+        when (action) {
+            org.citra.citra_emu.activities.DekuiSettingsActivity.EDIT_TOUCH_LAYOUT -> {
+                EmulationMenuSettings.showOverlay = true
+                binding.surfaceInputOverlay.refreshControls()
+                editControlsPlacement()
+            }
+            org.citra.citra_emu.activities.DekuiSettingsActivity.OPEN_GAME_TOOLS -> NativeLibrary.openDekuiSettings()
+        }
     }
 
     private fun editControlsPlacement() {

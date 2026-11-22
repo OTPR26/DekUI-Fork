@@ -35,7 +35,7 @@ public:
     // returns a pointer to a vector of joysticks that match the needs of this device.
     // will be a pointer because it will be updated when new joysticks are added
     std::shared_ptr<std::vector<std::shared_ptr<SDLJoystick>>> GetJoysticksByGUID(
-        const std::string& guid);
+        const std::string& guid, bool standardized_input, int port, int* button = nullptr);
     std::shared_ptr<SDLJoystick> GetSDLJoystickBySDLID(SDL_JoystickID sdl_id);
 
     Common::ParamPackage GetSDLControllerButtonBind(const Common::ParamPackage a_button_params,

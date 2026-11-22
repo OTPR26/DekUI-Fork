@@ -60,13 +60,14 @@ public final class ReMaskedTouchControls extends View {
     private final ArrayList<Control> controls=new ArrayList<>();
     private final SparseArray<Control> fingers=new SparseArray<>();
     private boolean menu=true, shown=true, ready=false, editor=false, floating=true, extras=false, itemIcons=false;
-    private int faceLayout=0;
+    private int faceLayout=0, castMode=0;
     private float controlSize=1;
     private float unit=1, left=0, right=0, bottom=0, top=0;
     private int lastState=-1;
     private float lastOpacity=-1;
     private ColorMatrixColorFilter opacityFilter;
     private final Drawable cross,crossItems;
+    private final Drawable cameraGlyph;
     private Drawable image(String name) {return getContext().getDrawable(getResources().getIdentifier("remasked_touch_"+name,"drawable",getContext().getPackageName())).mutate();}
     private final class Control {
         final int id; final String label; final RectF bounds; final int shape;
@@ -75,7 +76,9 @@ public final class ReMaskedTouchControls extends View {
         Control(int id,String label,float x,float y,float w,float h,int shape) {
             this.id=id;this.label=label;this.bounds=new RectF(x,y,x+w,y+h);this.shape=shape;
             cx=bounds.centerX();cy=bounds.centerY();
-            drawable=shape==2||shape==3?null:image(shape==0?(itemIcons&&id>=0&&id<4?"face_items":"face"):id==104||id==9?(itemIcons&&id==9?"left_items":"left"):id==105||id==10?(itemIcons&&id==10?"right_items":"right"):"system");
+            drawable=shape==2||shape==3?null:image(shape==0?(itemIcons&&id>=0&&id<4?"face_items":"face"):
+                id==104||id==9?(id==104||itemIcons?"left_items":"left"):
+                id==105||id==10?(id==105||itemIcons?"right_items":"right"):"system");
         }
         void release() {
             if(shape==2) {axis(id,0);axis(id+1,0);}
@@ -92,6 +95,7 @@ public final class ReMaskedTouchControls extends View {
     }
     public ReMaskedTouchControls(Context context, View owner, SharedPreferences preferences, Bridge bridge) {
         super(context);this.owner=owner;this.preferences=preferences;this.bridge=bridge;cross=image("cross");crossItems=image("cross_items");setBackgroundColor(android.graphics.Color.TRANSPARENT);
+        cameraGlyph=image("camera");
         setFocusable(false);setContentDescription("Touch controller");
         try{displayMetrics(getResources().getDisplayMetrics().density,getResources().getDisplayMetrics().heightPixels);}catch(UnsatisfiedLinkError ignored){}
     }
@@ -99,14 +103,58 @@ public final class ReMaskedTouchControls extends View {
         for(int i=0;i<fingers.size();i++)fingers.valueAt(i).release();fingers.clear();
     }
     private float individualScale(int nativeId){return (preferences.getInt("controlScale-"+nativeId,50)+50)/100f;}
-    private float stickRadius(int id){return 75*unit*individualScale(id==0?713:718);}
+    private float stickRadius(int id){return castMode != 0 ? 44*unit : 75*unit*individualScale(id==0?713:718);}
     private void add(int id,String label,float x,float y,float w,float h,int shape) {
-        int toggle=id>=0&&id<4&&shape==0?id:id==9?4:id==10?5:id==104?6:id==105?7:id==6?8:id==7?9:shape==3?10:shape==2?(id==0?11:12):-1;
-        if(toggle>=0&&!preferences.getBoolean("buttonToggle"+toggle,toggle!=12))return;
-        if(shape<2&&id>=0){int nativeId=id<4?700+id:id==9?773:id==10?774:id==104?707:id==105?708:id==6?704:705;
-            float scale=individualScale(nativeId);x+=w*(1-scale)/2;y+=h*(1-scale)/2;w*=scale;h*=scale;}
+        int toggle=id>=0&&id<4&&shape==0?id:id==9?4:id==10?5:id==104?6:id==105?7:id==6?8:shape==3?10:shape==2?(id==0?11:12):id==8?13:-1;
+        if(castMode==0&&toggle>=0&&!preferences.getBoolean("buttonToggle"+toggle,toggle!=12))return;
+        if(castMode==0&&shape<2&&id>=0){int nativeId=id<4?700+id:id==9?773:id==10?774:id==104?707:id==105?708:id==6?704:705;
+            float scale=id==8?(preferences.getInt("pictographScale",50)+50)/100f:individualScale(nativeId);
+            x+=w*(1-scale)/2;y+=h*(1-scale)/2;w*=scale;h*=scale;}
         controls.add(new Control(id,label,x,y,w,h,shape));
     }
+    private void layoutCastControls(float w, float h) {
+        final boolean split = castMode == 2;
+        final boolean portrait = h > w;
+        final float safeWidth = Math.max(1, w - left - right);
+        final float areaTop = split && portrait ? Math.max(top, h * .48f) : top;
+        final float areaHeight = Math.max(1, h - areaTop - bottom);
+        final float rail = split && !portrait ? w * .26f : safeWidth * .5f;
+        final float leftCenter = split && !portrait ? (left + rail) / 2 : left + safeWidth * .23f;
+        final float rightCenter = split && !portrait ? (w - right + w - rail) / 2 : w - right - safeWidth * .23f;
+        unit = Math.min(unit, Math.min(Math.max(1, rail - Math.max(left, right)) / 126f, areaHeight / 264f));
+
+        final float shoulderWidth = 62 * unit, shoulderHeight = 34 * unit;
+        add(104, "ZL", leftCenter - shoulderWidth / 2, areaTop, shoulderWidth, shoulderHeight, 1);
+        add(9, "L", leftCenter - shoulderWidth / 2, areaTop + 40 * unit, shoulderWidth, shoulderHeight, 1);
+        add(105, "ZR", rightCenter - shoulderWidth / 2, areaTop, shoulderWidth, shoulderHeight, 1);
+        add(10, "R", rightCenter - shoulderWidth / 2, areaTop + 40 * unit, shoulderWidth, shoulderHeight, 1);
+
+        final float upper = areaTop + areaHeight * .46f;
+        final float lower = areaTop + areaHeight * .72f;
+        final float face = 37 * unit, gap = 33 * unit;
+        add(0, "", rightCenter + gap - face / 2, upper - face / 2, face, face, 0);
+        add(1, "", rightCenter - face / 2, upper + gap - face / 2, face, face, 0);
+        add(2, "", rightCenter - face / 2, upper - gap - face / 2, face, face, 0);
+        add(3, "", rightCenter - gap - face / 2, upper - face / 2, face, face, 0);
+        final float cross = 71 * unit, part = cross / 3;
+        final float cx = leftCenter - cross / 2, cy = lower - cross / 2;
+        add(11, "", cx + part, cy, part, part, 3);
+        add(12, "", cx + part, cy + 2 * part, part, part, 3);
+        add(13, "", cx, cy + part, part, part, 3);
+        add(14, "", cx + 2 * part, cy + part, part, part, 3);
+        final float stickTouchSize = 102 * unit;
+        add(0, "", leftCenter - stickTouchSize / 2, upper - stickTouchSize / 2,
+            stickTouchSize, stickTouchSize, 2);
+        add(2, "", rightCenter - stickTouchSize / 2, lower - stickTouchSize / 2,
+            stickTouchSize, stickTouchSize, 2);
+        final float systemWidth = 74 * unit, systemHeight = 30 * unit;
+        final float buttonY = h - bottom - systemHeight;
+        add(4, "Settings", leftCenter - systemWidth / 2, buttonY, systemWidth, systemHeight, 1);
+        add(8, "", rightCenter - 42 * unit, buttonY, systemHeight, systemHeight, 0);
+        add(6, "Start", rightCenter - 2 * unit, buttonY, 61 * unit, systemHeight, 1);
+        publishHud();
+    }
+
     private void layoutControls() {
         controls.clear();float w=getWidth(),h=getHeight();
         unit=.85f*controlSize*Math.max(.82f,Math.min(1.35f,h/(390*getResources().getDisplayMetrics().density)))*getResources().getDisplayMetrics().density;
@@ -117,13 +165,18 @@ public final class ReMaskedTouchControls extends View {
             left+=safe.left;right+=safe.right;bottom+=safe.bottom;top+=safe.top;
         }
         if(editor)return;
+        if (castMode != 0) {
+            layoutCastControls(w,h);
+            return;
+        }
         if(shown) {
-            {
-                if(extras)add(104,"ZL",left,top,84*unit,46*unit,1);
-                add(9,"L",left,top+(extras?56:0)*unit,84*unit,46*unit,1);
-                if(extras)add(105,"ZR",w-right-84*unit,top,84*unit,46*unit,1);
-                add(10,"R",w-right-84*unit,top+(extras?56:0)*unit,84*unit,46*unit,1);
-            }
+            final float shoulderWidth=63*unit, shoulderHeight=34.5f*unit, shoulderGap=10*unit;
+            final float rightShoulder=w-right-shoulderWidth;
+            final float bumperY=extras ? top+shoulderHeight+shoulderGap : top;
+            if(extras)add(104,"ZL",left,top,shoulderWidth,shoulderHeight,1);
+            add(9,"L",left,bumperY,shoulderWidth,shoulderHeight,1);
+            if(extras)add(105,"ZR",rightShoulder,top,shoulderWidth,shoulderHeight,1);
+            add(10,"R",rightShoulder,bumperY,shoulderWidth,shoulderHeight,1);
             float fx=w-right-93*unit,fy=h-bottom-93*unit,fs=44*unit;
             if(faceLayout==2) {
                 add(0,"A",fx+12*unit-fs*.675f,fy+20*unit-fs*.675f,fs*1.35f,fs*1.35f,0);
@@ -136,10 +189,15 @@ public final class ReMaskedTouchControls extends View {
                 add(2,"X",fx+(faceLayout==0?0:-44)*unit-fs/2,fy+(faceLayout==0?-44:0)*unit-fs/2,fs,fs,0);
                 add(3,"Y",fx+(faceLayout==0?-44:0)*unit-fs/2,fy+(faceLayout==0?0:-44)*unit-fs/2,fs,fs,0);
             }
-            {
-                add(6,"Start",w/2+62*unit,h-bottom-30*unit,76*unit,30*unit,1);
-                add(7,"Select",w/2-38*unit,h-bottom-30*unit,76*unit,30*unit,1);
-            }
+            final float actionHeight=30*unit;
+            final float actionWidth=76*unit;
+            final float actionGap=9*unit;
+            final float actionY=h-bottom-actionHeight-30*unit;
+            final float cameraLeft=(w-actionHeight)/2;
+            final float startLeft=cameraLeft+actionHeight+actionGap;
+            add(4,"Settings",cameraLeft-actionGap-actionWidth,actionY,actionWidth,actionHeight,1);
+            add(8,"",cameraLeft,actionY,actionHeight,actionHeight,0);
+            add(6,"Start",startLeft,actionY,actionWidth,actionHeight,1);
             float cross=96*unit*individualScale(780),cx=left,cy=Math.max(top+(extras?114:58)*unit,h-bottom-252*unit);
             add(11,"",cx+cross/3,cy,cross/3,cross/3,3);
             add(12,"",cx+cross/3,cy+2*cross/3,cross/3,cross/3,3);
@@ -151,8 +209,6 @@ public final class ReMaskedTouchControls extends View {
                 add(2,"",w*.52f,0,w*.48f,h,2);
             }
         }
-        if(shown)add(4,"Settings",w/2-138*unit,h-bottom-30*unit,76*unit,30*unit,1);
-
         for(Control c:controls) {
             if(c.shape==2){c.cx=c.id==0?left+75*unit:w-right-75*unit;c.cy=h-bottom-75*unit;continue;}
             if(c.shape==3)continue;
@@ -179,7 +235,7 @@ public final class ReMaskedTouchControls extends View {
             float scale=size();
             if(current!=lastState || controlSize!=scale) {
                 displayMetrics(getResources().getDisplayMetrics().density,getHeight());
-                itemIcons=(current&256)!=0;extras=(current&128)!=0;controlSize=scale;editor=(current&32)!=0;floating=(current&64)!=0;faceLayout=(current>>3)&3;
+                castMode=(current>>9)&3;itemIcons=(current&256)!=0;extras=(current&128)!=0;controlSize=scale;editor=(current&32)!=0;floating=(current&64)!=0;faceLayout=(current>>3)&3;
                 cancelInputs();lastState=current;ready=(current&1)!=0;menu=(current&2)!=0;shown=(current&4)!=0;layoutControls();
             }
         } catch(UnsatisfiedLinkError notLoaded) {owner.postInvalidateOnAnimation();return;}
@@ -208,12 +264,22 @@ public final class ReMaskedTouchControls extends View {
             }
             c.drawable.setState(c.down?new int[]{android.R.attr.state_pressed}:new int[]{});
             c.drawable.setBounds(Math.round(c.bounds.left),Math.round(c.bounds.top),Math.round(c.bounds.right),Math.round(c.bounds.bottom));c.drawable.setColorFilter(opacityFilter);c.drawable.draw(canvas);
+            if(c.id==8) {
+                final float radius=Math.min(c.bounds.width(),c.bounds.height())*.28f;
+                cameraGlyph.setBounds(Math.round(c.bounds.centerX()-radius),Math.round(c.bounds.centerY()-radius),
+                    Math.round(c.bounds.centerX()+radius),Math.round(c.bounds.centerY()+radius));
+                cameraGlyph.setAlpha(Math.min(255,Math.round(255*alpha)));
+                cameraGlyph.draw(canvas);
+                continue;
+            }
             paint.setStyle(Paint.Style.FILL);paint.setColor((Math.min(255,Math.round(37*alpha/.28f))<<24)|0xffffff);
-            String label=c.label;
-            if(c.shape==3)label=c.id==11?"▲":c.id==12?"▼":c.id==13?"◀":"▶";
-            boolean faceIcon=itemIcons&&((c.shape==0&&c.id>=0&&c.id<4)||c.id==9||c.id==10);
-            paint.setTextSize((faceIcon?10:14)*unit);
-            canvas.drawText(label,faceIcon?c.bounds.left+c.bounds.width()*.8f:c.bounds.centerX(),(faceIcon?c.bounds.top+c.bounds.height()*.8f:c.bounds.centerY())-(paint.ascent()+paint.descent())/2,paint);
+            // Face and shoulder artwork is controller-neutral. Text is reserved
+            // for menu actions and the touch-visibility button.
+            if (c.shape == 0 && c.id >= 0 && c.id < 4 ||
+                c.id == 9 || c.id == 10 || c.id == 104 || c.id == 105) continue;
+            paint.setTextSize(14 * unit);
+            canvas.drawText(c.label, c.bounds.centerX(),
+                c.bounds.centerY() - (paint.ascent() + paint.descent()) / 2, paint);
         }
         owner.postInvalidateOnAnimation();
     }

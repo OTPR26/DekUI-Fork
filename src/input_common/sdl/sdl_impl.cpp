@@ -237,12 +237,58 @@ struct SDLJoystickDeleter {
  * elsewhere.
  */
 std::shared_ptr<std::vector<std::shared_ptr<SDLJoystick>>> SDLState::GetJoysticksByGUID(
-    const std::string& guid) {
+    const std::string& guid, [[maybe_unused]] bool standardized_input, [[maybe_unused]] int port,
+    [[maybe_unused]] int* button) {
     std::lock_guard lock{joystick_map_mutex};
     if (guid.empty() || guid == "0") {
         return joystick_vector;
     } else {
         const auto it = joystick_map.find(guid);
+#if defined(__APPLE__) && SDL_VERSION_ATLEAST(2, 26, 0)
+        // SDL's macOS backends can report different GUIDs for the same physical controller.
+        // Match the hardware only when a single compatible logical controller is available.
+        // Raw bindings and bindings for additional controllers still use the exact GUID.
+        if (standardized_input && port <= 0) {
+            Uint16 vendor = 0, product = 0;
+            const auto saved_guid = SDL_JoystickGetGUIDFromString(guid.c_str());
+            SDL_GetJoystickGUIDInfo(saved_guid, &vendor, &product, nullptr, nullptr);
+            if (vendor && product) {
+                std::string match;
+                bool ambiguous = false;
+                for (const auto& [id, controller] : connected_controllers) {
+                    const auto connected_guid = controller.Get("guid", "");
+                    if (connected_guid == guid) {
+                        match = guid;
+                        ambiguous = false;
+                        break;
+                    }
+                    Uint16 connected_vendor = 0, connected_product = 0;
+                    SDL_GetJoystickGUIDInfo(SDL_JoystickGetGUIDFromString(connected_guid.c_str()),
+                                            &connected_vendor, &connected_product, nullptr, nullptr);
+                    if (connected_vendor == vendor && connected_product == product) {
+                        ambiguous |= !match.empty() || controller.Get("port", 0) != 0;
+                        match = connected_guid;
+                    }
+                }
+                if (!match.empty() && !ambiguous) {
+                    const auto connected_guid = SDL_JoystickGetGUIDFromString(match.c_str());
+                    const auto from_driver = saved_guid.data[14];
+                    const auto to_driver = connected_guid.data[14];
+                    const bool switches_backend =
+                        (from_driver == 'm' && to_driver == 'h') ||
+                        (from_driver == 'h' && to_driver == 'm');
+                    // GameController reports Switch Pro face buttons by position, while
+                    // HIDAPI defaults to the printed labels. Keep the physical binding.
+                    if (button && vendor == 0x057e && product == 0x2009 && switches_backend &&
+                        SDL_GetHintBoolean(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, SDL_TRUE) &&
+                        *button >= SDL_CONTROLLER_BUTTON_A && *button <= SDL_CONTROLLER_BUTTON_Y) {
+                        *button ^= 1;
+                    }
+                    return joystick_map.at(match);
+                }
+            }
+        }
+#endif
         if (it != joystick_map.end()) {
             return it->second;
         }
@@ -691,7 +737,8 @@ public:
         const bool controller = params.Get("api", "joystick") == "controller";
         const std::string guid = (controller && maptype == "all") ? "" : params.Get("guid", "");
 
-        auto joysticks = state.GetJoysticksByGUID(guid);
+        int button = params.Get("button", 0);
+        auto joysticks = state.GetJoysticksByGUID(guid, controller, port, &button);
         if (params.Has("hat")) {
             const int hat = params.Get("hat", 0);
             const std::string direction_name = params.Get("direction", "");
@@ -726,7 +773,6 @@ public:
             return std::make_unique<SDLAxisButton>(joysticks, axis, threshold, trigger_if_greater,
                                                    port, controller);
         }
-        const int button = params.Get("button", 0);
         return std::make_unique<SDLButton>(joysticks, button, port, controller);
     }
 
@@ -758,7 +804,7 @@ public:
 
         float deadzone = std::clamp(params.Get("deadzone", 0.0f), 0.0f, .99f);
 
-        auto joysticks = state.GetJoysticksByGUID(guid);
+        auto joysticks = state.GetJoysticksByGUID(guid, controller, port);
 
         return std::make_unique<SDLAnalog>(joysticks, axis_x, axis_y, deadzone, port, controller);
     }
@@ -774,7 +820,7 @@ public:
     std::unique_ptr<Input::MotionDevice> Create(const Common::ParamPackage& params) override {
         const std::string guid = params.Get("guid", "0");
         const int port = params.Get("port", 0);
-        auto joysticks = state.GetJoysticksByGUID(guid);
+        auto joysticks = state.GetJoysticksByGUID(guid, true, port);
         if (joysticks->empty())
             return std::make_unique<SDLMotion>(nullptr);
         auto joystick =
@@ -802,7 +848,7 @@ public:
         const std::string guid = params.Get("guid", "0");
         const int port = params.Get("port", 0);
         const int touchpad = params.Get("touchpad", 0);
-        auto joysticks = state.GetJoysticksByGUID(guid);
+        auto joysticks = state.GetJoysticksByGUID(guid, true, port);
         auto joystick =
             static_cast<int>(joysticks->size()) > port ? joysticks->at(port) : joysticks->at(0);
         return std::make_unique<SDLTouch>(joystick, touchpad);

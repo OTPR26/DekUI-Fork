@@ -33,6 +33,9 @@
 #ifdef ENABLE_MM3D_PRESENTATION
 #include "mm3d/prompt_layer.h"
 #include "mm3d/notebook.h"
+#ifdef ANDROID
+#include "mm3d/android_cast.h"
+#endif
 #include "mm3d/widescreen.h"
 #include "mm3d/screen_shrink.h"
 #include "mm3d/minimap.h"
@@ -1240,9 +1243,16 @@ void RendererVulkan::DrawScreens(Frame* frame, const Layout::FramebufferLayout& 
         if(layer && layer->Visible())layer->PrepareForSampling();
     const bool wide_supported=layout.top_screen_enabled && layout.is_rotated &&
         layout.render_3d_mode==Settings::StereoRenderOption::Off;
-    MM3D::Widescreen::UpdateLayoutSupport(!isSecondaryWindow,
-        layout.top_screen_enabled, layout.is_rotated,
-        layout.render_3d_mode==Settings::StereoRenderOption::Off);
+#ifdef ANDROID
+    const bool casting = MM3D::AndroidCast::mode.load() != MM3D::AndroidCast::Off;
+#else
+    constexpr bool casting = false;
+#endif
+    if (!casting || isSecondaryWindow) {
+        MM3D::Widescreen::UpdateLayoutSupport(!isSecondaryWindow || casting,
+            layout.top_screen_enabled, layout.is_rotated,
+            layout.render_3d_mode==Settings::StereoRenderOption::Off);
+    }
     if(wide_supported && MM3D::Widescreen::enabled.load())
         layout.top_screen=MM3D::Widescreen::FitTop(layout.top_screen,layout.bottom_screen,
             layout.width,layout.bottom_screen_enabled);
@@ -1520,8 +1530,14 @@ void RendererVulkan::SwapBuffers() {
 
     const Layout::FramebufferLayout& layout = render_window.GetFramebufferLayout();
 #ifdef ENABLE_MM3D_PRESENTATION
-    MM3D::Widescreen::UpdateLayoutSupport(true, layout.top_screen_enabled, layout.is_rotated,
-        layout.render_3d_mode==Settings::StereoRenderOption::Off);
+    const auto& gameplay_layout =
+#ifdef ANDROID
+        secondaryWindowEnabled && MM3D::AndroidCast::mode.load() != MM3D::AndroidCast::Off
+            ? secondary_window->GetFramebufferLayout() :
+#endif
+              layout;
+    MM3D::Widescreen::UpdateLayoutSupport(true, gameplay_layout.top_screen_enabled, gameplay_layout.is_rotated,
+        gameplay_layout.render_3d_mode==Settings::StereoRenderOption::Off);
     static unsigned viewport_report_count = 0;
     if (viewport_report_count++ < 3) {
         LOG_INFO(Render_Vulkan,

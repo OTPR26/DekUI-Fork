@@ -2,6 +2,7 @@
 #pragma once
 #include "mm3d/ocarina_prompt.h"
 #include "mm3d/dungeon_map.h"
+#include "mm3d/menu_page_switch.h"
 #include <cstdio>
 
 namespace MM3D::ItemsMapPrompt {
@@ -32,6 +33,21 @@ inline float BobY(std::int64_t guest_us) {
     // Use only its vertical displacement, relative to the saved prompt pose.
     const float phase=float(std::max<std::int64_t>(0,guest_us)%1000000)/1000000.f;
     return phase<=.5f?4.f*phase:4.f*(1.f-phase);
+}
+template<class M> bool NotebookHintAvailable(M& m,U32 map) {
+    const auto notebook=m.Read(0x656b08);
+    return GearMenu::enabled.load() && notebook && Pointer(*notebook,0x7b0) &&
+        m.Read(*notebook)==MenuPageSwitch::NotebookVtable && MenuPageSwitch::NotebookCodeMatches(m) &&
+        (m.Read(0x7751d8+0x1f8).value_or(0)&(1u<<18)) &&
+        MenuPageSwitch::Byte(m,map+0x78e)==0;
+}
+template<class M> bool MapReturnHintAvailable(M& m,U32 owner,U32 layout) {
+    const auto map=m.Read(0x656b14);
+    return GearMenu::enabled.load() && Pointer(owner,0x7b0) &&
+        m.Read(0x656b08)==owner && m.Read(owner)==MenuPageSwitch::NotebookVtable &&
+        MenuPageSwitch::NotebookCodeMatches(m) && MenuPageSwitch::Byte(m,owner+0xc)==0 &&
+        m.Read(owner+0x40)==layout && LayoutNamed(m,layout,"MenuQuestlist") &&
+        map && Pointer(*map,0x794) && m.Read(*map)==MenuPageSwitch::MapVtable;
 }
 struct Hook {
     OcarinaPrompt::Hook prompt;
@@ -68,8 +84,28 @@ struct Hook {
             }
         }
     }
-    template<class M,class MapHook> U32 MapRoot(M& m,MapHook& map,U32 layout,U32 sp,U32 content,bool wide,std::int64_t guest_us=0) {
+    template<class M,class BookHook> U32 NotebookRoot(M& m,BookHook& book,U32 layout,U32 sp,U32 content,bool wide,std::int64_t guest_us=0) {
         prompt.pass=~0u;
+        if(enabled && book.active && !book.schedule && book.pass==3 && layout==book.panel &&
+           MapReturnHintAvailable(m,book.notebook_owner,layout)) {
+            prompt.icon=prompt.text=0;prompt.texture=prompt.Parts(m);
+            Templates(m,book.helper,layout,"Map");
+            const float alpha=book.prompt_hook.ScrollbarOpacity(m,book.notebook_owner,false).value_or(1.f)*book.detail_opacity;
+            if(prompt.icon && prompt.text && prompt.texture && std::isfinite(alpha) && alpha>=0 && alpha<=1) {
+                prompt.native_alpha=alpha*Opacity();prompt.panel=layout;prompt.pass=3;
+            }
+        }
+        OcarinaPrompt::SinglePrompt single{{-return_pose.x.load(),return_pose.y.load(),return_pose.scale.load()},content,prompt.Parts(m,8)};
+        single.reverse=true;single.arrow_label="Map";
+        for(unsigned i=0;i<return_elements.size();++i)
+            single.elements[i]={-return_elements[i].x.load(),return_elements[i].y.load(),return_elements[i].scale.load()};
+        for(unsigned i=0;i<2;++i)single.elements[i].y+=BobY(guest_us);
+        auto root=prompt.Root(m,layout,sp,wide,&single);
+        return root==layout+8?content:root;
+    }
+    template<class M,class MapHook> U32 MapRoot(M& m,MapHook& map,U32 layout,U32 sp,U32 content,bool wide,std::int64_t guest_us=0,bool notebook=false) {
+        prompt.pass=~0u;
+        const std::string_view label=notebook?"Notebook":"Items";
         auto mode=DungeonMap::Dungeon(m,map.owner);
         const auto region=mode?m.Read(map.owner+0x74c):std::optional<U32>{};
         const bool no_world_map=mode&&!*mode&&region&&(*region&255)==6;
@@ -78,15 +114,15 @@ struct Hook {
         // Region6 (the early-game no-map view) skips UpWorldMapHud entirely,
         // but still submits owner+20 SubMenuTitle in pass2. Attach there only
         // in that state so navigation survives without duplicating the prompt.
-        const bool active=enabled&&map.valid&&mode&&map.pass==(*mode?3u:2u)&&
+        const bool active=(!notebook||NotebookHintAvailable(m,map.owner))&&enabled&&map.valid&&mode&&map.pass==(*mode?3u:2u)&&
             m.Read(map.controller+8)==map.owner&&
             (*mode?(layout==map.panel&&std::find(map.routed.begin(),map.routed.end(),layout)!=map.routed.end()):
                    no_world_map?(m.Read(map.owner+0x20)==layout&&LayoutNamed(m,layout,"SubMenuTitle")):
                    (m.Read(map.owner+0x1c)==layout&&LayoutNamed(m,layout,"UpWorldMapHud")));
         if(active) {
             prompt.icon=prompt.text=0;prompt.texture=prompt.Parts(m);
-            Templates(m,map.helper,layout,"Items");
-            if(!prompt.icon||!prompt.text)Templates(m,map.helper,map.panel,"Items");
+            Templates(m,map.helper,layout,label);
+            if(!prompt.icon||!prompt.text)Templates(m,map.helper,map.panel,label);
             U32 fade=prompt.scratch.Child(m,layout+8,"all");
             if(*mode) {
                 auto group=prompt.scratch.Child(m,map.backgrounds[1]+8,"backGround");
@@ -99,10 +135,13 @@ struct Hook {
             }
         }
         // Negate offsets before mirroring so positive editor X moves right.
-        OcarinaPrompt::SinglePrompt single{{-return_pose.x.load(),return_pose.y.load(),return_pose.scale.load()},content,prompt.Parts(m,8)};
-        single.reverse=true;
+        OcarinaPrompt::SinglePrompt single{notebook?ButtonPose{pose.x.load(),pose.y.load(),pose.scale.load()}:
+            ButtonPose{-return_pose.x.load(),return_pose.y.load(),return_pose.scale.load()},content,prompt.Parts(m,8)};
+        single.reverse=!notebook;
+        if(notebook)single.arrow_label="Notebook";
         for(unsigned i=0;i<return_elements.size();++i)
-            single.elements[i]={-return_elements[i].x.load(),return_elements[i].y.load(),return_elements[i].scale.load()};
+            single.elements[i]=notebook?ButtonPose{elements[i].x.load(),elements[i].y.load(),elements[i].scale.load()}:
+                ButtonPose{-return_elements[i].x.load(),return_elements[i].y.load(),return_elements[i].scale.load()};
         for(unsigned i=0;i<2;++i)single.elements[i].y+=BobY(guest_us);
         auto root=prompt.Root(m,layout,sp,wide,&single);
         return root==layout+8?content:root;

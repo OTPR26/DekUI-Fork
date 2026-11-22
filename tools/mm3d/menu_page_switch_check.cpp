@@ -70,6 +70,36 @@ int main(int argc,char** argv) {
             assert(Byte(m,route.from+0x9f)==state);
         } else assert(!h.context&&m.words==before);
     }
+    // Exercise native triggers as well as the shoulder bits used by the port.
+    for(const U32 right:{0x8000u,0x100u})for(const U32 left:{0x4000u,0x200u}) {
+        constexpr U32 notebook=0x290000,layout=0x2a0000;
+        auto m=Fixture({P,notebook,right,layout});
+        Hook h;
+        m.Write(0x656b08,notebook);m.Write(notebook,NotebookVtable);
+        m.Write(0x005b49d0,NotebookVtable);
+        m.Write(NotebookVtable+0x1c,0x005b4444);
+        m.Write(NotebookVtable+0x20,0x005b475c);
+        m.Write(NotebookVtable+0x24,0x005b3ff8);
+        m.Write(notebook+0x40,layout);m.Layout(layout,"MenuQuestlist");
+        m.Write(0x7751d8+0x1f8,0);
+        const auto locked=m.words;
+        h.Tick(m,C);assert(m.words==locked);
+        m.Write(0x7751d8+0x1f8,1u<<18);
+        m.Write(G+0x34,right|left);
+        const auto simultaneous=m.words;
+        h.Tick(m,C);assert(m.words==simultaneous);
+        m.Write(G+0x34,right|0x10);
+        h.Tick(m,C);
+        assert(m.Read(C+12)==notebook&&m.Read(G+0x34)==0x10&&!h.context);
+        m.Write(C+8,notebook);m.Write(C+12,0);m.Write(G+0x34,left);
+        m.Write(P+0x78c,0xa5010101);
+        m.Byte(notebook+0xc,1);
+        const auto details=m.words;
+        h.Tick(m,C);assert(m.words==details);
+        m.Byte(notebook+0xc,0);
+        h.Tick(m,C);
+        assert(m.Read(C+12)==P&&m.Read(G+0x34)==0&&m.Read(P+0x78c)==0xa5000101&&!h.context);
+    }
     // Native middle pair, outer edges, editing/Soaring, simultaneous buttons,
     // and in-progress transitions all remain untouched.
     for(unsigned n=0;n<16;++n) {

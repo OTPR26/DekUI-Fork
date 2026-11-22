@@ -2,6 +2,9 @@
 #pragma once
 #include "mm3d/native_inventory.h"
 #include "mm3d/classic_saving.h"
+#ifdef __ANDROID__
+#include "mm3d/simple_cheats.h"
+#endif
 
 namespace MM3D::NativeStartup {
 using namespace NativeInventory;
@@ -220,6 +223,10 @@ struct PressHook {
         visibility=BottomVisibility(m);
         std::vector<Write> preview;
         if(!Prepare(m,panel,3,preview)||!Prepare(m,panel,5,preview))return;
+#ifdef __ANDROID__
+        // Attract scenes can have a gameplay context while drawing the title UI.
+        SimpleCheats::RecordTitleFrame();
+#endif
         const U32 at=*top+4+priority*0x80+U32(to[priority].size())*4;
         auto total=m.Read(*top+0x844);if(!total||!m.Read(at))return;
         m.Write(at,panel);m.Write(*top+0x804+priority*4,U32(to[priority].size()+1));

@@ -75,6 +75,31 @@ class EmulationActivity : AppCompatActivity() {
     private lateinit var hotkeyUtility: HotkeyUtility
     lateinit var secondaryDisplayManager: SecondaryDisplay
 
+    private var remaskedSettingsOpen = false
+    private val remaskedSettings = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        remaskedSettingsOpen = false
+        if (!NativeLibrary.isRunning()) return@registerForActivityResult
+        secondaryDisplayManager.updateDisplay()
+        val changes = result.data
+        if (changes?.getBooleanExtra(DekuiSettingsActivity.PRESENTATION_CHANGED, false) == true)
+            NativeLibrary.requestDekuiSettingsReload()
+        if (changes?.getBooleanExtra(DekuiSettingsActivity.CONFIG_CHANGED, false) == true)
+            NativeLibrary.reloadSettings()
+        window.decorView.post {
+            if (!isFinishing && NativeLibrary.isRunning())
+                emulationFragment.onReMaskedSettingsClosed(changes?.getStringExtra(DekuiSettingsActivity.GAME_ACTION))
+        }
+    }
+
+    fun openReMaskedSettings(page: String = "General"): Boolean {
+        if (remaskedSettingsOpen || !NativeLibrary.openDekuiSettings()) return false
+        NativeLibrary.closeDekuiSettings()
+        remaskedSettingsOpen = true
+        remaskedSettings.launch(Intent(this, DekuiSettingsActivity::class.java)
+            .putExtra(DekuiSettingsActivity.GAMEPLAY, true).putExtra("page", page))
+        return true
+    }
+
     private val onShutdown = Runnable {
         if (intent.getBooleanExtra("launched_from_shortcut", false)) {
             finishAffinity()
@@ -113,7 +138,7 @@ class EmulationActivity : AppCompatActivity() {
 
         if (!ensureUserDirectoryReady()) {
             super.onCreate(null) // null: don't restore fragments into an activity we're killing
-            secondaryDisplayManager = SecondaryDisplay(this)
+            secondaryDisplayManager = SecondaryDisplay(this, ::refreshCastOrientation)
             startActivity(
                 Intent(this, MainActivity::class.java).apply {
                     addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -136,7 +161,7 @@ class EmulationActivity : AppCompatActivity() {
 
         NativeLibrary.initMultiplayer()
 
-        secondaryDisplayManager = SecondaryDisplay(this)
+        secondaryDisplayManager = SecondaryDisplay(this, ::refreshCastOrientation)
         secondaryDisplayManager.updateDisplay()
 
         binding = ActivityEmulationBinding.inflate(layoutInflater)
@@ -218,6 +243,8 @@ class EmulationActivity : AppCompatActivity() {
     // rotations. Here we set full screen immersive repeatedly in onResume and in
     // onWindowFocusChanged to prevent the unwanted status bar state.
     override fun onResume() {
+        if (::secondaryDisplayManager.isInitialized)
+            secondaryDisplayManager.setForeground(true)
         if (reattachExistingSession && NativeLibrary.isRunning()) onEmulationReattached()
         enableFullscreenImmersive()
         if (isEmulationReady) {
@@ -238,7 +265,7 @@ class EmulationActivity : AppCompatActivity() {
         dekuiRightStickDown = false
         dekuiMenuChord = false
         dekuiPictographDown = false
-        secondaryDisplayManager.releasePresentation()
+        secondaryDisplayManager.setForeground(false)
         super.onStop()
     }
 
@@ -334,11 +361,13 @@ class EmulationActivity : AppCompatActivity() {
             isRotationBlocked = false
             applyOrientationSettings()
         }
-        Toast.makeText(
-            applicationContext,
-            getString(R.string.emulation_menu_help),
-            Toast.LENGTH_LONG
-        ).show()
+        if (!org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) {
+            Toast.makeText(
+                applicationContext,
+                getString(R.string.emulation_menu_help),
+                Toast.LENGTH_LONG
+            ).show()
+        }
     }
 
     fun displayMultiplayerDialog() {
@@ -371,9 +400,16 @@ class EmulationActivity : AppCompatActivity() {
         }
     }
 
+    private fun refreshCastOrientation() {
+        if (!isFinishing && !isDestroyed && lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED))
+            applyOrientationSettings()
+    }
+
     private fun applyOrientationSettings() {
         val orientationOption = if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) {
-            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            if (::secondaryDisplayManager.isInitialized && secondaryDisplayManager.activeCastMode != 0)
+                ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+            else ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         } else IntSetting.ORIENTATION_OPTION.int
         screenAdjustmentUtil.changeActivityOrientation(orientationOption)
     }
@@ -408,7 +444,7 @@ class EmulationActivity : AppCompatActivity() {
                 val dx=event.x-dekuiEdgeX; val dy=event.y-dekuiEdgeY
                 if (!dekuiEdgeOpened && event.actionMasked == MotionEvent.ACTION_MOVE &&
                     dx>=40f*density && dx>kotlin.math.abs(dy)*1.4f) {
-                    NativeLibrary.openDekuiSettings(); dekuiEdgeOpened=true
+                    dekuiEdgeOpened=openReMaskedSettings()
                 }
                 if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
                     dekuiEdgeGesture=false
@@ -442,7 +478,7 @@ class EmulationActivity : AppCompatActivity() {
             if (event.keyCode == KeyEvent.KEYCODE_BUTTON_THUMBL) dekuiLeftStickDown = down else dekuiRightStickDown = down
             if (dekuiLeftStickDown && dekuiRightStickDown && !dekuiMenuChord) {
                 dekuiMenuChord = true
-                if (NativeLibrary.isDekuiSettingsOpen()) NativeLibrary.closeDekuiSettings() else NativeLibrary.openDekuiSettings()
+                if (NativeLibrary.isDekuiSettingsOpen()) NativeLibrary.closeDekuiSettings() else openReMaskedSettings()
             }
             if (event.keyCode == org.citra.citra_emu.utils.DekuiAndroidMenu.pictographKey) {
                 if (down && event.repeatCount == 0) dekuiPictographDown = true
@@ -461,7 +497,7 @@ class EmulationActivity : AppCompatActivity() {
         }
         if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION && event.keyCode == KeyEvent.KEYCODE_BACK) {
             if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                if (NativeLibrary.isDekuiSettingsOpen()) NativeLibrary.closeDekuiSettings() else NativeLibrary.openDekuiSettings()
+                if (NativeLibrary.isDekuiSettingsOpen()) NativeLibrary.closeDekuiSettings() else openReMaskedSettings()
             }
             return true
         }

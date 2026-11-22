@@ -52,18 +52,27 @@ class InputOverlay(context: Context?, attrs: AttributeSet?) :
     private var joystickBeingConfigured: InputOverlayDrawableJoystick? = null
     private val settingsViewModel = NativeLibrary.sEmulationActivity.get()!!.settingsViewModel
 
+    private var reMaskedCastTouchPointer = -1
     private val remaskedTouch by lazy {
         ReMaskedTouchControls(context, this, preferences, object : ReMaskedTouchControls.Bridge {
             private val axes = FloatArray(4)
+            private var touchStartKey = NativeLibrary.ButtonType.BUTTON_START
             override fun button(id: Int, down: Boolean) {
-                if (id == 4) { if (down) NativeLibrary.openDekuiSettings(); return }
+                if (id == 4) {
+                    if (down) post { NativeLibrary.sEmulationActivity.get()?.openReMaskedSettings() }
+                    return
+                }
+                if (id == 8) { if (down) NativeLibrary.requestDekuiPictograph(); return }
                 val key = when(id) {
                     0 -> NativeLibrary.ButtonType.BUTTON_A
                     1 -> NativeLibrary.ButtonType.BUTTON_B
                     2 -> NativeLibrary.ButtonType.BUTTON_X
                     3 -> NativeLibrary.ButtonType.BUTTON_Y
-                    6 -> NativeLibrary.ButtonType.BUTTON_START
-                    7 -> NativeLibrary.ButtonType.BUTTON_SELECT
+                    6 -> {
+                        // Hold the same guest button through release even if its press changes screens.
+                        if (down) touchStartKey = NativeLibrary.getReMaskedTouchStartKey()
+                        touchStartKey
+                    }
                     9 -> ReMaskedShoulderBindings.button(id)
                     10 -> ReMaskedShoulderBindings.button(id)
                     11 -> NativeLibrary.ButtonType.DPAD_UP
@@ -90,10 +99,14 @@ class InputOverlay(context: Context?, attrs: AttributeSet?) :
             }
             override fun opacity() = preferences.getInt("controlOpacity", 50) / 100f
             override fun size() = (preferences.getInt("controlScale", 50) + 50) / 100f
-            override fun state(): Int = 1 or (if(EmulationMenuSettings.showOverlay) 4 else 0) or
+            override fun state(): Int {
+                val cast = NativeLibrary.sEmulationActivity.get()?.secondaryDisplayManager?.activeCastMode ?: 0
+                if (cast != 0) return 1 or 4 or 64 or 128 or (cast shl 9)
+                return 1 or (if(EmulationMenuSettings.showOverlay) 4 else 0) or
                 (preferences.getInt("ReMaskedTouchFaceLayout",0).coerceIn(0,2) shl 3) or
                 (if(EmulationMenuSettings.joystickRelCenter) 64 else 0) or 128 or
                 (if(preferences.getBoolean("ReMaskedTouchHud",true)) 256 else 0)
+            }
             override fun enabled(value: Boolean) { EmulationMenuSettings.showOverlay=value; invalidate() }
             override fun hud(anchors: FloatArray, enabled: Boolean) {
                 NativeLibrary.setReMaskedTouchHud(anchors, enabled)
@@ -104,6 +117,10 @@ class InputOverlay(context: Context?, attrs: AttributeSet?) :
     fun cancelTouchInputs() {
         if(org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) {
             remaskedTouch.cancelInputs()
+            if (reMaskedCastTouchPointer != -1) {
+                NativeLibrary.onTouchEvent(0f,0f,false)
+                reMaskedCastTouchPointer = -1
+            }
             NativeLibrary.setReMaskedTouchHud(FloatArray(30),false)
         }
     }
@@ -237,9 +254,54 @@ class InputOverlay(context: Context?, attrs: AttributeSet?) :
         return true
     }
 
+    private fun handleReMaskedCastTouch(event: MotionEvent): Boolean {
+        val mode = NativeLibrary.sEmulationActivity.get()?.secondaryDisplayManager?.activeCastMode ?: 0
+        if (mode != org.citra.citra_emu.display.ReMaskedCast.TOP_SCREEN) {
+            if (reMaskedCastTouchPointer != -1) {
+                NativeLibrary.onTouchEvent(0f,0f,false)
+                reMaskedCastTouchPointer = -1
+            }
+            return false
+        }
+        val index = event.actionIndex
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                if (reMaskedCastTouchPointer != -1 || width <= 0 || height <= 0) return false
+                val bounds = NativeLibrary.getReMaskedCastTouchBounds() ?: return false
+                val x = event.getX(index)
+                val y = event.getY(index)
+                if (x / width !in bounds[0]..bounds[2] || y / height !in bounds[1]..bounds[3]) return false
+                reMaskedCastTouchPointer = event.getPointerId(index)
+                NativeLibrary.onTouchEvent(x,y,true)
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val pointer = event.findPointerIndex(reMaskedCastTouchPointer)
+                if (pointer >= 0)
+                    NativeLibrary.onTouchMoved(event.getX(pointer),event.getY(pointer))
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
+                if (event.getPointerId(index) == reMaskedCastTouchPointer) {
+                    NativeLibrary.onTouchEvent(0f,0f,false)
+                    reMaskedCastTouchPointer = -1
+                    return true
+                }
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                if (reMaskedCastTouchPointer != -1) NativeLibrary.onTouchEvent(0f,0f,false)
+                reMaskedCastTouchPointer = -1
+            }
+        }
+        return false
+    }
+
     override fun onTouch(v: View, event: MotionEvent): Boolean {
         if (handleDekuiTouch(event)) {cancelTouchInputs();return true}
-        if(org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) return remaskedTouch.onTouchEvent(event)
+        if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) {
+            if (handleReMaskedCastTouch(event)) return true
+            val controllerHandled = remaskedTouch.onTouchEvent(event)
+            return controllerHandled || reMaskedCastTouchPointer != -1
+        }
         if (isInEditMode) {
             return onTouchWhileEditing(event)
         }

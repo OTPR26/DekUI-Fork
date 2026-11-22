@@ -8,6 +8,7 @@ import android.app.Presentation
 import android.content.Context
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
+import android.media.MediaRouter
 import android.os.Build
 import android.os.Bundle
 import android.view.Display
@@ -20,9 +21,20 @@ import org.citra.citra_emu.features.settings.model.BooleanSetting
 import org.citra.citra_emu.features.settings.model.IntSetting
 import org.citra.citra_emu.utils.Log
 
-class SecondaryDisplay(val context: Context) : DisplayManager.DisplayListener {
+class SecondaryDisplay(val context: Context, private val onCastModeChanged: () -> Unit = {}) :
+    DisplayManager.DisplayListener {
     private var pres: SecondaryDisplayPresentation? = null
     private val displayManager = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+    private val castRouter = context.getSystemService(Context.MEDIA_ROUTER_SERVICE) as? MediaRouter
+    private var preferredCastMode = ReMaskedCast.OFF
+    var activeCastMode = ReMaskedCast.OFF
+        private set
+    private var foreground = true
+    private val castRoutes = object : MediaRouter.SimpleCallback() {
+        override fun onRouteSelected(router: MediaRouter, type: Int, info: MediaRouter.RouteInfo) = updateDisplay()
+        override fun onRouteUnselected(router: MediaRouter, type: Int, info: MediaRouter.RouteInfo) = updateDisplay()
+        override fun onRoutePresentationDisplayChanged(router: MediaRouter, info: MediaRouter.RouteInfo) = updateDisplay()
+    }
     private val vd: VirtualDisplay
     var preferredDisplayId = -1
     var currentDisplayId = -1
@@ -40,19 +52,40 @@ class SecondaryDisplay(val context: Context) : DisplayManager.DisplayListener {
             DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION
         )
         displayManager.registerDisplayListener(this, null)
+        if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION)
+            castRouter?.addCallback(MediaRouter.ROUTE_TYPE_LIVE_VIDEO, castRoutes)
     }
 
-    fun updateSurface() {
-        val surface = pres?.getSurfaceHolder()?.surface
-        if (surface != null && surface.isValid) {
+    fun updateSurface(presentation: SecondaryDisplayPresentation) {
+        if (pres !== presentation || !foreground) return
+        val surface = presentation.getSurfaceHolder().surface
+        if (surface.isValid) {
+            val modeChanged = activeCastMode != preferredCastMode
+            if (modeChanged) NativeLibrary.setReMaskedCastMode(preferredCastMode)
             NativeLibrary.secondarySurfaceChanged(surface)
+            activeCastMode = preferredCastMode
+            if (modeChanged) onCastModeChanged()
         } else {
             Log.warning("SecondaryDisplay Attempted to update null or invalid surface")
         }
     }
 
-    fun destroySurface() {
+    fun destroySurface(presentation: SecondaryDisplayPresentation) {
+        if (pres !== presentation) return
         NativeLibrary.secondarySurfaceDestroyed()
+        clearCastMode()
+    }
+
+    private fun clearCastMode() {
+        if (activeCastMode == ReMaskedCast.OFF) return
+        activeCastMode = ReMaskedCast.OFF
+        NativeLibrary.setReMaskedCastMode(ReMaskedCast.OFF)
+        onCastModeChanged()
+    }
+
+    fun setForeground(value: Boolean) {
+        foreground = value
+        if (value) updateDisplay() else releasePresentation()
     }
 
     private fun getSecondaryDisplays(): List<Display> {
@@ -80,14 +113,22 @@ class SecondaryDisplay(val context: Context) : DisplayManager.DisplayListener {
     }
 
     fun updateDisplay() {
-        // return early if the parent context is dead or dying
-        if (context is android.app.Activity && (context.isFinishing || context.isDestroyed)) {
+        if (!foreground || context is android.app.Activity && (context.isFinishing || context.isDestroyed)) {
             return
         }
 
+        val isReMasked = org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION
+        val castMode = if (isReMasked) ReMaskedCast.mode(context) else ReMaskedCast.OFF
+        val castDisplay = if (castMode == ReMaskedCast.OFF) null else {
+            val primary = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) context.display?.displayId
+                else Display.DEFAULT_DISPLAY
+            ReMaskedCast.display(castRouter, primary ?: Display.DEFAULT_DISPLAY)
+        }
+        preferredCastMode = if (castDisplay == null) ReMaskedCast.OFF else castMode
+
         // DekUI presents one authored top-screen image. The emulator's hidden
         // fallback display must not receive a second, bottom-only render pass.
-        if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION &&
+        if (isReMasked && castDisplay == null &&
             (availableDisplays.isEmpty() ||
              IntSetting.SECONDARY_DISPLAY_LAYOUT.int == SecondaryDisplayLayout.NONE.int ||
              !BooleanSetting.ENABLE_SECONDARY_DISPLAY.boolean)) {
@@ -96,7 +137,10 @@ class SecondaryDisplay(val context: Context) : DisplayManager.DisplayListener {
             return
         }
 
-        val displayToUse = if (availableDisplays.isEmpty() ||
+        val displayToUse = if (castDisplay != null) {
+            currentDisplayId = castDisplay.displayId
+            castDisplay
+        } else if (availableDisplays.isEmpty() ||
             // Theoretically, the NONE option is no longer selectable, but
             // I am leaving this in for backwards compatibility
             IntSetting.SECONDARY_DISPLAY_LAYOUT.int == SecondaryDisplayLayout.NONE.int ||
@@ -123,13 +167,19 @@ class SecondaryDisplay(val context: Context) : DisplayManager.DisplayListener {
         }
 
         // if our presentation is already on the right display, ignore
-        if (pres?.display == displayToUse) return
+        val current = pres
+        if (current != null && current.display == displayToUse) {
+            if (activeCastMode != preferredCastMode && current.isShowing &&
+                current.hasSurface()) updateSurface(current)
+            return
+        }
 
         // otherwise, make a new presentation
         releasePresentation()
 
         try {
             pres = SecondaryDisplayPresentation(context, displayToUse!!, this)
+            if (castDisplay != null) pres?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             pres?.show()
         }
         // catch BadTokenException and InvalidDisplayException,
@@ -143,14 +193,20 @@ class SecondaryDisplay(val context: Context) : DisplayManager.DisplayListener {
     }
 
     fun releasePresentation() {
-        try {
-            pres?.dismiss()
-        } catch (_: Exception) { }
+        val previous = pres
         pres = null
+        if (previous != null) {
+            try {
+                previous.dismiss()
+            } catch (_: Exception) { }
+            NativeLibrary.secondarySurfaceDestroyed()
+        }
+        clearCastMode()
     }
 
     fun releaseVD() {
         displayManager.unregisterDisplayListener(this)
+        if (org.citra.citra_emu.BuildConfig.DEKUI_PRESENTATION) castRouter?.removeCallback(castRoutes)
         vd.release()
     }
 
@@ -171,6 +227,8 @@ class SecondaryDisplayPresentation(
     val parent: SecondaryDisplay
 ) : Presentation(context, display) {
     private lateinit var surfaceView: SurfaceView
+    fun hasSurface(): Boolean = ::surfaceView.isInitialized && surfaceView.holder.surface.isValid
+
     private var touchscreenPointerId = -1
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -196,16 +254,17 @@ class SecondaryDisplayPresentation(
                 height: Int
             ) {
                 Log.debug("SecondaryDisplay Surface changed: ${width}x$height")
-                parent.updateSurface()
+                parent.updateSurface(this@SecondaryDisplayPresentation)
             }
 
             override fun surfaceDestroyed(holder: SurfaceHolder) {
                 Log.debug("SecondaryDisplay Surface destroyed")
-                parent.destroySurface()
+                parent.destroySurface(this@SecondaryDisplayPresentation)
             }
         })
 
         this.surfaceView.setOnTouchListener { _, event ->
+            if (parent.activeCastMode != ReMaskedCast.OFF) return@setOnTouchListener false
 
             val pointerIndex = event.actionIndex
             val pointerId = event.getPointerId(pointerIndex)

@@ -632,9 +632,25 @@ Overlay::~Overlay() {
     input.clear();
     text_input.clear(); key_input.clear(); text_input_active.store(false);
 }
+static std::atomic_bool presentation_settings_reload_requested{false};
+
+void RequestPresentationSettingsReload() {
+    presentation_settings_reload_requested.store(true);
+}
+
 void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                    unsigned width, unsigned height) {
     auto& state = *impl;
+    if (presentation_settings_reload_requested.exchange(false)) {
+        Settings updated;
+        if (updated.Load(state.directory + "presentation.json")) {
+            state.settings = std::move(updated);
+            ApplyPresentationSettings(state.settings);
+        } else {
+            state.status = "Could not reload ReMasked settings";
+        }
+    }
+
     if(const int hidden=HudAdjustments::minimap_visibility_request.exchange(-1);hidden>=0) {
         state.settings.player_hud.hide_minimap=hidden!=0;
         state.status=state.settings.Save(state.directory+"presentation.json")?"Minimap visibility saved":"Minimap visibility save FAILED";
@@ -848,15 +864,20 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
             help_text("Mutes background and battle music. Keeps sound effects, short jingles and playable songs. Applies immediately.");
         };
         const auto interpolation_control=[&]() {
-            ImGui::TextUnformatted("Frame rate");
             int method = !state.settings.interpolation_60fps ? 0 :
                 state.settings.interpolation_cpu_vertices ? 1 : 2;
+#ifdef __ANDROID__
+            const bool changed = AndroidMenuStyle::Combo("Frame rate", &method,
+                "Original 30 FPS\0" "60 FPS CPU interpolation\0" "60 FPS GPU interpolation\0");
+#else
+            ImGui::TextUnformatted("Frame rate");
             bool changed = AndroidMenuStyle::RadioButton("Original", &method, 0);
             hover_help("The original game's 30fps");
             changed |= AndroidMenuStyle::RadioButton("60FPS CPU interpolation", &method, 1);
             hover_help("Recommended interpolation option to avoid stutter");
             changed |= AndroidMenuStyle::RadioButton("60FPS GPU interpolation", &method, 2);
             hover_help("Better performance but worse stuttering, not recommended.");
+#endif
             if (changed) {
                 state.settings.interpolation_60fps = method != 0;
                 if (method != 0) state.settings.interpolation_cpu_vertices = method == 1;
@@ -1259,8 +1280,8 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
         if(ImGui::BeginTabBar("Settings")) {
 #endif
             if(begin_page("General")){general_controls();end_page();}
-            if(begin_page("Mods")) {
-                ImGui::SeparatorText("Player appearance");
+            if(begin_page("Models")) {
+                ImGui::SeparatorText("Appearance");
                 int model=state.settings.pak_link_model?4:state.settings.twilight_link_model?3:state.settings.dark_link_model?2:state.settings.adult_link_model?1:0;
                 bool changed=AndroidMenuStyle::Combo("Player model",&model,"Original Link\0Adult Link\0Dark Link\0Twilight Princess Link\0PAK Importer\0");
                 if(changed) {
@@ -1274,18 +1295,18 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                         "mm3d-models/pak-import/romfs/actors/zelda2_link_child_new.gar.lzs";
                     help_text(FileUtil::Exists(path)?
                         "Uses your imported PAK player model with native MM3D equipment and voices. Restart the game after changing models.":
-                        "No PAK model is installed. Return to startup Settings > Mods > PAK Importer to import a file.");
+                        "No PAK model is installed. Return to startup Settings > Models > PAK Importer to import a file.");
                     help_text("PAK files are imported before gameplay. Reset to the startup screen to replace the imported model.");
                 }
                 if(model==3) {
                     changed|=AndroidMenuStyle::Checkbox("Master Sword",&state.settings.twilight_link_master_sword);
-                    help_text("Twilight Princess Link, imported voices and optional TP Master Sword. Generate from your own GameCube ROM and texture pack in startup Settings > Mods. Restart the game to apply changes.");
+                    help_text("Twilight Princess Link, imported voices and optional TP Master Sword. Generate from your own GameCube ROM and texture pack in startup Settings > Models. Restart the game to apply changes.");
                 }
                 if(model==2) {
                     const auto path=FileUtil::GetUserPath(FileUtil::UserPath::LoadDir)+"mm3d-models/dark-link/romfs/actors/zelda2_link_child_new.gar.lzs";
                     if(!FileUtil::Exists(path)) {
 #if defined(ANDROID) || defined(ENABLE_MM3D_GAME_FOLDER)
-                        help_text("Dark Link is not installed. Generate Dark Link from your OoT3D ROM in startup Settings > Mods before starting the game.");
+                        help_text("Dark Link is not installed. Generate Dark Link from your OoT3D ROM in startup Settings > Models before starting the game.");
 #else
                         help_text("Dark Link is not installed. Import your generated Dark Link folder into load/mm3d-models/dark-link/ in this game folder's user directory.");
 #endif
@@ -1311,7 +1332,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                             changed=true;
                         } else {
 #if defined(ANDROID) || defined(ENABLE_MM3D_GAME_FOLDER)
-                            state.status="Model not generated: return to startup Settings > Mods and generate from your OoT3D ROM";
+                            state.status="Model not generated: return to startup Settings > Models and generate from your OoT3D ROM";
 #else
                             state.status="Model not installed: import your generated Adult Link variants into load/mm3d-models/adult-link/";
 #endif
@@ -1319,7 +1340,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                     }
                     if(!available(state.settings.adult_link_tunic_color,state.settings.adult_link_master_sword)) {
 #if defined(ANDROID) || defined(ENABLE_MM3D_GAME_FOLDER)
-                        help_text("The selected model is not installed. Return to startup Settings > Mods and generate the mod from your OoT3D ROM.");
+                        help_text("The selected model is not installed. Return to startup Settings > Models and generate the mod from your OoT3D ROM.");
 #else
                         help_text("The selected model variant is not installed. Import the matching generated variant into load/mm3d-models/adult-link/variants/.");
 #endif
@@ -1327,19 +1348,28 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
                     help_text("On: OoT3D Master Sword and sheath. Off: Kokiri sword and sheath. Changes appearance only; sword damage stays unchanged.");
                 }
                 if(changed)state.status=state.settings.Save(state.directory+"presentation.json")?
-                    "Mods saved; restart the game to apply":"Mods save FAILED";
+                    "Model settings saved. Restart the game to apply them.":"Could not save model settings.";
 #ifdef ENABLE_MM3D_GAME_FOLDER
                 ImGui::TextWrapped("ROM and texture imports are configured before gameplay. Save your game, then return to startup to generate a mod.");
                 if(ImGui::Button("ROM and texture setup...")){mod_setup_requested.store(true);android_quit=true;}
 #endif
 #if defined(ANDROID) || defined(ENABLE_MM3D_GAME_FOLDER)
-                help_text("Generate Adult Link or Dark Link from your own OoT3D ROM and texture pack in startup Settings > Mods. Regenerate after updating to import voices. Restart the game after changing mods. Adult Link keeps MM3D movement and transformation forms. Facial expressions and mask fitting are unfinished.");
+                help_text("Generate Adult Link or Dark Link from your own OoT3D ROM and texture pack in startup Settings > Models. Regenerate after updating to import voices. Restart the game after changing models. Adult Link keeps MM3D movement and transformation forms. Facial expressions and mask fitting are unfinished.");
 #else
                 help_text("Import generated Adult Link or Dark Link files from your own OoT3D ROM into this game folder's user/load/mm3d-models directory, including voices and icon files. Desktop ROM generation is not integrated yet. Restart after changing models. Normal MM3D abilities and transformation forms remain available; facial expressions and mask fitting are unfinished.");
 #endif
                 end_page();
             }
             if(begin_page("Graphics")) {
+#ifdef ANDROID
+                ImGui::SeparatorText("Casting");
+                int cast_layout = AndroidMenu::Snapshot().cast_layout;
+                if (AndroidMenuStyle::Combo("Cast layout", &cast_layout,
+                        "Off\0Cast single screen gameplay\0Cast top screen\0"))
+                    AndroidMenu::Request(AndroidMenu::CastLayout, cast_layout);
+                if (ImGui::Button("Choose cast display…"))
+                    AndroidMenu::Request(AndroidMenu::ChooseCastDisplay);
+#endif
                 interpolation_control();
                 camera_zoom_control();
                 actor_distance_control();
@@ -1406,16 +1436,21 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
             }
 #elif defined(ENABLE_MM3D_GAME_FOLDER)
             if(begin_page("Touch")){
-                bool swapped=AndroidMenu::Snapshot().touch;
-                if(AndroidMenuStyle::Checkbox("Swap screens",&swapped))AndroidMenu::Request(AndroidMenu::SwapScreens,swapped);
-                ImGui::TextWrapped("Show the game's touchscreen and click it with your mouse. Turn Swap screens off to return to gameplay. Android touch-button overlays are not needed on desktop.");
+                const auto screens=AndroidMenu::Snapshot();
+                bool separate=screens.separate_windows;
+                if(AndroidMenuStyle::Checkbox("Bottom screen in a separate window",&separate))
+                    AndroidMenu::Request(AndroidMenu::SeparateWindows,separate);
+                bool swapped=screens.touch;
+                if(AndroidMenuStyle::Checkbox("Swap screens",&swapped))
+                    AndroidMenu::Request(AndroidMenu::SwapScreens,swapped);
+                ImGui::TextWrapped("Click the touchscreen with your mouse. Move the second window to another display when using two screens.");
                 end_page();
             }
 #endif
             if(begin_page("Cheats")){cheats_controls();end_page();}
             if(begin_page("HUD")){hud_controls();end_page();}
             if(begin_page("Difficulty")){difficulty_controls();end_page();}
-            if(begin_page("Restoration")){restoration_controls();end_page();}
+            if(begin_page("Restoration Fixes")){restoration_controls();end_page();}
             if(begin_page("QOL")){qol_controls();end_page();}
 #ifndef __ANDROID__
             // Opt-in support tools for packaged builds. Never persist this flag in
@@ -1488,13 +1523,22 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
 #ifdef ANDROID
                 help_text("Swipe in from the left edge for settings. Hold ZR and press SELECT during gameplay to toggle the minimap. Use Touch > Swap screens for the game's touchscreen.");
 #else
-                help_text("Hold ZR and press SELECT to toggle the minimap. Touch > Swap screens shows the game touchscreen for mouse input. Start + Select opens settings.");
+                help_text("Press Select on a controller to open or close Settings. Hold ZR and press Select to toggle the minimap. Touch > Swap screens shows the game touchscreen for mouse input.");
 #endif
                 end_page();
             }
+#if defined(ENABLE_MM3D_GAME_FOLDER) && defined(__APPLE__)
+            if(begin_page("Data")) {
+                if(ImGui::Button("iCloud Drive settings"))AndroidMenu::Request(AndroidMenu::CloudSaves);
+                ImGui::TextWrapped("Save sync runs when the game has stopped.");
+                end_page();
+            }
+#endif
             if(begin_page("About")) {
-                ImGui::TextWrapped("Majora ReMasked uses Azahar and Project Restoration. It is not affiliated with Nintendo.");
-#ifndef __ANDROID__
+#ifdef __ANDROID__
+                if(ImGui::Button("Version and build"))AndroidMenu::Request(AndroidMenu::About);
+#else
+                ImGui::TextWrapped("Majora ReMasked %s", Common::g_build_version);
                 if(ImGui::Button("Licenses and credits"))about.store(true);
 #endif
                 end_page();

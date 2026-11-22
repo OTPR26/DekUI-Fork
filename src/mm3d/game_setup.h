@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
+#include <memory>
 #include <QEventLoop>
 #include <QProcess>
 #include <QProgressDialog>
@@ -25,8 +26,16 @@ inline QString Prepare() {
     const auto python=QStandardPaths::findExecutable(QStringLiteral("python3"));
     if(python.isEmpty())return QStringLiteral("Python 3.9 or newer is required for setup and resource checks.");
 #endif
-    QProgressDialog progress(QStringLiteral("Preparing your game and checking installed resources…"),QString{},0,0);
-    progress.setWindowTitle(QStringLiteral("Majora ReMasked"));progress.setCancelButton(nullptr);progress.setMinimumDuration(0);progress.setWindowModality(Qt::ApplicationModal);progress.show();
+    std::unique_ptr<QProgressDialog> progress;
+    if (!ValidateSetup(User()).isEmpty()) {
+        progress = std::make_unique<QProgressDialog>(
+            QStringLiteral("Preparing your game files…"), QString{}, 0, 0);
+        progress->setWindowTitle(QStringLiteral("Majora ReMasked"));
+        progress->setCancelButton(nullptr);
+        progress->setMinimumDuration(0);
+        progress->setWindowModality(Qt::ApplicationModal);
+        progress->show();
+    }
     QProcess process;
     QEventLoop loop;
     QString error;

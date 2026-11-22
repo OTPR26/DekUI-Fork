@@ -2,6 +2,7 @@
 package org.citra.citra_emu.activities
 
 import android.content.res.ColorStateList
+import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.view.KeyEvent
@@ -15,32 +16,51 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.appcompat.widget.SwitchCompat
-import androidx.core.content.res.ResourcesCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.preference.PreferenceManager
+import org.citra.citra_emu.BuildConfig
 import org.citra.citra_emu.NativeLibrary
 import org.citra.citra_emu.R
+import org.citra.citra_emu.display.ReMaskedCast
 import org.citra.citra_emu.features.settings.model.*
 import org.citra.citra_emu.features.settings.utils.SettingsFile
 import org.citra.citra_emu.utils.*
+import kotlin.math.roundToInt
 
-/** Full settings before launch; reads/writes the exact files used by the in-game menu. */
+/** The same Settings view opens from the launcher and during gameplay. */
 class DekuiSettingsActivity : AppCompatActivity() {
     private lateinit var store: DekuiPresentationStore
-    private lateinit var content: LinearLayout
+    private lateinit var menu: ReMaskedSettingsView
+    private val content get() = menu.content
     private var page="General"
     private var captureRelease=false
     private var generatingMod=false
     private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(this) }
-    private val purple=Color.rgb(185,125,242)
-    private val pages=listOf("General","Controls","Touch","Graphics","Audio","HUD","Difficulty","Restoration","Quality of life","Mods","Cheats","About")
-    private val font by lazy { ResourcesCompat.getFont(this,R.font.dekui_sans_regular) }
-    private var size=20
-    private fun px(v: Float)=(v*resources.displayMetrics.heightPixels/1080f).toInt()
-    private fun textSize()=13f*(1.8f+.06f*size)*resources.displayMetrics.heightPixels/1080f/resources.displayMetrics.scaledDensity
+    private val purple = ReMaskedSettingsView.ACCENT
+    private val pages = listOf("General", "Controls", "Touch", "Graphics", "Audio", "HUD",
+        "Difficulty", "Restoration Fixes", "Quality of life", "Models", "About", "Data", "Cheats")
+    private val inGame by lazy { intent.getBooleanExtra(GAMEPLAY, false) }
+    private var presentationChanged = false
+    private var configChanged = false
+
+    companion object {
+        const val GAMEPLAY = "remasked.gameplay"
+        const val PRESENTATION_CHANGED = "remasked.presentationChanged"
+        const val CONFIG_CHANGED = "remasked.configChanged"
+        const val GAME_ACTION = "remasked.gameAction"
+        const val EDIT_TOUCH_LAYOUT = "editTouchLayout"
+        const val OPEN_GAME_TOOLS = "openGameTools"
+        const val CHOOSE_ROM = "chooseRom"
+    }
+
+    private var size = 100
+    private data class Choice(val title: String, val options: List<String>, val selected: Int, val write: (Int) -> Unit)
+    private var openChoice: Choice? = null
+    private var choiceReturnScroll = 0
+    private var restoreScroll: Int? = null
+    private var editingSlider = false
     private val picker=registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if(uri!=null) {
             runCatching { DekuiTextureStorage.select(uri) }.onFailure { error(it) }
@@ -80,23 +100,44 @@ class DekuiSettingsActivity : AppCompatActivity() {
             render()
         }
     }
-    private fun choice(title:String,options:List<String>,selected:Int,change:(Int)->Unit) {
-        content.addView(label(title))
-        val adapter=object:ArrayAdapter<String>(this,android.R.layout.simple_spinner_item,options) {
-            override fun getView(position:Int,convertView:View?,parent:android.view.ViewGroup):View = label(getItem(position)!!+"  ▾").apply { setBackgroundColor(0xFF291C38.toInt()) }
-            override fun getDropDownView(position:Int,convertView:View?,parent:android.view.ViewGroup):View = label(getItem(position)!!).apply { setBackgroundColor(if(position==selected)0xFF3D1468.toInt()else 0xFF291C38.toInt()) }
-        }
-        content.addView(Spinner(this,Spinner.MODE_DROPDOWN).apply {
-            this.adapter=adapter;setSelection(selected)
-            onItemSelectedListener=object:AdapterView.OnItemSelectedListener {
-                override fun onNothingSelected(parent:AdapterView<*>?) {}
-                override fun onItemSelected(parent:AdapterView<*>?,view:View?,position:Int,id:Long) { if(position!=selected)change(position) }
-            }
-        },LinearLayout.LayoutParams(-1,px(80f)))
+    private fun choice(title: String, options: List<String>, selected: Int, change: (Int) -> Unit) {
+        menu.add(menu.choiceRow(title, options[selected]) { openOptions(title, options, selected, change) })
     }
+
+    private fun openOptions(title: String, options: List<String>, selected: Int = -1, change: (Int) -> Unit) {
+        choiceReturnScroll = menu.scrollPosition
+        openChoice = Choice(title, options, selected, change)
+        render()
+    }
+
+    private fun goBack() {
+        if (editingSlider) {
+            editingSlider = false
+            return
+        }
+        if (openChoice != null) {
+            openChoice = null
+            restoreScroll = choiceReturnScroll
+            render()
+        } else finish()
+    }
+
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
-        if(NativeLibrary.isRunning()) { finish();return }
+        if (NativeLibrary.isRunning() != inGame) { finish(); return }
+        presentationChanged = state?.getBoolean(PRESENTATION_CHANGED) ?: false
+        configChanged = state?.getBoolean(CONFIG_CHANGED) ?: false
+        publishResult()
+        requestedOrientation = if (inGame) android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LOCKED
+            else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (DekuiAndroidMenu.capture >= 0) {
+                    DekuiAndroidMenu.cancel()
+                    render()
+                } else goBack()
+            }
+        })
         WindowCompat.setDecorFitsSystemWindows(window,false)
         WindowInsetsControllerCompat(window,window.decorView).apply {
             hide(WindowInsetsCompat.Type.systemBars())
@@ -104,81 +145,124 @@ class DekuiSettingsActivity : AppCompatActivity() {
         }
         store=DekuiPresentationStore(this)
         page=(state?.getString("page") ?: intent.getStringExtra("page"))?.takeIf { it in pages } ?: "General"
-        runCatching { Settings().loadSettings();size=store.read().optInt("android_menu_text_size",20);render() }
+        runCatching {
+            Settings().loadSettings()
+            val legacySize = 80 + store.read().optInt("android_menu_text_size", 20)
+            size = prefs.getInt("ReMaskedSettingsScale", legacySize).coerceIn(50, 125)
+            render()
+        }
             .onFailure { error(it);finish() }
     }
-    override fun onSaveInstanceState(state: Bundle) { state.putString("page",page);super.onSaveInstanceState(state) }
+    override fun onSaveInstanceState(state: Bundle) {
+        state.putString("page",page)
+        state.putBoolean(PRESENTATION_CHANGED, presentationChanged)
+        state.putBoolean(CONFIG_CHANGED, configChanged)
+        super.onSaveInstanceState(state)
+    }
+    private fun publishResult(action: String? = null) {
+        if (!inGame) return
+        setResult(RESULT_OK, Intent().apply {
+            putExtra(PRESENTATION_CHANGED, presentationChanged)
+            putExtra(CONFIG_CHANGED, configChanged)
+            putExtra(GAME_ACTION, action)
+        })
+    }
+    private fun returnToGame(action: String) {
+        publishResult(action)
+        finish()
+    }
     override fun onStop() { DekuiAndroidMenu.launcherCapture=false;DekuiAndroidMenu.cancel();super.onStop() }
     private fun error(t: Throwable) { Toast.makeText(this,t.message ?: "Could not save settings",Toast.LENGTH_LONG).show() }
-    private fun update(vararg values: Pair<String,Any>) { runCatching { store.update(values.toMap()) }.onFailure { error(it) } }
+    private fun update(vararg values: Pair<String,Any>) {
+        runCatching { store.update(values.toMap()) }.onSuccess {
+            presentationChanged = true
+            publishResult()
+        }.onFailure { error(it) }
+    }
     private fun save(setting: AbstractSetting) {
-        if(!SettingsFile.saveDekuiSettings(listOf(setting))) { error(IllegalStateException("Could not save settings"));Settings().loadSettings();render() }
-    }
-    private fun label(value: String,dim: Boolean=false)=TextView(this).apply {
-        text=value;typeface=font;textSize=textSize();setTextColor(if(dim)0xFFADA4BD.toInt() else Color.rgb(242,242,242))
-        setPadding(px(12f),px(10f),px(12f),px(10f))
-    }
-    private fun button(label: String,action: ()->Unit)=Button(this).apply {
-        text=label;typeface=font;textSize=textSize();isAllCaps=false;setTextColor(Color.WHITE)
-        backgroundTintList=ColorStateList(arrayOf(intArrayOf(android.R.attr.state_focused),intArrayOf()),intArrayOf(0xFF5A2386.toInt(),0xFF291C38.toInt()))
-        minHeight=px(70f);minimumHeight=px(70f);includeFontPadding=false;setPadding(px(14f),px(8f),px(14f),px(8f));setOnClickListener { action() }
-    }
-    private fun addButton(text: String,action: ()->Unit) { content.addView(button(text,action),LinearLayout.LayoutParams(-1,-2)) }
-    private fun note(text: String) { content.addView(label(text,true)) }
-    private fun section(text: String) { content.addView(label(text).apply { setTextColor(purple) }) }
-    private fun toggle(text: String,current: Boolean,change: (Boolean)->Unit) {
-        val row=SwitchCompat(this).apply {
-            this.text=text;typeface=font;textSize=textSize();setTextColor(Color.WHITE)
-            isChecked=current;minHeight=px(76f);setPadding(px(14f),px(8f),px(14f),px(8f))
-            thumbTintList=ColorStateList.valueOf(purple)
-            setOnCheckedChangeListener { _,value->change(value) }
+        if (!SettingsFile.saveDekuiSettings(listOf(setting))) {
+            error(IllegalStateException("Could not save settings"))
+            Settings().loadSettings()
+            render()
+        } else {
+            configChanged = true
+            publishResult()
         }
-        content.addView(row,LinearLayout.LayoutParams(-1,-2))
     }
+    private fun addButton(text: String, action: () -> Unit) = menu.add(menu.button(text, action = action))
+    private fun note(text: String) = menu.add(menu.text(text, dim = true))
+    private fun section(text: String) = menu.add(menu.text(text, heading = true))
+    private fun info(label: String, value: String) = menu.add(menu.info(label, value))
+    private fun percent(value: Float) = "${value.roundToInt()}%"
+    private fun multiplier(value: Float) = "%.2f×".format(value)
+    private fun pixels(value: Float) = "${value.roundToInt()} px"
+    private fun hudPercent(value: Float) = percent(100 + 5 * value)
+    private fun toggle(text: String, current: Boolean, change: (Boolean) -> Unit) =
+        menu.add(menu.toggle(text, current, change))
     private fun bool(text: String,key: String,default: Boolean=false) { toggle(text,store.read().optBoolean(key,default)) { update(key to it) } }
     private fun nativeBool(text: String,setting: BooleanSetting) { toggle(text,setting.boolean) { setting.boolean=it;save(setting) } }
-    private fun slider(text: String,current: Float,min: Float,max: Float,step: Float=1f,save: (Float)->Unit) {
-        val caption=label("$text: ${"%.2f".format(current)}")
-        content.addView(caption)
+    private fun slider(text: String,current: Float,min: Float,max: Float,step: Float=1f,
+                       format: (Float) -> String = { "%.2f".format(it) }, save: (Float)->Unit) {
+        val caption = menu.text(format(current), dim = true).apply {
+            setTextColor(purple)
+        }
         val seek=SeekBar(this).apply {
             this.max=((max-min)/step).toInt();progress=((current-min)/step).toInt().coerceIn(0,this.max)
-            progressTintList=ColorStateList.valueOf(purple);thumbTintList=ColorStateList.valueOf(purple)
-            minimumHeight=px(65f)
+            progressTintList=ColorStateList.valueOf(purple)
+            thumb = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.WHITE)
+                setSize(menu.dp(28), menu.dp(18))
+                cornerRadius = menu.dp(9).toFloat()
+            }
+            // SeekBar centers the thumb on the track's endpoints. Reserve the
+            // overhang so the rounded thumb stays visible at both extremes.
+            val thumbOverhang = thumbOffset
+            setPadding(thumbOverhang, 0, thumbOverhang, 0)
+            minimumHeight=menu.dp(34)
+            contentDescription=text
             setOnSeekBarChangeListener(object: SeekBar.OnSeekBarChangeListener {
                 var touched=false
                 override fun onProgressChanged(view: SeekBar,value: Int,fromUser: Boolean) {
-                    val chosen=min+value*step;caption.text="$text: ${"%.2f".format(chosen)}"
+                    val chosen=min+value*step;caption.text=format(chosen)
                     if(fromUser && !touched)save(chosen)
                 }
                 override fun onStartTrackingTouch(view: SeekBar) { touched=true }
                 override fun onStopTrackingTouch(view: SeekBar) { touched=false;save(min+view.progress*step) }
             })
         }
-        content.addView(seek,LinearLayout.LayoutParams(-1,px(70f)))
+        menu.add(menu.sliderRow(text, caption, seek))
     }
-    private fun number(text: String,key: String,default: Float,min: Float,max: Float,step: Float=1f) {
-        slider(text,store.read().optDouble(key,default.toDouble()).toFloat(),min,max,step) { update(key to it) }
+    private fun number(text: String,key: String,default: Float,min: Float,max: Float,step: Float=1f,
+                       format: (Float) -> String = { if (step % 1f == 0f) it.roundToInt().toString() else "%.2f".format(it) }) {
+        slider(text,store.read().optDouble(key,default.toDouble()).toFloat(),min,max,step,format) { update(key to it) }
     }
     private fun iconSelection() {
-        section("Icon selection")
         val icons = intArrayOf(R.mipmap.launcher_icon_0, R.mipmap.launcher_icon_1,
             R.mipmap.launcher_icon_2, R.mipmap.launcher_icon_3, R.mipmap.launcher_icon_4)
         val selected = LauncherIconSelection.selected(this)
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(menu.dp(14), menu.dp(12), menu.dp(14), menu.dp(12))
+        }
         icons.forEachIndexed { index, drawable ->
-            row.addView(ImageButton(this).apply {
+            row.addView(object : ImageButton(this) {
+                override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                    val width = View.MeasureSpec.getSize(widthMeasureSpec)
+                    super.onMeasure(widthMeasureSpec, View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY))
+                }
+            }.apply {
                 setImageResource(drawable)
                 scaleType = ImageView.ScaleType.FIT_CENTER
                 contentDescription = if (index == 0) "Combined icon" else "Icon $index"
                 isSelected = index == selected
                 isFocusable = true
-                setPadding(px(8f), px(8f), px(8f), px(8f))
+                setPadding(0, 0, 0, 0)
+                clipToOutline = true
                 fun border(focused: Boolean) {
                     background = android.graphics.drawable.GradientDrawable().apply {
-                        setColor(Color.BLACK)
-                        cornerRadius = px(10f).toFloat()
-                        setStroke(px(if (focused || isSelected) 4f else 1f).coerceAtLeast(1),
-                            if (focused) Color.WHITE else if (isSelected) purple else Color.DKGRAY)
+                        setColor(Color.TRANSPARENT)
+                        cornerRadius = menu.dp(8).toFloat()
+                        if (focused || isSelected) setStroke(menu.dp(3), if (focused) Color.WHITE else purple)
                     }
                 }
                 border(false)
@@ -189,28 +273,54 @@ class DekuiSettingsActivity : AppCompatActivity() {
                         render()
                     }.onFailure { error(it) }
                 }
-            }, LinearLayout.LayoutParams(0, px(165f), 1f).apply { setMargins(px(4f), 0, px(4f), 0) })
+            }, LinearLayout.LayoutParams(0, -2, 1f).apply { if (index > 0) marginStart = menu.dp(6) })
         }
-        content.addView(row)
-        note("Changes the home-screen icon. Your launcher may take a moment to refresh.")
+        menu.add(row)
     }
     private fun render() {
-        val root=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setBackgroundColor(0xFF08070D.toInt());setPadding(px(30f),px(22f),px(30f),px(22f)) }
-        val header=LinearLayout(this).apply { gravity=Gravity.CENTER_VERTICAL }
-        header.addView(label("Majora ReMasked / Settings").apply { setTextColor(purple) },LinearLayout.LayoutParams(0,-2,1f))
-        header.addView(button("Back") { finish() },LinearLayout.LayoutParams(px(240f),-2));root.addView(header)
-        val body=LinearLayout(this)
-        val rail=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
-        pages.forEach { name->rail.addView(button(name) { page=name;render() }.apply {
-            if(page==name)backgroundTintList=ColorStateList.valueOf(0xFF3D1468.toInt())
-        },LinearLayout.LayoutParams(-1,-2)) }
-        body.addView(ScrollView(this).apply { addView(rail) },LinearLayout.LayoutParams(0,-1,.24f))
-        content=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setPadding(px(30f),px(10f),px(12f),px(20f));setBackgroundColor(0xFF100D17.toInt()) }
-        section(page)
-        body.addView(ScrollView(this).apply { isFillViewport=true;addView(content) },LinearLayout.LayoutParams(0,-1,.76f))
-        root.addView(body,LinearLayout.LayoutParams(-1,0,1f))
+        editingSlider = false
+        menu = ReMaskedSettingsView(this, size)
+        val choice = openChoice
+        val root = menu.root
+        menu.show(pages, page, choice?.title, ::goBack) { category ->
+                openChoice = null
+                page = category
+                render()
+            }
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
+            val safe = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
+            menu.applyInsets(safe.left, safe.top, safe.right, safe.bottom)
+            insets
+        }
+        if (choice != null) {
+            var focused: View? = null
+            choice.options.forEachIndexed { index, option ->
+                val item = menu.option(option, selected = index == choice.selected) {
+                    openChoice = null
+                    restoreScroll = choiceReturnScroll
+                    val previous = menu
+                    if (index != choice.selected) choice.write(index)
+                    if (menu === previous) render()
+                }
+                if (index == choice.selected) focused = item
+                menu.add(item)
+            }
+            setContentView(root)
+            if (!root.isInTouchMode) focused?.requestFocus()
+            return
+        }
         when(page) {
             "General" -> {
+                section("Appearance")
+                val saveMenuSize: (Float) -> Unit = {
+                    size = it.toInt()
+                    prefs.edit().putInt("ReMaskedSettingsScale", size).apply()
+                    render()
+                }
+                slider("Menu size", size.toFloat(), 50f, 125f, format = { "%.2f×".format(it / 100f) }, save = saveMenuSize)
+                addButton("Reset menu size") { saveMenuSize(100f) }
+                iconSelection()
+                section("Language")
                 val languages=listOf(1,2,5)
                 val language=NativeLibrary.getDekuiGameLanguage()
                 choice("Game language",listOf("English","Français","Español"),languages.indexOf(language).coerceAtLeast(0)) { index->
@@ -220,15 +330,16 @@ class DekuiSettingsActivity : AppCompatActivity() {
                     render()
                 }
                 note("Applies when you start the game. Settings menus remain in English.")
-                note("Game data: Internal storage/mm3dport\nHUD settings, controller bindings, saves and mods are stored here.")
-                iconSelection()
                 bool("Show frame rate","show_performance")
-                slider("Menu size",size.toFloat(),0f,40f) { update("android_menu_text_size" to it.toInt());size=it.toInt();render() }
-                addButton("Reset menu size") { update("android_menu_text_size" to 20);size=20;render() }
-                note("Settings are saved as you change them and are shared with the in-game menu.")
             }
             "Graphics" -> graphics()
-            "Mods" -> {
+            "Models" -> {
+                if (inGame) {
+                    note("Change the player model or import a PAK from startup Settings.")
+                    setContentView(root)
+                    menu.focusCategory()
+                    return
+                }
                 val data=store.read()
                 section("Appearance")
                 val model=if(data.optBoolean("pak_link_model",false))4 else if(data.optBoolean("twilight_link_model",false))3 else if(data.optBoolean("dark_link_model",false))2 else if(data.optBoolean("adult_link_model",false))1 else 0
@@ -237,7 +348,7 @@ class DekuiSettingsActivity : AppCompatActivity() {
                 }
                 if(model==4) {
                     note(DekuiPakSetup.description(this))
-                    content.addView(button("Import PAK file") { pakPicker.launch(arrayOf("*/*")) }.apply {
+                    content.addView(menu.button("Import PAK file") { pakPicker.launch(arrayOf("*/*")) }.apply {
                         isEnabled=DekuiPakSetup.canImport(this@DekuiSettingsActivity)&&!generatingMod
                     },LinearLayout.LayoutParams(-1,-2))
                     note("Select a ModLoader64 .pak player-model package. Uses native MM3D equipment, abilities and voices. Import before gameplay; restart after changing models. Human Link rigs are supported; transformation forms and custom scripts are not imported.")
@@ -252,7 +363,7 @@ class DekuiSettingsActivity : AppCompatActivity() {
                     note(DekuiTwilightLinkSetup.description(this))
                     addButton("Select your Twilight Princess ROM") { tpRomPicker.launch(arrayOf("*/*")) }
                     addButton("Choose your TP texture pack") { tpTexturePicker.launch(android.net.Uri.parse("content://com.android.externalstorage.documents/document/primary%3ADusklight%2Ftexture_replacements")) }
-                    content.addView(button("Generate Twilight Princess Link mod") { generateMod(twilight=true) }.apply {
+                    content.addView(menu.button("Generate Twilight Princess Link mod") { generateMod(twilight=true) }.apply {
                         isEnabled=DekuiTwilightLinkSetup.canGenerate(this@DekuiSettingsActivity)&&!generatingMod
                     },LinearLayout.LayoutParams(-1,-2))
                     note("Reads your own GameCube ISO or RVZ and searches every subfolder of the selected texture pack. Source files and other mods are preserved.")
@@ -291,8 +402,8 @@ class DekuiSettingsActivity : AppCompatActivity() {
                 note(DekuiAdultLinkSetup.description(this))
                 addButton("Select your OoT3D ROM") { modRomPicker.launch(arrayOf("*/*")) }
                 addButton("Choose your OoT3D texture pack") { modTexturePicker.launch(android.net.Uri.parse("content://com.android.externalstorage.documents/document/primary%3AROMs%2Fn3DS")) }
-                content.addView(button("Generate Adult Link mod") { generateMod() }.apply { isEnabled=DekuiAdultLinkSetup.canGenerate(this@DekuiSettingsActivity)&&!generatingMod },LinearLayout.LayoutParams(-1,-2))
-                content.addView(button("Generate Dark Link mod") { generateMod(true) }.apply { isEnabled=DekuiAdultLinkSetup.canGenerate(this@DekuiSettingsActivity)&&!generatingMod },LinearLayout.LayoutParams(-1,-2))
+                content.addView(menu.button("Generate Adult Link mod") { generateMod() }.apply { isEnabled=DekuiAdultLinkSetup.canGenerate(this@DekuiSettingsActivity)&&!generatingMod },LinearLayout.LayoutParams(-1,-2))
+                content.addView(menu.button("Generate Dark Link mod") { generateMod(true) }.apply { isEnabled=DekuiAdultLinkSetup.canGenerate(this@DekuiSettingsActivity)&&!generatingMod },LinearLayout.LayoutParams(-1,-2))
                 note("Uses your decrypted OoT3D .3ds/.cci ROM and copies only matching textures from your pack. Original files are read-only. No full ROM copy is stored.")
                 if(model==1&&!java.io.File(org.citra.citra_emu.utils.DekuiStorage.root(this),"load/mm3d-models/adult-link/romfs/actors/zelda2_link_child_new.gar.lzs").isFile)
                     note("Converted Adult Link model is not installed.")
@@ -300,100 +411,309 @@ class DekuiSettingsActivity : AppCompatActivity() {
             }
             "Controls" -> controls()
             "Touch" -> {
+                section("Touch controls")
                 toggle("Show touch controls",EmulationMenuSettings.showOverlay) { EmulationMenuSettings.showOverlay=it }
-                slider("Touch-control opacity",prefs.getInt("controlOpacity",50).toFloat(),0f,100f) { prefs.edit().putInt("controlOpacity",it.toInt()).apply() }
-                slider("Touch-control size",prefs.getInt("controlScale",50).toFloat(),0f,150f) { prefs.edit().putInt("controlScale",it.toInt()).apply() }
+                slider("Touch-control opacity", prefs.getInt("controlOpacity", 50).toFloat(), 0f, 100f, format = ::percent) {
+                    prefs.edit().putInt("controlOpacity", it.toInt()).apply()
+                }
+                slider("Touch-control size", prefs.getInt("controlScale", 50) + 50f, 50f, 200f, format = ::percent) {
+                    prefs.edit().putInt("controlScale", it.toInt() - 50).apply()
+                }
                 toggle("Touch vibration",EmulationMenuSettings.hapticFeedback) { EmulationMenuSettings.hapticFeedback=it }
-                toggle("Swap screens",BooleanSetting.SWAP_SCREEN.boolean) { BooleanSetting.SWAP_SCREEN.boolean=it;save(BooleanSetting.SWAP_SCREEN) }
-                note("Touch-button placement and visible-button selection can be edited in the Touch page during play.")
+                if (inGame) addButton("Edit touch-control placement") { returnToGame(EDIT_TOUCH_LAYOUT) }
+                else note("Touch-control placement can be edited during gameplay.")
+                addButton("Reset layout") {
+                    androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle("Reset touch layout?")
+                        .setMessage("Restore the default control positions in all orientations.")
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .setPositiveButton("Reset") { _, _ ->
+                            val editor = prefs.edit()
+                            prefs.all.keys.filter { it.startsWith("ReMaskedTouch-v1-") }.forEach { editor.remove(it) }
+                            editor.apply()
+                        }.show()
+                }
+                choice("Movement stick position", listOf("Fixed", "Floating"),
+                    if (EmulationMenuSettings.joystickRelCenter) 1 else 0) { EmulationMenuSettings.joystickRelCenter = it == 1 }
+                toggle("Equipped item artwork", prefs.getBoolean("ReMaskedTouchHud", true)) {
+                    prefs.edit().putBoolean("ReMaskedTouchHud", it).apply()
+                }
+                choice("Face layout", listOf("Nintendo diamond", "Alternate diamond", "GameCube"),
+                    prefs.getInt("ReMaskedTouchFaceLayout", 0).coerceIn(0, 2)) {
+                    prefs.edit().putInt("ReMaskedTouchFaceLayout", it).apply()
+                }
+                section("Individual controls")
+                val names = listOf("Action", "Sword", "Item X", "Item Y", "Item I", "Item II", "Target",
+                    "Shield", "Start / Items menu", null, "D-pad", "Movement stick", "Camera stick")
+                val controlIds = listOf(700, 701, 702, 703, 773, 774, 707, 708, 704, 705, 780, 713, 718)
+                names.forEachIndexed { index, name ->
+                    if (name == null) return@forEachIndexed
+                    val visibility = "buttonToggle$index"
+                    val scale = "controlScale-${controlIds[index]}"
+                    toggle("Show $name", prefs.getBoolean(visibility, index != 12)) {
+                        prefs.edit().putBoolean(visibility, it).apply()
+                    }
+                    slider("$name size", prefs.getInt(scale, 50) + 50f, 50f, 200f, 5f, ::percent) {
+                        prefs.edit().putInt(scale, it.toInt() - 50).apply()
+                    }
+                }
+                toggle("Show Pictograph Box", prefs.getBoolean("buttonToggle13", true)) {
+                    prefs.edit().putBoolean("buttonToggle13", it).apply()
+                }
+                slider("Pictograph Box size", prefs.getInt("pictographScale", 50) + 50f, 50f, 200f, 5f, ::percent) {
+                    prefs.edit().putInt("pictographScale", it.toInt() - 50).apply()
+                }
+                section("Android display")
+                nativeBool("Swap screens", BooleanSetting.SWAP_SCREEN)
             }
-            "Audio" -> {
-                bool("Accurate HLE audio","accurate_hle_audio",true);bool("Mute music","mute_music")
-                slider("Volume",ScaledFloatSetting.AUDIO_VOLUME.float,0f,100f) { ScaledFloatSetting.AUDIO_VOLUME.float=it;save(ScaledFloatSetting.AUDIO_VOLUME) }
-            }
+            "Audio" -> audio()
             "HUD" -> hud()
-            "Difficulty" -> {
-                number("Damage taken","damage_multiplier",1f,1f,16f)
-                number("Red potion healing","red_potion_hearts",20f,1f,20f);number("Blue potion healing","blue_potion_hearts",20f,1f,20f)
-                number("Bottled fairy healing","bottled_fairy_hearts",10f,1f,20f)
-                listOf("Weaker enhanced defense" to "weaker_enhanced_defense","Disable heart drops" to "disable_heart_drops","Disable rupee drops" to "disable_rupee_drops","Disable fairy drops" to "disable_fairy_drops","Disable magic drops" to "disable_magic_drops","Disable ammo pickups" to "disable_ammo_pickups","Lose rupees on death" to "lose_rupees_on_death","World ends on death" to "world_ends_on_death","Increase purchase prices and fees" to "double_prices").forEach { bool(it.first,it.second) }
-                number("Price multiplier","price_multiplier",2f,2f,3f)
-            }
-            "Restoration" -> {
+            "Difficulty" -> difficulty()
+            "Restoration Fixes" -> {
                 bool("Bombers don't approach automatically","disable_bomber_approach");bool("Activate owl statues with a sword","sword_activate_owls")
-                bool("Classic Song of Double Time","classic_double_time");bool("Classic saving","classic_saving")
-                note("These experimental options change gameplay and saving rules.")
+                bool("Classic Song of Double Time","classic_double_time")
+                if (inGame) note("Classic saving can be changed from startup Settings.")
+                else bool("Classic saving","classic_saving")
             }
             "Quality of life" -> {
                 section("Link movement")
-                number("Walk speed (x)","walk_speed",1f,.5f,3f,.25f)
-                number("Climb speed (x)","climb_speed",1f,.5f,3f,.25f)
-                number("Swim speed (x)","swim_speed",1f,.5f,3f,.25f)
+                number("Walk speed (x)","walk_speed",1f,.5f,3f,.25f,::multiplier)
+                number("Climb speed (x)","climb_speed",1f,.5f,3f,.25f,::multiplier)
+                number("Swim speed (x)","swim_speed",1f,.5f,3f,.25f,::multiplier)
                 addButton("Reset movement speeds") { update("walk_speed" to 1f,"climb_speed" to 1f,"swim_speed" to 1f);render() }
                 note("1x is normal speed. Walk affects grounded movement; climb affects ladders and vines. Swim includes underwater movement.")
                 bool("Disable low-heart beeping","disable_low_health_beep");bool("Disable Tatl reminders","disable_tatl_reminders") }
-            "Cheats" -> note("Load your saved game to use cheats from the in-game menu. Availability is checked against the running game.")
-            "About" -> note("Majora ReMasked — A DekUI Fork. Uses Azahar and Project Restoration. \n\n${org.citra.citra_emu.BuildConfig.VERSION_NAME}")
-        }
-        setContentView(root)
-    }
-    private fun graphics() {
-        val data=store.read();val selected=if(!data.optBoolean("interpolation_60fps",true))0 else if(data.optBoolean("interpolation_cpu_vertices",true))1 else 2
-        listOf("Original 30 FPS","60 FPS CPU interpolation","60 FPS GPU interpolation").forEachIndexed { index,text->
-            addButton((if(selected==index)"✓  " else "")+text) {
-                update("interpolation_60fps" to (index!=0),"interpolation_cpu_vertices" to (index!=2))
-                if(index!=0) { BooleanSetting.VSYNC.boolean=true;BooleanSetting.HW_SHADER.boolean=index==2;SettingsFile.saveDekuiSettings(listOf(BooleanSetting.VSYNC,BooleanSetting.HW_SHADER)) }
-                render()
+            "Cheats" -> {
+                if (inGame) addButton("Open in-game tools") { returnToGame(OPEN_GAME_TOOLS) }
+                else note("Load a game to use cheats and other in-game tools.")
+            }
+            "About" -> {
+                info("Version", BuildConfig.VERSION_NAME)
+                info("Build", BuildConfig.VERSION_CODE.toString())
+            }
+            "Data" -> {
+                val location = if (DekuiStorage.root(this) == DekuiStorage.sharedRoot()) "Internal storage/mm3dport"
+                    else "App storage"
+                info("Current data folder", location)
+                if (DekuiStorage.game(this).isFile) info("Game file", "Ready")
+                else if (!inGame) addButton("Choose ROM") {
+                    setResult(RESULT_OK, Intent().putExtra(GAME_ACTION, CHOOSE_ROM))
+                    finish()
+                }
             }
         }
-        number("Field of View","game_camera_fov",65f,45f,70f,.5f)
-        number("Camera Distance (x)","camera_distance",1f,.5f,3f,.05f)
-        addButton("Reset camera distance") { update("camera_distance" to 1f);render() }
-        note("1x is normal camera distance. Higher values move farther from Link. Wall collision can bring the camera closer.")
-        number("Enemy / NPC draw distance","actor_draw_distance",1f,1f,3f,.05f)
-        number("Vegetation / prop draw distance","prop_draw_distance",1f,1f,3f,.05f)
-        slider("Internal resolution",IntSetting.RESOLUTION_FACTOR.int.toFloat(),1f,9f) { IntSetting.RESOLUTION_FACTOR.int=it.toInt();save(IntSetting.RESOLUTION_FACTOR) }
-        bool("Fix bloom","fix_bloom",true);nativeBool("VSync",BooleanSetting.VSYNC)
-        nativeBool("Remember compiled shaders",BooleanSetting.DISK_SHADER_CACHE)
-        if(!data.optBoolean("interpolation_60fps",true))nativeBool("Hardware shaders",BooleanSetting.HW_SHADER)
-        nativeBool("Async shader compilation",BooleanSetting.ASYNC_SHADERS)
+        setContentView(root)
+        restoreScroll?.let(menu::restoreScroll)
+        restoreScroll = null
+        menu.focusCategory()
+    }
+    private fun graphics() {
+        section("Display")
+        val aspectValues = listOf(0, 2, 1, 3, 5)
+        choice("Aspect ratio", listOf("Original 3DS (5:3)", "4:3", "16:9", "21:9", "Stretch to fill"),
+            aspectValues.indexOf(IntSetting.ASPECT_RATIO.int).coerceAtLeast(0)) {
+            IntSetting.ASPECT_RATIO.int = aspectValues[it]
+            save(IntSetting.ASPECT_RATIO)
+        }
+        section("Rendering")
+        val data = store.read()
+        val interpolation = data.optBoolean("interpolation_60fps", true)
+        val frameRate = if (!interpolation) 0 else if (data.optBoolean("interpolation_cpu_vertices", true)) 1 else 2
+        choice("Frame rate", listOf("Original 30 FPS", "60 FPS CPU interpolation", "60 FPS GPU interpolation"), frameRate) { index ->
+            update("interpolation_60fps" to (index!=0),"interpolation_cpu_vertices" to (index!=2))
+            if(index!=0) { BooleanSetting.VSYNC.boolean=true;BooleanSetting.HW_SHADER.boolean=index==2;save(BooleanSetting.VSYNC);save(BooleanSetting.HW_SHADER) }
+        }
+        val resolutions = (1..9).map { "${it}× · ${400 * it} × ${240 * it}" }
+        choice("Internal resolution", resolutions, IntSetting.RESOLUTION_FACTOR.int.coerceIn(1, 9) - 1) {
+            IntSetting.RESOLUTION_FACTOR.int = it + 1
+            save(IntSetting.RESOLUTION_FACTOR)
+        }
+        val filters = resources.getStringArray(R.array.textureFilterNames).toList()
+        choice("Texture filter", filters, IntSetting.TEXTURE_FILTER.int.coerceIn(filters.indices)) {
+            IntSetting.TEXTURE_FILTER.int = it
+            save(IntSetting.TEXTURE_FILTER)
+        }
+        nativeBool("Remember compiled shaders", BooleanSetting.DISK_SHADER_CACHE)
+        bool("Fix bloom", "fix_bloom", true)
+        nativeBool("VSync", BooleanSetting.VSYNC)
+        if (!interpolation) nativeBool("Hardware shaders", BooleanSetting.HW_SHADER)
+        nativeBool("Async shader compilation", BooleanSetting.ASYNC_SHADERS)
         section("Custom textures")
         nativeBool("Use custom textures",BooleanSetting.CUSTOM_TEXTURES)
         note(DekuiTextureStorage.description())
         addButton("Choose texture folder") { picker.launch(android.net.Uri.parse("content://com.android.externalstorage.documents/document/primary%3AROMs%2Fn3DS")) }
         addButton("Use app texture folder") { DekuiTextureStorage.clear();render() }
-        note("Use your existing Azahar textures directly. Folder changes apply on the next game launch.")
+        note("Folder changes apply on the next game launch.")
+        section("Camera")
+        number("Camera Distance (x)","camera_distance",1f,.5f,3f,.05f,::multiplier)
+        addButton("Reset camera distance") { update("camera_distance" to 1f);render() }
+        number("Field of view","game_camera_fov",65f,45f,70f,.5f)
+        number("Enemy / NPC draw distance","actor_draw_distance",1f,1f,3f,.05f,::multiplier)
+        number("Vegetation / prop draw distance","prop_draw_distance",1f,1f,3f,.05f,::multiplier)
+        section("Casting")
+        choice("Cast layout", listOf("Off", "Cast single screen gameplay", "Cast top screen"),
+            ReMaskedCast.mode(this)) { ReMaskedCast.setMode(this, it) }
+        addButton("Choose cast display…") {
+            try {
+                startActivity(Intent(android.provider.Settings.ACTION_CAST_SETTINGS))
+            } catch (_: android.content.ActivityNotFoundException) {
+                note("Open Cast from your Android device’s Quick Settings.")
+            }
+        }
+        note("Single screen uses this device as a touch controller. Top screen keeps the 3DS touchscreen and neutral controls on this device.")
+    }
+    private fun audio() {
+        section("Audio")
+        val volume = ScaledFloatSetting.AUDIO_VOLUME
+        slider("Volume", volume.float, 0f, 100f, format = ::percent) {
+            val wasMuted = volume.float == 0f
+            if (it == 0f && !wasMuted) prefs.edit().putFloat("ReMaskedUnmutedVolume", volume.float).apply()
+            volume.float = it
+            save(volume)
+            if (wasMuted != (it == 0f)) {
+                restoreScroll = menu.scrollPosition
+                render()
+            }
+        }
+        toggle("Mute", volume.float == 0f) { muted ->
+            if (muted) prefs.edit().putFloat("ReMaskedUnmutedVolume", volume.float).apply()
+            volume.float = if (muted) 0f else prefs.getFloat("ReMaskedUnmutedVolume", 100f).coerceIn(1f, 100f)
+            save(volume)
+            restoreScroll = menu.scrollPosition
+            render()
+        }
+        bool("Mute music","mute_music")
+        section("Android audio")
+        bool("Accurate HLE audio","accurate_hle_audio",true)
+    }
+    private fun difficulty() {
+        val modifiers = listOf(
+            "Weaker enhanced defense" to "weaker_enhanced_defense",
+            "Disable heart drops" to "disable_heart_drops",
+            "Disable rupee drops" to "disable_rupee_drops",
+            "Disable fairy drops" to "disable_fairy_drops",
+            "Disable magic drops" to "disable_magic_drops",
+            "Disable ammo pickups" to "disable_ammo_pickups",
+            "Lose rupees on death" to "lose_rupees_on_death",
+            "Dying moves time forward 6 hours" to "advance_six_hours_on_death",
+            "Fast time" to "fast_time",
+            "World ends on death" to "world_ends_on_death",
+            "Increase purchase prices and fees" to "double_prices",
+        )
+        number("Damage taken", "damage_multiplier", 1f, 1f, 16f, format = ::multiplier)
+        number("Red potion healing", "red_potion_hearts", 20f, 1f, 20f)
+        number("Blue potion healing", "blue_potion_hearts", 20f, 1f, 20f)
+        number("Bottled fairy healing", "bottled_fairy_hearts", 10f, 1f, 20f)
+        modifiers.forEach { bool(it.first, it.second) }
+        number("Price multiplier", "price_multiplier", 2f, 2f, 3f, format = ::multiplier)
+        addButton("Reset difficulty") {
+            update(*modifiers.map { it.second to false }.toTypedArray(),
+                "damage_multiplier" to 1, "red_potion_hearts" to 20, "blue_potion_hearts" to 20,
+                "bottled_fairy_hearts" to 10, "price_multiplier" to 2)
+            render()
+        }
     }
     private fun controls() {
+        section("Game prompts")
         bool("Hide item menu button prompts","player_hud_hide_menu_prompts");bool("Single-screen game instructions","single_screen_text",true)
         bool("Controller neutral item prompts","controller_neutral_item_prompts",true)
+        section("Controller bindings")
         val labels=listOf("A","B","X","Y","Select","Start","Home","ZL / L2: targeting","ZR / R2: shield","L / L1: item I","R / R1: item II","D-pad up","D-pad down","D-pad left","D-pad right","Left stick vertical","Left stick horizontal","Right stick vertical","Right stick horizontal","D-pad vertical axis","D-pad horizontal axis","Pictograph Box")
-        DekuiAndroidMenu.keys.forEachIndexed { index,key->
-            val value=if(DekuiAndroidMenu.capture==index)"Press a button or move an axis…" else DekuiAndroidMenu.bindingLabel(index).ifEmpty { "Unbound" }
-            addButton("${labels[index]}: $value") { DekuiAndroidMenu.launcherCapture=true;DekuiAndroidMenu.begin(index);render() }
-            addButton("Clear ${labels[index]}") { DekuiAndroidMenu.clear(index);render() }
+        fun binding(index: Int) {
+            val label = labels[index]
+            val capturing = DekuiAndroidMenu.capture == index
+            val value = if (capturing) "Press a button or move an axis…" else DekuiAndroidMenu.bindingLabel(index).ifEmpty { "Unbound" }
+            menu.add(menu.choiceRow(label, value) {
+                if (capturing) {
+                    DekuiAndroidMenu.cancel()
+                    restoreScroll = menu.scrollPosition
+                    render()
+                } else {
+                    openOptions(label, listOf("Assign control", "Clear binding")) { selected ->
+                        if (selected == 0) {
+                            DekuiAndroidMenu.launcherCapture = true
+                            DekuiAndroidMenu.begin(index)
+                        } else DekuiAndroidMenu.clear(index)
+                    }
+                }
+            })
         }
+        (0..14).filter { it != 6 }.forEach(::binding)
+        binding(labels.lastIndex)
+        addButton("Restore ReMasked controller layout") {
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Restore controller layout?")
+                .setMessage("Replace your current game bindings with the ReMasked defaults.")
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton("Restore") { _, _ ->
+                    runCatching {
+                        org.citra.citra_emu.features.settings.model.view.InputBindingSetting.applyDekuiPcSnapshotBindings()
+                        prefs.edit().remove(DekuiAndroidMenu.PICTOGRAPH_KEY).apply()
+                    }.onFailure(::error)
+                    restoreScroll = menu.scrollPosition
+                    render()
+                }.show()
+        }
+        section("Sticks and triggers")
+        (15..20).forEach(::binding)
+        section("Android controls")
+        binding(6)
         if(DekuiAndroidMenu.capture>=0)addButton("Cancel binding") { DekuiAndroidMenu.cancel();render() }
     }
     private fun hud() {
-        number("Overall HUD scale","player_hud_scale",0f,-10f,10f)
-        number("Overall HUD opacity","player_hud_opacity",1f,0f,1f,.05f)
-        number("Top padding","player_hud_top_padding",0f,0f,40f);number("Bottom padding","player_hud_bottom_padding",0f,0f,40f)
-        number("Location banner Y","player_hud_banner_y",0f,-240f,240f);number("Location banner darkness","player_hud_banner_darkness",0f,0f,1f,.05f)
-        val keys=listOf("dpad","magic","hearts","buttons","minimap","clock","rupees","minigame","carrots","timer")
-        val labels=listOf("D-pad","Magic meter","Hearts","Buttons","Minimap","Clock","Rupees","Minigame counter","Epona carrots","Timer")
-        keys.forEachIndexed { i,key->addButton(labels[i]) {
-            content.removeViews(1,content.childCount-1)
-            section(labels[i]);addButton("Back to HUD") { render() }
-            number("Scale","player_hud_${key}_scale",0f,-10f,10f)
-            number("X position","player_hud_${key}_x",0f,-400f,400f);number("Y position","player_hud_${key}_y",0f,-240f,240f)
-            if(key=="hearts")number("Heart spacing","player_hud_heart_spacing",0f,-40f,40f)
-            if(key=="magic")number("Height","player_hud_magic_height",0f,-10f,10f)
-            if(key=="minimap")number("Opacity","minimap_opacity",.85f,0f,1f,.05f)
-            if(key=="buttons")listOf("x","y","i","ii","a","b").forEach { b->
-                section(b.uppercase());number("X position","player_hud_button_${b}_x",0f,-400f,400f);number("Y position","player_hud_button_${b}_y",0f,-240f,240f)
+        section("Overall HUD")
+        number("Overall HUD scale","player_hud_scale",0f,-10f,10f,format=::hudPercent)
+        number("Overall HUD opacity","player_hud_opacity",1f,0f,1f,.01f) { percent(it * 100) }
+        number("Heart spacing","player_hud_heart_spacing",0f,-40f,40f)
+        number("Magic meter height","player_hud_magic_height",0f,-10f,10f,format=::hudPercent)
+        val elements = listOf("D-pad" to "dpad", "Magic meter" to "magic", "Hearts" to "hearts",
+            "Buttons" to "buttons", "Clock" to "clock", "Rupees" to "rupees",
+            "Minigame counter" to "minigame", "Epona carrots" to "carrots", "Timer" to "timer")
+        fun element(label: String, key: String) {
+            section(label)
+            number("Size","player_hud_${key}_scale",0f,-10f,10f,format=::hudPercent)
+            number("Horizontal offset","player_hud_${key}_x",0f,-400f,400f,format=::pixels)
+            number("Vertical offset","player_hud_${key}_y",0f,-240f,240f,format=::pixels)
+        }
+        elements.forEach { (label, key) -> element(label, key) }
+        addButton("Reset gameplay HUD") {
+            val positions = elements.flatMap { (_, key) -> listOf("scale", "x", "y").map { "player_hud_${key}_$it" to 0 } }
+            update(*positions.toTypedArray(), "player_hud_scale" to 0, "player_hud_opacity" to 1f,
+                "player_hud_heart_spacing" to 0, "player_hud_magic_height" to 0, "player_hud_hide_menu_prompts" to false)
+            restoreScroll = menu.scrollPosition
+            render()
+        }
+        section("Title screen")
+        val poses = listOf("Logo" to "logo", "Copyright" to "copyright", "Press Start" to "press_start", "Loading icon" to "loading_icon")
+        fun titleDefaults(key: String) = listOf("startup_${key}_x" to 0f, "startup_${key}_y" to 0f, "startup_${key}_scale" to 1f)
+        for ((label, key) in poses) {
+            number("$label horizontal offset","startup_${key}_x",0f,-400f,400f,.1f) { "%.2f px".format(it) }
+            number("$label vertical offset","startup_${key}_y",0f,-240f,240f,.1f) { "%.2f px".format(it) }
+            number("$label size","startup_${key}_scale",1f,.1f,3f,.01f) { percent(it * 100) }
+            addButton("Reset $label") {
+                update(*titleDefaults(key).toTypedArray())
+                restoreScroll = menu.scrollPosition
+                render()
             }
-        } }
+        }
+        addButton("Reset title screen") {
+            update(*poses.flatMap { (_, key) -> titleDefaults(key) }.toTypedArray())
+            restoreScroll = menu.scrollPosition
+            render()
+        }
+        section("Android HUD")
+        number("Top padding","player_hud_top_padding",0f,0f,40f,format=::pixels)
+        number("Bottom padding","player_hud_bottom_padding",0f,0f,40f,format=::pixels)
+        number("Location banner vertical offset","player_hud_banner_y",0f,-240f,240f,format=::pixels)
+        number("Location banner darkness","player_hud_banner_darkness",0f,0f,1f,.05f) { percent(it * 100) }
+        element("Minimap", "minimap")
+        number("Minimap opacity","minimap_opacity",.85f,0f,1f,.05f) { percent(it * 100) }
+        section("Individual button offsets")
+        for (key in listOf("x","y","i","ii","a","b")) {
+            val label = key.uppercase()
+            number("$label horizontal offset","player_hud_button_${key}_x",0f,-400f,400f,format=::pixels)
+            number("$label vertical offset","player_hud_button_${key}_y",0f,-240f,240f,format=::pixels)
+        }
     }
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if(DekuiAndroidMenu.capture>=0) {
@@ -401,8 +721,31 @@ class DekuiSettingsActivity : AppCompatActivity() {
         }
         if(captureRelease && event.action==KeyEvent.ACTION_UP) { captureRelease=false;return true }
         when(DekuiMenuInput.action(event)) {
-            DekuiMenuInput.Action.Back -> { if(event.action==KeyEvent.ACTION_UP)finish();return true }
-            DekuiMenuInput.Action.Confirm,DekuiMenuInput.Action.Start -> { if(event.action==KeyEvent.ACTION_UP)currentFocus?.performClick();return true }
+            DekuiMenuInput.Action.Back -> {
+                if(event.action==KeyEvent.ACTION_UP) onBackPressedDispatcher.onBackPressed()
+                return true
+            }
+            DekuiMenuInput.Action.Confirm,DekuiMenuInput.Action.Start -> {
+                if (event.action == KeyEvent.ACTION_UP) {
+                    val focused = currentFocus
+                    if (focused is SeekBar) editingSlider = !editingSlider
+                    else focused?.performClick()
+                }
+                return true
+            }
+            DekuiMenuInput.Action.Left -> {
+                if (!editingSlider && menu.isContentFocused()) {
+                    if (event.action == KeyEvent.ACTION_DOWN) menu.focusCategory()
+                    return true
+                }
+            }
+            DekuiMenuInput.Action.Right -> {
+                if (menu.isCategoryFocused()) {
+                    if (event.action == KeyEvent.ACTION_DOWN) menu.focusFirstControl()
+                    return true
+                }
+                if (!editingSlider && currentFocus is SeekBar) return true
+            }
             else -> Unit
         }
         val direction=DekuiMenuInput.direction(DekuiMenuInput.action(event))

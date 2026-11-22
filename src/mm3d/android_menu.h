@@ -8,7 +8,7 @@
 
 namespace MM3D::AndroidMenu {
 enum Action { Bind=1, CancelBind, TouchVisible, TouchEdit, TouchButtons, TouchOpacity,
-              TouchScale, Haptics, SwapScreens, LoadAmiibo, RemoveAmiibo, Textures, ClearBind, ClearTextures, TouchAppearance };
+              TouchScale, Haptics, SwapScreens, LoadAmiibo, RemoveAmiibo, Textures, ClearBind, ClearTextures, TouchAppearance, CastLayout, ChooseCastDisplay, About, CloudSaves, SeparateWindows };
 inline std::atomic<int> pending{0};
 inline void Request(Action action, unsigned value=0) {
     int empty=0;
@@ -18,7 +18,8 @@ struct State {
     std::vector<std::string> bindings;
     std::string textures, status;
     int capture=-1, opacity=50, scale=50;
-    bool touch=false, haptics=true;
+    bool touch=false, haptics=true, separate_windows=false;
+    int cast_layout=0;
 };
 inline std::mutex mutex;
 inline State state;

@@ -334,7 +334,6 @@ void Config::ReadValues() {
 #ifdef ENABLE_MM3D_PRESENTATION
     // Match the verified desktop presentation path, including CPU vertex transforms.
     Settings::values.use_hw_shader = false;
-    Settings::values.async_shader_compilation = false;
     // The authored presentation targets the top screen and Vulkan renderer.
     Settings::values.layout_option = Settings::LayoutOption::SingleScreen;
     Settings::values.graphics_api = Settings::GraphicsAPI::Vulkan;

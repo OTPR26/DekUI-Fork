@@ -110,7 +110,6 @@
 
         <activity android:name="org.citra.citra_emu.activities.DekuiSettingsActivity"
             android:exported="false" android:theme="@style/Theme.Citra.Main"
-            android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|screenSize|uiMode" />
 
         <activity android:name="org.citra.citra_emu.activities.DekuiLaunchActivity"

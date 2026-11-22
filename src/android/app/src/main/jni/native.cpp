@@ -1,5 +1,8 @@
 #include "mm3d/touch_hud.h"
 #include "mm3d/widescreen.h"
+#ifdef ENABLE_MM3D_PRESENTATION
+#include "mm3d/simple_cheats.h"
+#endif
 // Copyright 2019-2026 Citra Emulator Project / Azahar Emulator Project
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
@@ -43,6 +46,7 @@
 #include "mm3d/diagnostics.h"
 #include "mm3d/player_settings_bridge.h"
 #include "mm3d/game_language.h"
+#include "mm3d/overlay.h"
 #include "mm3d/android_menu.h"
 #include "mm3d/pictograph.h"
 #endif
@@ -452,7 +456,7 @@ extern "C" {
 // Called on Android's UI thread, like reloadSettings. Kotlin owns INI writes.
 void Java_org_citra_citra_1emu_NativeLibrary_updateDekuiAndroidUi(JNIEnv* env, jclass,
     jobjectArray bindings, jstring textures, jstring status, jint capture, jboolean touch,
-    jint opacity, jint scale, jboolean haptics) {
+    jint opacity, jint scale, jboolean haptics, jint cast_layout) {
 #ifdef ENABLE_MM3D_PRESENTATION
     MM3D::AndroidMenu::State next;
     const auto count=env->GetArrayLength(bindings);
@@ -462,6 +466,7 @@ void Java_org_citra_citra_1emu_NativeLibrary_updateDekuiAndroidUi(JNIEnv* env, j
     }
     next.textures=GetJString(env,textures);next.status=GetJString(env,status);
     next.capture=capture;next.touch=touch;next.opacity=opacity;next.scale=scale;next.haptics=haptics;
+    next.cast_layout=std::clamp<int>(cast_layout,0,2);
     std::scoped_lock lock{MM3D::AndroidMenu::mutex};MM3D::AndroidMenu::state=std::move(next);
 #endif
 }
@@ -572,6 +577,12 @@ jboolean Java_org_citra_citra_1emu_NativeLibrary_hasDekuiSettings(JNIEnv*, jclas
 #endif
 }
 
+void Java_org_citra_citra_1emu_NativeLibrary_requestDekuiSettingsReload(JNIEnv*, jclass) {
+#ifdef ENABLE_MM3D_PRESENTATION
+    MM3D::RequestPresentationSettingsReload();
+#endif
+}
+
 jboolean Java_org_citra_citra_1emu_NativeLibrary_openDekuiSettings(JNIEnv*, jclass) {
 #ifdef ENABLE_MM3D_PRESENTATION
     if (!MM3D::presentation_available.load()) return false;
@@ -649,6 +660,38 @@ void Java_org_citra_citra_1emu_NativeLibrary_surfaceChanged(JNIEnv* env,
     }
 
     LOG_INFO(Frontend, "Surface changed");
+}
+
+void Java_org_citra_citra_1emu_NativeLibrary_setReMaskedCastMode(
+    JNIEnv*, jclass, [[maybe_unused]] jint mode) {
+#ifdef ENABLE_MM3D_PRESENTATION
+    std::scoped_lock lock(surface_mutex);
+    if (EmuWindow_Android::ReMaskedCastMode() == mode) return;
+    EmuWindow_Android::SetReMaskedCastMode(mode);
+    if (window) {
+        window->OnTouchEvent(0, 0, false);
+        window->RefreshReMaskedCastLayout();
+    }
+    if (secondary_window) secondary_window->RefreshReMaskedCastLayout();
+#endif
+}
+
+jfloatArray Java_org_citra_citra_1emu_NativeLibrary_getReMaskedCastTouchBounds(
+    [[maybe_unused]] JNIEnv* env, jclass) {
+#ifdef ENABLE_MM3D_PRESENTATION
+    std::scoped_lock lock(surface_mutex);
+    if (!window || EmuWindow_Android::ReMaskedCastMode() != 2) return nullptr;
+    const auto& layout = window->GetFramebufferLayout();
+    if (!layout.bottom_screen_enabled || !layout.width || !layout.height) return nullptr;
+    const auto& rect = layout.bottom_screen;
+    const jfloat bounds[] = {float(rect.left) / layout.width, float(rect.top) / layout.height,
+        float(rect.right) / layout.width, float(rect.bottom) / layout.height};
+    const auto array = env->NewFloatArray(4);
+    if (array) env->SetFloatArrayRegion(array, 0, 4, bounds);
+    return array;
+#else
+    return nullptr;
+#endif
 }
 
 void Java_org_citra_citra_1emu_NativeLibrary_secondarySurfaceChanged(JNIEnv* env,
@@ -1090,6 +1133,14 @@ jlong Java_org_citra_citra_1emu_NativeLibrary_getRunningTitleId([[maybe_unused]]
     u64 title_id{};
     Core::System::GetInstance().GetAppLoader().ReadProgramId(title_id);
     return static_cast<jlong>(title_id);
+}
+
+jint Java_org_citra_citra_1emu_NativeLibrary_getReMaskedTouchStartKey(JNIEnv*, jclass) {
+#ifdef ENABLE_MM3D_PRESENTATION
+    if (MM3D::SimpleCheats::TouchStartUsesItems())
+        return InputManager::N3DS_BUTTON_SELECT;
+#endif
+    return InputManager::N3DS_BUTTON_START;
 }
 
 jboolean Java_org_citra_citra_1emu_NativeLibrary_onGamePadEvent([[maybe_unused]] JNIEnv* env,

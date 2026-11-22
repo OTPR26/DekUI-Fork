@@ -7,6 +7,7 @@
 #include "video_core/renderer_vulkan/vk_platform.h"
 namespace Vulkan { class Instance; }
 namespace MM3D {
+void RequestPresentationSettingsReload();
 class Overlay {
 public:
     Overlay(const Vulkan::Instance& instance, vk::Format format, unsigned image_count,

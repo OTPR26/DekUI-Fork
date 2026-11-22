@@ -15,6 +15,9 @@
 #include "jni/id_cache.h"
 #include "jni/input_manager.h"
 #include "network/network.h"
+#if defined(ENABLE_MM3D_PRESENTATION)
+#include "mm3d/android_cast.h"
+#endif
 #include "video_core/renderer_base.h"
 
 bool EmuWindow_Android::OnSurfaceChanged(ANativeWindow* surface) {
@@ -45,6 +48,16 @@ bool EmuWindow_Android::OnTouchEvent(int x, int y, bool pressed) {
 void EmuWindow_Android::OnTouchMoved(int x, int y) {
     TouchMoved((unsigned)std::max(x, 0), (unsigned)std::max(y, 0));
 }
+
+#ifdef ENABLE_MM3D_PRESENTATION
+int EmuWindow_Android::ReMaskedCastMode() {
+    return MM3D::AndroidCast::mode.load();
+}
+
+void EmuWindow_Android::SetReMaskedCastMode(int mode) {
+    MM3D::AndroidCast::mode.store(std::clamp(mode, 0, 2));
+}
+#endif
 
 void EmuWindow_Android::OnFramebufferSizeChanged() {
     const bool is_portrait_mode = (AndroidUtils::IsPortraitMode() && !is_secondary);

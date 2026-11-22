@@ -14,6 +14,9 @@
 #include "citra_qt/configuration/config.h"
 #include "citra_qt/dekui_bindings.h"
 #include "citra_qt/dekui_import.h"
+#ifdef Q_OS_MACOS
+#include "citra_qt/dekui_icloud.h"
+#endif
 #include "citra_qt/uisettings.h"
 #include "common/cityhash.h"
 #include "common/file_util.h"
@@ -31,6 +34,50 @@ void Write(const QString& path, const QByteArray& bytes) {
     QFile file(path);
     Check(file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size(), "fixture write");
 }
+#ifdef Q_OS_MACOS
+void CheckICloudSaves(const QString& root) {
+    using namespace MM3D::DesktopCloud;
+    const auto user = root + QStringLiteral("/cloud-user");
+    const auto drive = root + QStringLiteral("/cloud-drive");
+    const auto data = user + QStringLiteral(
+        "/sdmc/Nintendo 3DS/00000000000000000000000000000000/"
+        "00000000000000000000000000000000/title/00040000/00125500/data");
+    const auto slot_dir = data + QStringLiteral("/00000001/");
+    const auto local = slot_dir + QStringLiteral("save2.bin");
+    const auto cloud = drive + QStringLiteral("/saves/save2.bin");
+    const QByteArray first(79384, 'a'), second(79384, 'b'), third(79384, 'c');
+    const auto read = [](const QString& path) {
+        QFile file(path);
+        Check(file.open(QIODevice::ReadOnly), "cloud fixture read");
+        return file.readAll();
+    };
+    Write(local, first);
+    Write(data + QStringLiteral("/00000001.metadata"), QByteArray(16, 'm'));
+    Write(slot_dir + QStringLiteral(".classic-saving/save2.bin.owl"), QByteArray(79384, 'o'));
+    Write(user + QStringLiteral("/cache/private"), "local cache fixture");
+    QDir().mkpath(drive);
+    Check(Reconcile(user, drive, Resolution::Ask).ok && read(cloud) == first,
+          "first cloud save upload");
+    Check(read(drive + QStringLiteral("/saves/00000001.metadata")) == QByteArray(16, 'm'),
+          "shared archive metadata");
+    Check(!QFile::exists(drive + QStringLiteral("/saves/.classic-saving/save2.bin.owl")) &&
+          !QFile::exists(drive + QStringLiteral("/cache/private")), "sync included private sidecars");
+    Write(cloud, second);
+    Check(Reconcile(user, drive, Resolution::Ask).ok && read(local) == second,
+          "iPhone cloud update pulled");
+    Write(local, third);
+    Write(cloud, first);
+    Check(Reconcile(user, drive, Resolution::Ask).conflict &&
+          read(local) == third && read(cloud) == first, "sync clobbered a conflict");
+    Write(slot_dir + QStringLiteral(".classic-saving/save2.bin.cycle"), third);
+    Check(Reconcile(user, drive, Resolution::Drive).ok &&
+          read(local) == third && read(cloud) == first, "cloud overwrote a permanent checkpoint");
+    Check(QFile::remove(slot_dir + QStringLiteral(".classic-saving/save2.bin.cycle")),
+          "fixture remove checkpoint");
+    Check(Reconcile(user, drive, Resolution::Local).ok && read(cloud) == third,
+          "local conflict resolution");
+}
+#endif
 void Stage(const QString& root, const QString& name) {
     const QString stage = root + QStringLiteral("/user/load/mm3d-models/") + name;
     QDir().mkpath(stage + QStringLiteral("/texture-sources"));
@@ -60,6 +107,7 @@ int main(int argc, char** argv) {
         Check(temp.isValid(), "temporary directory");
         const QString root = temp.path();
 #ifdef Q_OS_MACOS
+        CheckICloudSaves(root);
         // Application Support migration publishes only verified copies, keeps
         // original saves, preserves external texture links and is idempotent.
         {

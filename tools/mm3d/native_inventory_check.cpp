@@ -69,6 +69,29 @@ struct Memory {
         words[p+0x808]=nodes.size();words[p+0x844]=nodes.size();
     }
 };
+void FaceSlotLabelChecks() {
+    Memory m;
+    Hook hook;
+    const auto menu=m.Layout("MenuItem");
+    const auto item_set=m.Layout("ItemIconSet2"),embed=m.Widget("item_set");
+    m.words[embed+0x20]=item_set;
+    const auto x_label=m.Widget("disp_x_pane"),y_label=m.Widget("disp_y_pane");
+    const auto l_label=m.Widget("disp_1_pane"),r_label=m.Widget("disp_2_pane");
+    const auto unrelated=m.Widget("disp_y_pane");
+    m.Children(menu+8,{embed,unrelated});
+    m.Children(item_set+8,{x_label,y_label,l_label,r_label});
+    for(auto label:{x_label,y_label,l_label,r_label})m.words[label+4]=item_set;
+    m.words[unrelated+4]=menu;
+    const auto before=m.words;
+    auto& writes=hook.frames.emplace_back();
+    hook.HideFaceSlotLabels(m,menu,writes);
+    assert(writes.size()==2);
+    for(const auto& write:writes)m.Write(write.address,write.after);
+    for(auto label:{x_label,y_label})assert(m.Read(label+0xd4)==14);
+    for(auto label:{l_label,r_label,unrelated})assert(m.Read(label+0xd4)==15);
+    hook.End(m);
+    assert(m.words==before);
+}
 void SmallGameplayMapChecks(){
     namespace N=MM3D::NativeMinimap;
     Memory m;N::Hook hook;constexpr U32 state=0x6890f4,mode=0x7786f8;
@@ -2912,6 +2935,7 @@ void SharedMessageChecks() {
 }
 
 int main(int argc,char** argv) {
+    FaceSlotLabelChecks();
     GearPhotoPoseChecks();
     SharedMessageChecks();
     {
