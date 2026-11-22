@@ -25,6 +25,7 @@
 #include <cstring>
 #include <memory>
 #include <os/log.h>
+#import <objc/message.h>
 
 static RetroVideo video;
 static retro_hw_render_callback hardware{};
@@ -1985,11 +1986,19 @@ static constexpr std::array<const char*, 13> TouchControlNames{
     [self.window makeKeyAndVisible];
     airPlayHost = host;
     if (@available(iOS 27.0, *)) {
-        UISceneConfiguration* configuration = [[UISceneConfiguration alloc]
-            initWithName:@"ReMasked AirPlay" sessionRole:UIWindowSceneSessionRoleExternalDisplayNonInteractive];
-        configuration.delegateClass = ReMaskedAirPlayScene.class;
-        self.airPlayRegistration = [host registerSceneAccessory:
-            [UISceneAccessory externalNonInteractiveSceneAccessoryWithConfiguration:configuration]];
+        // The same public iOS 27 API is available at runtime when built with an older SDK.
+        Class accessoryClass = NSClassFromString(@"UISceneAccessory");
+        SEL makeAccessory = NSSelectorFromString(@"externalNonInteractiveSceneAccessoryWithConfiguration:");
+        SEL registerAccessory = NSSelectorFromString(@"registerSceneAccessory:");
+        if ([accessoryClass respondsToSelector:makeAccessory] && [host respondsToSelector:registerAccessory]) {
+            UISceneConfiguration* configuration = [[UISceneConfiguration alloc]
+                initWithName:@"ReMasked AirPlay" sessionRole:UIWindowSceneSessionRoleExternalDisplayNonInteractive];
+            configuration.delegateClass = ReMaskedAirPlayScene.class;
+            auto sendObject = reinterpret_cast<id (*)(id, SEL, id)>(objc_msgSend);
+            id accessory = sendObject(accessoryClass, makeAccessory, configuration);
+            if (accessory)
+                self.airPlayRegistration = sendObject(host, registerAccessory, accessory);
+        }
     }
     [host updateAirPlay];
     [host prepareDriveSaves];
