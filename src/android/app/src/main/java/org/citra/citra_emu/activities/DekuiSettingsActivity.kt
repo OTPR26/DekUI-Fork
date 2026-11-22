@@ -24,6 +24,7 @@ import org.citra.citra_emu.BuildConfig
 import org.citra.citra_emu.NativeLibrary
 import org.citra.citra_emu.R
 import org.citra.citra_emu.display.ReMaskedCast
+import org.citra.citra_emu.display.SecondaryDisplayLayout
 import org.citra.citra_emu.features.settings.model.*
 import org.citra.citra_emu.features.settings.utils.SettingsFile
 import org.citra.citra_emu.utils.*
@@ -179,8 +180,8 @@ class DekuiSettingsActivity : AppCompatActivity() {
             publishResult()
         }.onFailure { error(it) }
     }
-    private fun save(setting: AbstractSetting) {
-        if (!SettingsFile.saveDekuiSettings(listOf(setting))) {
+    private fun save(vararg settings: AbstractSetting) {
+        if (!SettingsFile.saveDekuiSettings(settings.asList())) {
             error(IllegalStateException("Could not save settings"))
             Settings().loadSettings()
             render()
@@ -515,6 +516,15 @@ class DekuiSettingsActivity : AppCompatActivity() {
             IntSetting.ASPECT_RATIO.int = aspectValues[it]
             save(IntSetting.ASPECT_RATIO)
         }
+        val secondaryEnabled = BooleanSetting.ENABLE_SECONDARY_DISPLAY
+        val secondaryLayout = IntSetting.SECONDARY_DISPLAY_LAYOUT
+        val dualScreen = secondaryEnabled.boolean && secondaryLayout.int != SecondaryDisplayLayout.NONE.int
+        choice("Screen mode", listOf("Single screen", "Dual screen"), if (dualScreen) 1 else 0) { mode ->
+            secondaryEnabled.boolean = mode == 1
+            if (mode == 1) secondaryLayout.int = SecondaryDisplayLayout.BOTTOM_SCREEN.int
+            save(secondaryEnabled, secondaryLayout)
+        }
+        note("Dual screen shows the 3DS touchscreen on a second display when one is available.")
         section("Rendering")
         val data = store.read()
         val interpolation = data.optBoolean("interpolation_60fps", true)
