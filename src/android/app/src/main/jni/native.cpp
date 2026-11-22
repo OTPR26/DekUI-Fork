@@ -266,6 +266,8 @@ static Core::System::ResultStatus RunCitra(const std::string& filepath) {
         }
     });
 
+    // Read launcher settings before the windows calculate their initial picture bounds.
+    Config{};
     const auto graphics_api = Settings::GetWorkingGraphicsAPI();
     EGLContext* shared_context;
     switch (graphics_api) {
@@ -305,8 +307,6 @@ static Core::System::ResultStatus RunCitra(const std::string& filepath) {
         break;
     }
 
-    // Forces a config reload on game boot, if the user changed settings in the UI
-    Config{};
     // Replace with game-specific settings
     u64 program_id{};
     FileUtil::SetCurrentRomPath(filepath);
@@ -1271,6 +1271,7 @@ void Java_org_citra_citra_1emu_NativeLibrary_logUserDirectory(JNIEnv* env,
 
 void Java_org_citra_citra_1emu_NativeLibrary_reloadSettings([[maybe_unused]] JNIEnv* env,
                                                             [[maybe_unused]] jobject obj) {
+    const auto previous_aspect = Settings::values.aspect_ratio.GetValue();
     Config{};
     Core::System& system{Core::System::GetInstance()};
 
@@ -1278,6 +1279,10 @@ void Java_org_citra_citra_1emu_NativeLibrary_reloadSettings([[maybe_unused]] JNI
     if (system.IsPoweredOn()) {
         u64 program_id{};
         system.GetAppLoader().ReadProgramId(program_id);
+        if (previous_aspect != Settings::values.aspect_ratio.GetValue()) {
+            std::scoped_lock lock(surface_mutex);
+            system.GPU().Renderer().UpdateCurrentFramebufferLayout(AndroidUtils::IsPortraitMode());
+        }
     }
 
     if (multiplayer) {

@@ -78,6 +78,17 @@ constexpr static std::array<vk::DescriptorSetLayoutBinding, 1> PRESENT_BINDINGS 
 }};
 
 namespace {
+#ifdef ENABLE_MM3D_PRESENTATION
+bool AllowsWidescreenExpansion() {
+#ifdef ANDROID
+    // ReMasked widens the authored default picture. Keep an explicit 4:3 frame.
+    return Settings::values.aspect_ratio.GetValue() != Settings::AspectRatio::R4_3;
+#else
+    return true;
+#endif
+}
+#endif
+
 static bool IsLowRefreshRate() {
 #if (defined(__APPLE__) || defined(ENABLE_SDL2)) && !defined(HAVE_LIBRETRO)
     if (!Settings::values.use_display_refresh_rate_detection) {
@@ -145,7 +156,7 @@ RendererVulkan::RendererVulkan(Core::System& system, Pica::PicaCore& pica_,
       present_heap{instance, scheduler.GetMasterSemaphore(), PRESENT_BINDINGS, 32} {
 #ifdef ENABLE_MM3D_PRESENTATION
     const auto& primary_layout = render_window.GetFramebufferLayout();
-    MM3D::Widescreen::UpdateLayoutSupport(true, primary_layout.top_screen_enabled,
+    MM3D::Widescreen::UpdateLayoutSupport(true, primary_layout.top_screen_enabled && AllowsWidescreenExpansion(),
         primary_layout.is_rotated, primary_layout.render_3d_mode==Settings::StereoRenderOption::Off);
 #endif
     CompileShaders();
@@ -1241,7 +1252,7 @@ void RendererVulkan::DrawScreens(Frame* frame, const Layout::FramebufferLayout& 
     // This must precede PrepareDraw, outside the presentation render pass.
     for(const auto& [id,layer]:rasterizer.PromptOverlays())
         if(layer && layer->Visible())layer->PrepareForSampling();
-    const bool wide_supported=layout.top_screen_enabled && layout.is_rotated &&
+    const bool wide_supported=layout.top_screen_enabled && layout.is_rotated && AllowsWidescreenExpansion() &&
         layout.render_3d_mode==Settings::StereoRenderOption::Off;
 #ifdef ANDROID
     const bool casting = MM3D::AndroidCast::mode.load() != MM3D::AndroidCast::Off;
@@ -1250,7 +1261,7 @@ void RendererVulkan::DrawScreens(Frame* frame, const Layout::FramebufferLayout& 
 #endif
     if (!casting || isSecondaryWindow) {
         MM3D::Widescreen::UpdateLayoutSupport(!isSecondaryWindow || casting,
-            layout.top_screen_enabled, layout.is_rotated,
+            layout.top_screen_enabled && AllowsWidescreenExpansion(), layout.is_rotated,
             layout.render_3d_mode==Settings::StereoRenderOption::Off);
     }
     if(wide_supported && MM3D::Widescreen::enabled.load())
@@ -1536,7 +1547,8 @@ void RendererVulkan::SwapBuffers() {
             ? secondary_window->GetFramebufferLayout() :
 #endif
               layout;
-    MM3D::Widescreen::UpdateLayoutSupport(true, gameplay_layout.top_screen_enabled, gameplay_layout.is_rotated,
+    MM3D::Widescreen::UpdateLayoutSupport(true,
+        gameplay_layout.top_screen_enabled && AllowsWidescreenExpansion(), gameplay_layout.is_rotated,
         gameplay_layout.render_3d_mode==Settings::StereoRenderOption::Off);
     static unsigned viewport_report_count = 0;
     if (viewport_report_count++ < 3) {
