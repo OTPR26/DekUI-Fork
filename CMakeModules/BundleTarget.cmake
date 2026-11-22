@@ -117,9 +117,9 @@ if (BUNDLE_TARGET_EXECUTE)
             set(extra_linuxdeploy_args --plugin qt)
         endif()
 
-        # Use original Dekui artwork and launcher identity for game-folder builds.
+        # Keep the ReMasked launcher identity across icon updates.
         if (MM3D_GAME_FOLDER)
-            set(app_icon "${source_path}/resources/mm3d/dekui.svg")
+            set(app_icon "${source_path}/dist/ReMasked.png")
             set(icon_name "io.github.tgacquin.dekui")
             set(desktop_file "${source_path}/resources/mm3d/dekui.desktop")
         else()
@@ -127,7 +127,9 @@ if (BUNDLE_TARGET_EXECUTE)
             set(icon_name "org.azahar_emu.Azahar")
             set(desktop_file "${source_path}/dist/${executable_name}.desktop")
         endif()
-        file(COPY_FILE "${app_icon}" "${CMAKE_BINARY_DIR}/dist/${icon_name}.svg")
+        get_filename_component(icon_extension "${app_icon}" EXT)
+        set(bundle_icon "${CMAKE_BINARY_DIR}/dist/${icon_name}${icon_extension}")
+        file(COPY_FILE "${app_icon}" "${bundle_icon}")
 
         message(STATUS "Creating AppDir for executable ${executable_path}")
         execute_process(COMMAND ${CMAKE_COMMAND} -E env
@@ -137,7 +139,7 @@ if (BUNDLE_TARGET_EXECUTE)
             ${extra_linuxdeploy_args}
             --plugin checkrt
             --executable "${executable_path}"
-            --icon-file "${CMAKE_BINARY_DIR}/dist/${icon_name}.svg"
+            --icon-file "${bundle_icon}"
             --desktop-file "${desktop_file}"
             --appdir "${appdir_path}"
             RESULT_VARIABLE linuxdeploy_appdir_result

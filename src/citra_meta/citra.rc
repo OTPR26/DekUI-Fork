@@ -8,7 +8,11 @@
 // remains consistent on all systems.
 // QT requires that the default application icon is named IDI_ICON1
 
+#ifdef ENABLE_MM3D_GAME_FOLDER
+IDI_ICON1               ICON                    "../../dist/ReMasked.ico"
+#else
 IDI_ICON1               ICON                    "../../dist/azahar.ico"
+#endif
 
 
 /////////////////////////////////////////////////////////////////////////////

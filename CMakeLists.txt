@@ -655,10 +655,15 @@ if(ENABLE_QT AND UNIX AND NOT APPLE)
     install(FILES "${PROJECT_SOURCE_DIR}/dist/azahar.desktop"
             DESTINATION "${CMAKE_INSTALL_PREFIX}/share/applications"
             RENAME "org.azahar_emu.Azahar.desktop")
-    install(FILES "${PROJECT_SOURCE_DIR}/dist/azahar.svg"
-            DESTINATION "${CMAKE_INSTALL_PREFIX}/share/icons/hicolor/scalable/apps"
-            RENAME "org.azahar_emu.Azahar.svg")
-    install(FILES "${PROJECT_SOURCE_DIR}/dist/azahar.png"
+    set(install_icon "${PROJECT_SOURCE_DIR}/dist/azahar.png")
+    if (ENABLE_MM3D_GAME_FOLDER)
+        set(install_icon "${PROJECT_SOURCE_DIR}/dist/ReMasked.png")
+    else()
+        install(FILES "${PROJECT_SOURCE_DIR}/dist/azahar.svg"
+                DESTINATION "${CMAKE_INSTALL_PREFIX}/share/icons/hicolor/scalable/apps"
+                RENAME "org.azahar_emu.Azahar.svg")
+    endif()
+    install(FILES "${install_icon}"
             DESTINATION "${CMAKE_INSTALL_PREFIX}/share/icons/hicolor/512x512/apps"
             RENAME "org.azahar_emu.Azahar.png")
     install(FILES "${PROJECT_SOURCE_DIR}/dist/org.azahar_emu.Azahar.xml"

@@ -148,8 +148,21 @@ void ApplyIcon() {
     // Update the same managed desktop entry; never create another shortcut.
     const QString iconPath = Root() + QStringLiteral("/user/config/launcher/icon-%1.png").arg(SelectedIcon());
     QDir().mkpath(QFileInfo(iconPath).absolutePath());
-    if (!QFileInfo::exists(iconPath))
-        QFile::copy(resource, iconPath);
+    QFile artwork(resource);
+    if (!artwork.open(QIODevice::ReadOnly))
+        return;
+    const auto image = artwork.readAll();
+    if (image.isEmpty())
+        return;
+    QFile existing(iconPath);
+    const bool current = existing.open(QIODevice::ReadOnly) && existing.readAll() == image;
+    existing.close();
+    if (!current) {
+        QSaveFile iconFile(iconPath);
+        if (!iconFile.open(QIODevice::WriteOnly) || iconFile.write(image) != image.size() ||
+            !iconFile.commit())
+            return;
+    }
     const QString applications = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + QStringLiteral("/applications/");
     for (const auto& name : {QStringLiteral("io.github.tgacquin.dekui.desktop"), QStringLiteral("majora-remasked.desktop")}) {
         const auto path = applications + name;

@@ -105,6 +105,10 @@ if(WIN32)
     set_property(SOURCE citra.rc APPEND PROPERTY OBJECT_DEPENDS
         "${PROJECT_SOURCE_DIR}/dist/azahar.ico"
         "${PROJECT_SOURCE_DIR}/dist/azahar.manifest")
+    if(ENABLE_MM3D_GAME_FOLDER)
+        set_property(SOURCE citra.rc APPEND PROPERTY OBJECT_DEPENDS
+            "${PROJECT_SOURCE_DIR}/dist/ReMasked.ico")
+    endif()
     # compile as a win32 gui application instead of a console application
     if(MSVC)
         set_target_properties(citra_meta PROPERTIES LINK_FLAGS_RELEASE "/SUBSYSTEM:WINDOWS")
