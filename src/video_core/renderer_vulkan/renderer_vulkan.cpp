@@ -81,9 +81,10 @@ namespace {
 #ifdef ENABLE_MM3D_PRESENTATION
 bool AllowsWidescreenExpansion() {
 #ifdef ANDROID
-    const auto aspect = Settings::values.aspect_ratio.GetValue();
-    return aspect != Settings::AspectRatio::R4_3 &&
-           !(MM3D::AndroidCast::native_dual_screen.load() && aspect == Settings::AspectRatio::Default);
+    // A dedicated top display fits the finished frame to the selected ratio.
+    // Keep the authored guest geometry inside that frame at every ratio.
+    return MM3D::AndroidCast::native_dual_screen.load() ||
+           Settings::values.aspect_ratio.GetValue() != Settings::AspectRatio::R4_3;
 #else
     return true;
 #endif
