@@ -16,7 +16,7 @@ SCRIPTS = ('graphical_setup.py','setup_game_folder.py','probe_rom.py','build_rel
            'double_prices.py','upgrade_game_resources.py','layout_migration.py','package_setup_check.py','desktop_hud.py')
 
 
-def package(appimage, output, experimental_eur=False):
+def package(appimage, output):
     verify_layout_policy(ROOT / 'resources/mm3d')
     if output.exists(): raise ValueError('Refusing to overwrite package')
     with tempfile.TemporaryDirectory() as tmp:
@@ -43,14 +43,10 @@ def package(appimage, output, experimental_eur=False):
         for p in sorted((ROOT/'externals').rglob('*')):
             if p.is_file() and p.name.lower().startswith(('license','copying','copyright')) and p.stat().st_size<2_000_000:
                 target=notices/p.relative_to(ROOT/'externals');target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(p,target)
-        if experimental_eur:
-            shutil.copy2(ROOT / "resources/mm3d/release-docs/EUR-PREVIEW.md", root / "EUR-PREVIEW.md")
-            (root / "eur-preview").write_text("European Rev 1 preview\n", encoding="utf-8")
         output.parent.mkdir(parents=True,exist_ok=True)
         with tarfile.open(output,'w:gz') as archive: archive.add(root,arcname=root.name)
 
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('appimage',type=Path);p.add_argument('output',type=Path)
-    p.add_argument("--experimental-eur", action="store_true")
-    a=p.parse_args();package(a.appimage,a.output,a.experimental_eur)
+    a=p.parse_args();package(a.appimage,a.output)

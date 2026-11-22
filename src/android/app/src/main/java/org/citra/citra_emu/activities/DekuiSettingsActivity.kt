@@ -334,7 +334,7 @@ class DekuiSettingsActivity : AppCompatActivity() {
                 addButton("Reset menu size") { saveMenuSize(100f) }
                 iconSelection()
                 section("Language")
-                val languages = if (BuildConfig.EUR_PREVIEW) listOf(1, 2, 5, 3, 4) else listOf(1, 2, 5)
+                val languages = if (DekuiStorage.isEuropean(this)) listOf(1, 2, 5, 3, 4) else listOf(1, 2, 5)
                 val names = listOf("English", "Français", "Español", "Deutsch", "Italiano").take(languages.size)
                 val language=NativeLibrary.getDekuiGameLanguage()
                 choice("Game language",names,languages.indexOf(language).coerceAtLeast(0)) { index->
@@ -485,7 +485,7 @@ class DekuiSettingsActivity : AppCompatActivity() {
             "Difficulty" -> difficulty()
             "Restoration Fixes" -> {
                 bool("Bombers don't approach automatically","disable_bomber_approach");bool("Activate owl statues with a sword","sword_activate_owls")
-                if (!BuildConfig.EUR_PREVIEW) {
+                if (!DekuiStorage.isEuropean(this)) {
                     bool("Classic Song of Double Time","classic_double_time")
                     if (inGame) note("Classic saving can be changed from startup Settings.")
                     else bool("Classic saving","classic_saving")
@@ -505,11 +505,12 @@ class DekuiSettingsActivity : AppCompatActivity() {
                 info("Build", BuildConfig.VERSION_CODE.toString())
             }
             "Data" -> {
-                val location = if (DekuiStorage.root(this) == DekuiStorage.sharedRoot()) "Internal storage/${DekuiStorage.sharedRoot().name}"
+                val location = if (DekuiStorage.root(this) == DekuiStorage.sharedRoot(this)) "Internal storage/${DekuiStorage.sharedRoot(this).name}"
                     else "App storage"
                 info("Current data folder", location)
-                if (DekuiStorage.game(this).isFile) info("Game file", "Ready")
-                else if (!inGame) addButton("Choose ROM") {
+                if (DekuiStorage.game(this).isFile) info("Game file",
+                    if (DekuiStorage.isEuropean(this)) "European Rev 1 (experimental)" else "USA Rev 1")
+                if (!inGame) addButton("Choose ROM") {
                     setResult(RESULT_OK, Intent().putExtra(GAME_ACTION, CHOOSE_ROM))
                     finish()
                 }
@@ -689,7 +690,7 @@ class DekuiSettingsActivity : AppCompatActivity() {
     private fun controls() {
         section("Game prompts")
         bool("Hide item menu button prompts","player_hud_hide_menu_prompts")
-        if (!BuildConfig.EUR_PREVIEW) {
+        if (!DekuiStorage.isEuropean(this)) {
             bool("Single-screen game instructions","single_screen_text",true)
             bool("Controller neutral item prompts","controller_neutral_item_prompts",true)
         }

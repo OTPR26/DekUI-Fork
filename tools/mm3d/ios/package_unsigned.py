@@ -73,8 +73,7 @@ def european_setup_files():
     return {f"EuropeanSetup/{name}": path for name, path in files.items()}
 
 
-def build_app(app, staging, core_library, molten, version, experimental_eur=False):
-    target_id = bundle_id + ".eurpreview" if experimental_eur else bundle_id
+def build_app(app, staging, core_library, molten, version):
     staging.mkdir(exist_ok=True)
     app.mkdir(exist_ok=True)
     frameworks = app / "Frameworks"
@@ -83,7 +82,7 @@ def build_app(app, staging, core_library, molten, version, experimental_eur=Fals
     core.mkdir(exist_ok=True)
     shutil.copy2(core_library,core/"AzaharCore")
     run("install_name_tool","-id","@rpath/AzaharCore.framework/AzaharCore",core/"AzaharCore")
-    plist(core/"Info.plist",{"CFBundleIdentifier":target_id+".core","CFBundleName":"AzaharCore",
+    plist(core/"Info.plist",{"CFBundleIdentifier":bundle_id+".core","CFBundleName":"AzaharCore",
            "CFBundleExecutable":"AzaharCore","CFBundlePackageType":"FMWK","CFBundleVersion":"1",
            "CFBundleShortVersionString":"1.0","MinimumOSVersion":"17.0"})
     fonts = {"FiraSans-Regular.ttf": "fira_sans_regular.ttf", "FiraSans-Bold.ttf": "fira_sans_bold.ttf"}
@@ -98,20 +97,15 @@ def build_app(app, staging, core_library, molten, version, experimental_eur=Fals
     for name in ("Info.plist", "MoltenVK"):
         shutil.copy2(vk_source/name, vk/name)
     icons = stage_branding(app, staging)
-    cloud = {} if experimental_eur else {"NSUbiquitousContainers": {cloud_container: {
+    cloud = {"NSUbiquitousContainers": {cloud_container: {
               "NSUbiquitousContainerIsDocumentScopePublic":True,
               "NSUbiquitousContainerName": app.stem,
               "NSUbiquitousContainerSupportedFolderLevels":"Any"}}}
-    preview_flags = []
-    preview_sources = []
-    if experimental_eur:
-        preview_flags = ["-DMM3D_EUR_PREVIEW=1"]
-        preview_sources = [HOST / "EuropeanSetup.mm"]
-        for name, source in european_setup_files().items():
-            target = app / name
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, target)
-    plist(app/"Info.plist",{**icons, **cloud, "CFBundleIdentifier":target_id,"CFBundleExecutable":"ReMaskedAzahar",
+    for name, source in european_setup_files().items():
+        target = app / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+    plist(app/"Info.plist",{**icons, **cloud, "CFBundleIdentifier":bundle_id,"CFBundleExecutable":"ReMaskedAzahar",
           "UIAppFonts":list(fonts),"CFBundlePackageType":"APPL","CFBundleDisplayName":app.stem,"CFBundleVersion":version,
           "CFBundleShortVersionString":version,"UILaunchScreen":{},"MinimumOSVersion":"17.0",
           "UIRequiresFullScreen":True,"UIDeviceFamily":[1,2],"UIFileSharingEnabled":True,
@@ -129,24 +123,23 @@ def build_app(app, staging, core_library, molten, version, experimental_eur=Fals
     run("xcrun","--sdk","iphoneos","clang++","-target","arm64-apple-ios17.0","-isysroot",sdk,
         "-std=c++20","-O2","-fobjc-arc",f"-ffile-prefix-map={Path.home()}=build-home",
         "-I",LIBRETRO,"-I",molten/"include","-F",frameworks,
-        "-DREMASKED_AZAHAR_TOUCH_HOST=1","-I",REPO/"src", *preview_flags, *preview_sources,
+        "-DREMASKED_AZAHAR_TOUCH_HOST=1","-I",REPO/"src",
         *(HOST/name for name in ("touch_controls.mm", "drive_data.mm", "oot3d_menu_model.cpp",
-                                  "Main.mm", "SettingsPanel.mm", "RetroVideo.mm")),
+                                  "Main.mm", "SettingsPanel.mm", "RetroVideo.mm", "EuropeanSetup.mm")),
         "-framework","AzaharCore","-framework","MoltenVK",
         "-framework","UIKit","-framework","CoreGraphics","-framework","Metal","-framework","MetalKit","-framework","QuartzCore",
         "-framework","AVFoundation","-framework","GameController","-framework","CoreMotion",
         "-framework","UniformTypeIdentifiers","-Wl,-rpath,@executable_path/Frameworks","-o",app/"ReMaskedAzahar")
 
 
-def export_unsigned(app, destination, experimental_eur=False):
+def export_unsigned(app, destination):
     executables = {"ReMaskedAzahar", "Frameworks/AzaharCore.framework/AzaharCore",
                    "Frameworks/MoltenVK.framework/MoltenVK"}
     resources = {"Info.plist", "Assets.car", "AppIcon60x60@2x.png", "AppIcon76x76@2x~ipad.png",
                  "ReMaskedMasks.png", "LICENSE.txt", "MoltenVK-LICENSE.txt", "FiraSans-Regular.ttf", "FiraSans-Bold.ttf", "FiraSans-OFL.txt",
                  "Frameworks/AzaharCore.framework/Info.plist", "Frameworks/MoltenVK.framework/Info.plist",
                  *(f"ReMaskedIcon{i}.png" for i in range(5))}
-    if experimental_eur:
-        resources.update(european_setup_files())
+    resources.update(european_setup_files())
     members = {path.relative_to(app).as_posix(): path for path in app.rglob("*")
                if not path.is_dir() or path.is_symlink()}
     if set(members) != resources | executables or any(path.is_symlink() for path in members.values()):
@@ -179,7 +172,6 @@ def main():
     parser.add_argument("--core-library", required=True, type=Path)
     parser.add_argument("--moltenvk", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--experimental-eur", action="store_true")
     args = parser.parse_args()
     version = output(sys.executable, REPO / "tools/mm3d/release_version.py").decode().strip()
     destination = args.output.resolve()
@@ -188,9 +180,9 @@ def main():
         parser.error("refusing to overwrite an existing IPA")
     with tempfile.TemporaryDirectory() as tmp:
         staging = Path(tmp)
-        app = staging / ("ReMasked EUR Preview.app" if args.experimental_eur else "Majora ReMasked.app")
-        build_app(app, staging, args.core_library.resolve(), args.moltenvk.resolve(), version, args.experimental_eur)
-        export_unsigned(app, destination, args.experimental_eur)
+        app = staging / "Majora ReMasked.app"
+        build_app(app, staging, args.core_library.resolve(), args.moltenvk.resolve(), version)
+        export_unsigned(app, destination)
 
 
 if __name__ == "__main__":

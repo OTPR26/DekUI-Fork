@@ -1,13 +1,11 @@
 import tempfile
 import shutil
-import tarfile
 import unittest
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
 from test_bundle_tp_runtime import fixture_runtime
 import package_windows
-import package_deck
 import windows_python
 from test_windows_python import fixture_archive
 
@@ -33,7 +31,6 @@ class WindowsPackageTest(unittest.TestCase):
                          'resources/mm3d/release-docs/CREDITS.md',
                          'resources/mm3d/release-docs/KNOWN_ISSUES.md',
                          'resources/mm3d/release-docs/INSTALL.md',
-                         'resources/mm3d/release-docs/EUR-PREVIEW.md',
                          'resources/mm3d/supported-rom.json', 'resources/mm3d/setup-fingerprints.json',
                          'resources/mm3d/defaults/presentation.json', 'resources/mm3d/layout-migration.json'):
                 p = repo / name; p.parent.mkdir(parents=True, exist_ok=True); p.write_text('{}')
@@ -52,20 +49,6 @@ class WindowsPackageTest(unittest.TestCase):
             with patch.object(package_windows, 'ROOT', repo), patch.object(windows_python, 'SHA256', digest):
                 package_windows.package(bundle, output, python_archive)
                 with self.assertRaises(ValueError): package_windows.package(bundle, output, python_archive)
-                windows_preview = root / 'eur.zip'
-                package_windows.package(bundle, windows_preview, python_archive, experimental_eur=True)
-                with zipfile.ZipFile(windows_preview) as archive:
-                    self.assertIn('dekui/eur-preview', archive.namelist())
-                    self.assertIn('dekui/EUR-PREVIEW.md', archive.namelist())
-            with patch.object(package_deck, 'ROOT', repo):
-                image = root / 'test.AppImage'
-                image.write_bytes(b'test')
-                linux_preview = root / 'eur.tar.gz'
-                package_deck.package(image, linux_preview, experimental_eur=True)
-                with tarfile.open(linux_preview) as archive:
-                    self.assertIn('dekui/eur-preview', archive.getnames())
-                    self.assertIn('dekui/EUR-PREVIEW.md', archive.getnames())
-            with patch.object(package_windows, 'ROOT', repo), patch.object(windows_python, 'SHA256', digest):
                 with patch.object(package_windows.subprocess, 'run') as strip:
                     package_windows.package(bundle, root/'stripped.zip', python_archive,
                                             strip_tool=Path('fixture-strip'))
@@ -83,7 +66,6 @@ class WindowsPackageTest(unittest.TestCase):
                 self.assertIn('dekui/Majora-ReMasked.exe', names)
                 self.assertEqual(archive.read('dekui/README.md'),
                                  (repo / 'resources/mm3d/release-docs/README.md').read_bytes())
-                self.assertNotIn('dekui/eur-preview', names)
                 self.assertNotIn('dekui/INSTALL.txt', names)
                 self.assertNotIn('dekui/SOURCE.md', names)
                 for name in ('CHANGELOG.md', 'CREDITS.md', 'KNOWN_ISSUES.md', 'INSTALL.md'):

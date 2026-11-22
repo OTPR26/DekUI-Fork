@@ -204,7 +204,22 @@ void UpgradeHUD(NSURL* resources, NSURL* mods, NSURL* dataRoot) {
 }
 } // namespace
 
-NSString* ImportEuropeanROM(NSURL* input, NSURL* dataRoot, NSURL* destination) {
+uint64_t CartridgeProgramID(NSURL* input) {
+    NSFileHandle* stream = [NSFileHandle fileHandleForReadingFromURL:input error:nullptr];
+    if (!stream) return 0;
+    NSData* ncsd = [stream readDataUpToLength:512 error:nullptr];
+    if (ncsd.length != 512) return 0;
+    const auto* header = static_cast<const uint8_t*>(ncsd.bytes);
+    if (std::memcmp(header + 0x100, "NCSD", 4) != 0) return 0;
+    const auto partition = Number(header + 0x120, 4) * 512;
+    if (partition < 512 || ![stream seekToOffset:partition error:nullptr]) return 0;
+    NSData* ncch = [stream readDataUpToLength:512 error:nullptr];
+    const auto* bytes = static_cast<const uint8_t*>(ncch.bytes);
+    return ncch.length == 512 && std::memcmp(bytes + 0x100, "NCCH", 4) == 0 && (bytes[0x18f] & 4)
+        ? Number(bytes + 0x118, 8) : 0;
+}
+
+NSString* ImportEuropeanROM(NSURL* input, NSURL* dataRoot, NSURL* inputRoot, NSURL* destination) {
     NSFileManager* files = NSFileManager.defaultManager;
     NSURL* stage = [dataRoot URLByAppendingPathComponent:
         [@".eur-setup-" stringByAppendingString:NSUUID.UUID.UUIDString]];
@@ -228,9 +243,9 @@ NSString* ImportEuropeanROM(NSURL* input, NSURL* dataRoot, NSURL* destination) {
         NSMutableDictionary* sources = [ReadLayouts(Read(stagedROM), fingerprint, inputs) mutableCopy];
         for (NSString* key in inputs) {
             if ([key hasPrefix:@"restoration/"]) {
-                NSURL* patch = [dataRoot URLByAppendingPathComponent:key];
+                NSURL* patch = [inputRoot URLByAppendingPathComponent:key];
                 Require([files fileExistsAtPath:patch.path],
-                        "Add the verified Project Restoration inputs in Files → ReMasked EUR Preview → restoration.");
+                        "Add the verified Project Restoration inputs in Files → Majora ReMasked → restoration.");
                 sources[key] = Read(patch);
             }
             NSData* data = sources[key];

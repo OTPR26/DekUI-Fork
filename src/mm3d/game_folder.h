@@ -40,22 +40,24 @@ inline QString PackageRoot() {
 #endif
     return LegacyRoot();
 }
-inline QString Root() {
+inline QString RootFor(bool european) {
 #ifdef Q_OS_MACOS
-    if (RomRegion::EuropeanPreview())
+    if (european)
         return QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) +
                QStringLiteral("/Majora ReMasked EUR Preview");
     // Keep the established data directory across display-name changes.
     return QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)+QStringLiteral("/DekUI Fork");
 #else
-    if (RomRegion::EuropeanPreview())
+    if (european)
         return LegacyRoot() + QStringLiteral("/Majora ReMasked EUR Preview");
     return LegacyRoot();
 #endif
 }
+inline QString Root() { return RootFor(RomRegion::EuropeanPreview()); }
+inline QString RegionSelection() { return RootFor(false) + QStringLiteral("/cartridge-region"); }
 inline QString InitializeStorage() {
-    if (QFileInfo(PackageRoot() + QStringLiteral("/eur-preview")).isFile())
-        qputenv("REMASKED_EUR_PREVIEW", "1");
+    QFile region(RegionSelection());
+    RomRegion::SetEuropeanPreview(region.open(QIODevice::ReadOnly) && region.read(3) == "EUR");
     if (RomRegion::EuropeanPreview()) {
         if (QFileInfo(Root()).isSymLink() || QFileInfo(Root() + QStringLiteral("/user")).isSymLink() ||
             !QDir().mkpath(Root()))
@@ -96,9 +98,18 @@ inline QString Rom() {
     return chosen;
 }
 inline QString MissingGameMessage() {
-    if (RomRegion::EuropeanPreview())
-        return QStringLiteral("Select your decrypted MM3D European Rev 1 cartridge dump (.cci or .3ds).");
-    return QStringLiteral("Select your decrypted MM3D USA Rev 1 game-card dump (.cci or .3ds) from the startup screen.");
+    return QStringLiteral("Select a decrypted USA Rev 1 or European Rev 1 cartridge dump (.3ds or .cci).");
+}
+inline std::uint64_t CartridgeTitle(const QString& path) {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) return 0;
+    const auto ncsd = file.read(512);
+    if (ncsd.size() != 512 || ncsd.mid(0x100, 4) != "NCSD") return 0;
+    const auto offset = qint64(qFromLittleEndian<quint32>(ncsd.constData() + 0x120)) * 512;
+    if (offset < 512 || !file.seek(offset)) return 0;
+    const auto ncch = file.read(512);
+    if (ncch.size() != 512 || ncch.mid(0x100, 4) != "NCCH") return 0;
+    return qFromLittleEndian<quint64>(ncch.constData() + 0x118);
 }
 inline QString User() { return Root() + QStringLiteral("/user/"); }
 inline QString ValidateSetup(const QString& user) {

@@ -2,22 +2,16 @@ name: Majora ReMasked Windows
 on:
   workflow_dispatch:
     inputs:
-      experimental_eur:
-        description: Build the isolated European Rev 1 preview
-        type: boolean
-        default: false
       architecture:
         description: Desktop CPU architecture
         type: choice
         options: [all, x64, arm64]
         default: all
 concurrency:
-  group: mm3d-windows-${{ github.ref }}-${{ inputs.architecture }}-${{ inputs.experimental_eur }}
+  group: mm3d-windows-${{ github.ref }}-${{ inputs.architecture }}
   cancel-in-progress: true
 permissions:
   contents: read
-env:
-  REMASKED_EXPERIMENTAL_EUR: ${{ inputs.experimental_eur && 'true' || 'false' }}
 jobs:
   windows:
     if: inputs.architecture != 'arm64'
@@ -35,7 +29,7 @@ jobs:
         id: release
         shell: bash
         run: |
-          release_version=$(python tools/mm3d/release_version.py --artifact)
+          release_version=$(python tools/mm3d/release_version.py)
           echo "version=$release_version" >> "$GITHUB_OUTPUT"
       - name: Verify build revision
         shell: bash

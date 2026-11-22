@@ -134,6 +134,50 @@ void SetPreference(const QString& key, const QString& value) {
     if (key == QStringLiteral("textures"))
         DesktopImport::SyncTextureSource();
 }
+
+// The emulator and Settings objects bind their user tree at startup.
+bool SelectCartridge(QWidget* parent, const QString& file) {
+    if (file.isEmpty()) return false;
+    const auto title = GameFolder::CartridgeTitle(file);
+    if (title != RomRegion::USA && title != RomRegion::EUR) {
+        QMessageBox::warning(parent, QStringLiteral("Choose ROM"), GameFolder::MissingGameMessage());
+        return false;
+    }
+    const bool european = title == RomRegion::EUR;
+    if (european == RomRegion::EuropeanPreview()) {
+        SetPreference(QStringLiteral("mm_rom"), file);
+        return true;
+    }
+    try {
+        const auto root = GameFolder::RootFor(european);
+        if (QFileInfo(root).isSymLink() || QFileInfo(root + QStringLiteral("/user")).isSymLink())
+            throw std::runtime_error("The selected region’s data folder is a symbolic link.");
+        const auto path = root + QStringLiteral("/desktop-settings.json");
+        auto settings = Read(path);
+        settings.insert(QStringLiteral("mm_rom"), file);
+        Write(path, settings);
+        const auto selection = GameFolder::RegionSelection();
+        if (!QDir().mkpath(QFileInfo(selection).absolutePath()))
+            throw std::runtime_error("Could not open the data folder.");
+        auto writeRegion = [&](bool eur) {
+            QSaveFile region(selection);
+            const QByteArray code = eur ? "EUR" : "USA";
+            return region.open(QIODevice::WriteOnly) && region.write(code) == code.size() && region.commit();
+        };
+        if (!writeRegion(european)) throw std::runtime_error("Could not save the selected region.");
+        const auto executable = qEnvironmentVariable("APPIMAGE", QCoreApplication::applicationFilePath());
+        if (!QProcess::startDetached(executable, {})) {
+            if (!writeRegion(!european))
+                throw std::runtime_error("Restart ReMasked to load the selected region.");
+            throw std::runtime_error("Could not restart ReMasked.");
+        }
+        QCoreApplication::quit();
+    } catch (const std::exception& error) {
+        QMessageBox::warning(parent, QStringLiteral("Choose ROM"), QString::fromUtf8(error.what()));
+    }
+    return false;
+}
+
 int SelectedIcon() {
     return std::clamp(Read(PrefsPath()).value(QStringLiteral("launcher_icon")).toString().toInt(), 0, 4);
 }
@@ -898,10 +942,7 @@ class SettingsDialog final : public QDialog {
                 const auto file = QFileDialog::getOpenFileName(
                     this, GameFolder::MissingGameMessage(), {},
                     QStringLiteral("Game-card dumps (*.3ds *.cci)"));
-                if (!file.isEmpty()) {
-                    SetPreference(QStringLiteral("mm_rom"), file);
-                    Render();
-                }
+                if (SelectCartridge(this, file)) Render();
             })->setEnabled(!running);
             Number(QStringLiteral("Menu size"), QStringLiteral("desktop_menu_text_size"), 5, 0, 40);
             Note(box,
@@ -1222,9 +1263,7 @@ public:
                            const auto file = QFileDialog::getOpenFileName(
                                this, GameFolder::MissingGameMessage(), {},
                                QStringLiteral("Game-card dumps (*.3ds *.cci)"));
-                           if (file.isEmpty())
-                               return;
-                           SetPreference(QStringLiteral("mm_rom"), file);
+                           if (!SelectCartridge(this, file)) return;
                        }
                        launch();
                    });

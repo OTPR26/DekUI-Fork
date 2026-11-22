@@ -884,6 +884,10 @@ object NativeLibrary {
 
     @Keep
     @JvmStatic
+    external fun setDekuiEuropeanPreview(enabled: Boolean)
+
+    @Keep
+    @JvmStatic
     fun getUserDirectory(): String {
         val preferences: SharedPreferences =
             PreferenceManager.getDefaultSharedPreferences(CitraApplication.appContext)

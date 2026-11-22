@@ -40,7 +40,7 @@ def verify_dependencies(root):
             raise ValueError(f'Missing Apple Silicon architecture: {path}')
 
 
-def package(bundle, output, python_archive, *, experimental_eur=False):
+def package(bundle, output, python_archive):
     verify_layout_policy(ROOT / 'resources/mm3d')
     if output.exists():
         raise ValueError('Refusing to overwrite package')
@@ -50,15 +50,11 @@ def package(bundle, output, python_archive, *, experimental_eur=False):
         raise ValueError('Missing deployed Qt Cocoa plugin')
     with tempfile.TemporaryDirectory(prefix='dekui-macos-package-') as tmp:
         root = Path(tmp) / 'dekui'; root.mkdir()
-        app_name = 'Majora ReMasked EUR Preview' if experimental_eur else 'Majora ReMasked'
-        app = root / f'{app_name}.app'
+        app = root / 'Majora ReMasked.app'
         shutil.copytree(bundle, app, symlinks=True)
         info = app / 'Contents/Info.plist'
         metadata = plistlib.loads(info.read_bytes())
-        bundle_id = 'io.github.otpr26.dekui.eurpreview' if experimental_eur else 'io.github.otpr26.dekui'
-        metadata.update(CFBundleName=app_name, CFBundleDisplayName=app_name, CFBundleIdentifier=bundle_id)
-        if experimental_eur:
-            metadata.setdefault('LSEnvironment', {})['REMASKED_EUR_PREVIEW'] = '1'
+        metadata.update(CFBundleName='Majora ReMasked', CFBundleDisplayName='Majora ReMasked', CFBundleIdentifier='io.github.otpr26.dekui')
         info.write_bytes(plistlib.dumps(metadata))
         runtime = app / 'Contents/Resources/runtime'
         install(python_archive, runtime)
@@ -78,21 +74,7 @@ def package(bundle, output, python_archive, *, experimental_eur=False):
         copy_restoration(ROOT, resources / 'project-restoration')
         for name in ('README.md', 'CHANGELOG.md', 'CREDITS.md', 'KNOWN_ISSUES.md', 'INSTALL.md'):
             shutil.copy2(ROOT / 'resources/mm3d/release-docs' / name, root / name)
-        if experimental_eur:
-            (root / 'INSTALL-MACOS.txt').write_text(
-                'Majora ReMasked EUR Preview for Apple Silicon\n\n'
-                'Open Majora ReMasked EUR Preview.app from Finder and select your decrypted '
-                'European Rev 1 (v1.1) cartridge dump (.3ds or .cci).\n\n'
-                'The preview stores local saves and settings in its own Majora ReMasked EUR Preview '
-                'folder under Library/Application Support. It uses the European game title ID. '
-                'iCloud sync, Classic Saving, Classic Song of Double Time, and ReMasked dialogue rewrites '
-                'are unavailable in this preview. The original European game text is used.\n\n'
-                'Please report the macOS version, whether setup reached the title screen, the selected '
-                'game language, HUD appearance, and whether a new save reloads after restarting. '
-                'Keep your ROM, saves, and personal files out of reports.\n',
-                encoding='utf-8')
-        else:
-            shutil.copy2(ROOT / 'tools/mm3d/macos/INSTALL-MACOS.txt', root / 'INSTALL-MACOS.txt')
+        shutil.copy2(ROOT / 'tools/mm3d/macos/INSTALL-MACOS.txt', root / 'INSTALL-MACOS.txt')
         shutil.copy2(ROOT / 'license.txt', root / 'LICENSE.txt')
         for p in (ROOT / 'externals').rglob('*'):
             if p.is_file() and p.name.lower().startswith(('license', 'copying', 'copyright')) and p.stat().st_size < 2_000_000:
@@ -121,6 +103,5 @@ if __name__ == '__main__':
     parser.add_argument('bundle', type=Path)
     parser.add_argument('output', type=Path)
     parser.add_argument('--python-archive', type=Path, required=True)
-    parser.add_argument('--experimental-eur', action='store_true')
     args = parser.parse_args()
-    package(args.bundle, args.output, args.python_archive, experimental_eur=args.experimental_eur)
+    package(args.bundle, args.output, args.python_archive)

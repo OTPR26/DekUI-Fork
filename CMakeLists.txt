@@ -163,10 +163,6 @@ option(ENABLE_SSE42 "Enable SSE4.2 optimizations on x86_64" ON)
 
 option(ENABLE_DEVELOPER_OPTIONS "Enable functionality targeted at emulator developers" OFF)
 
-option(ENABLE_MM3D_EUR_PREVIEW "Enable the isolated European Rev 1 preview" OFF)
-if(ENABLE_MM3D_EUR_PREVIEW)
-    add_compile_definitions(MM3D_EUR_PREVIEW)
-endif()
 option(ENABLE_MM3D_GAME_FOLDER "Require verified game/mm3d.cci and isolated portable MM3D setup" OFF)
 option(ENABLE_MM3D_PRESENTATION "Build the dedicated MM3D Vulkan developer presentation slice" OFF)
 if (ENABLE_MM3D_PRESENTATION)

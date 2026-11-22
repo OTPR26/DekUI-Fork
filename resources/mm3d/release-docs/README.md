@@ -28,7 +28,7 @@ Majora ReMasked builds on [tgacquin’s DekUI](https://github.com/tgacquin/mm3d-
 ## Get started
 
 1. Install the package for your platform from [Releases](https://github.com/OTPR26/DekUI-Fork/releases).
-2. Select your own **Majora’s Mask 3D USA Rev 1 / v1.1** ROM during setup.
+2. Select your own **Majora’s Mask 3D USA Rev 1 / v1.1** ROM during setup. European Rev 1 support is experimental.
 3. Open Settings to choose a custom-texture folder, controller bindings, and HUD options.
 4. For Adult Link or Dark Link, open **Settings → Mods**, select your own supported OoT3D ROM and optional texture folder, then generate the mod before starting gameplay.
 

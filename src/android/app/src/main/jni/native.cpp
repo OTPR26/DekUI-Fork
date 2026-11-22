@@ -46,6 +46,7 @@
 #include "mm3d/diagnostics.h"
 #include "mm3d/player_settings_bridge.h"
 #include "mm3d/game_language.h"
+#include "mm3d/rom_region.h"
 #include "mm3d/overlay.h"
 #include "mm3d/android_menu.h"
 #include "mm3d/pictograph.h"
@@ -1026,6 +1027,11 @@ jstring Java_org_citra_citra_1emu_NativeLibrary_getRecommendedExtension(
     }
 
     return env->NewStringUTF(j_should_compress ? compressed_ext.c_str() : uncompressed_ext.c_str());
+}
+
+void Java_org_citra_citra_1emu_NativeLibrary_setDekuiEuropeanPreview(JNIEnv*, jclass,
+                                                                   jboolean enabled) {
+    MM3D::RomRegion::SetEuropeanPreview(enabled == JNI_TRUE);
 }
 
 void Java_org_citra_citra_1emu_NativeLibrary_setUserDirectory(JNIEnv* env,

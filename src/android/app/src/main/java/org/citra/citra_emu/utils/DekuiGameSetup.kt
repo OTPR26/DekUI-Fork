@@ -8,7 +8,6 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.MessageDigest
 import org.json.JSONObject
-import org.citra.citra_emu.BuildConfig
 
 /** Reconstructs only fingerprint-approved layout files from the selected game. */
 object DekuiGameSetup {
@@ -21,9 +20,23 @@ object DekuiGameSetup {
         require(result.path.startsWith(canonicalPath + File.separator)) { "Invalid asset path" }
         return result
     }
-    fun prepare(context: Context, rom: File, root: File) {
+    fun isEuropean(rom: File): Boolean = RandomAccessFile(rom, "r").use { stream ->
+        fun read(offset: Long, size: Int) = ByteArray(size).also {
+            stream.seek(offset)
+            stream.readFully(it)
+        }
+        require(String(read(0x100,4), Charsets.US_ASCII) == "NCSD") { "Choose a decrypted .3ds or .cci cartridge" }
+        val base = (ByteBuffer.wrap(read(0x120,4)).order(ByteOrder.LITTLE_ENDIAN).int.toLong() and 0xffffffffL) * 512
+        require(base >= 512 && String(read(base + 0x100,4), Charsets.US_ASCII) == "NCCH") { "Invalid cartridge partition" }
+        when (ByteBuffer.wrap(read(base + 0x118,8)).order(ByteOrder.LITTLE_ENDIAN).long) {
+            0x0004000000125600L -> true
+            0x0004000000125500L -> false
+            else -> error("Choose a USA Rev 1 or European Rev 1 cartridge")
+        }
+    }
+
+    fun prepare(context: Context, rom: File, root: File, preview: Boolean) {
         val manifest = json(context, "supported-rom.json")
-        val preview = BuildConfig.EUR_PREVIEW
         val expected = if (preview) {
             val regions = manifest.getJSONArray("regional_candidates")
             (0 until regions.length()).map(regions::getJSONObject).single { it.getString("region") == "EUR" }

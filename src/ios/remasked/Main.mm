@@ -5,9 +5,7 @@
 #import <AVFoundation/AVFoundation.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #include "RetroVideo.h"
-#ifdef MM3D_EUR_PREVIEW
 #include "EuropeanSetup.h"
-#endif
 #include "drive_data.h"
 #include "AzaharTouchHost.h"
 #include "RemaskedTouchBridge.h"
@@ -56,11 +54,7 @@ static NSString* PreferenceKey(const char* key) {
     return [@"ReMasked.Azahar." stringByAppendingString:@(key)];
 }
 
-#ifdef MM3D_EUR_PREVIEW
-static constexpr bool EuropeanPreview = true;
-#else
-static constexpr bool EuropeanPreview = false;
-#endif
+static bool EuropeanPreview = false;
 
 static int Preference(const char* key, int fallback) {
     if (EuropeanPreview && std::string_view(key) == "ICloudDriveEnabled") return 0;
@@ -145,19 +139,16 @@ static void LoadGamePreferences() {
 }
 
 constexpr int MaxInternalResolutionScale = 6;
-#ifdef MM3D_EUR_PREVIEW
 static constexpr std::array GameLanguages{"English", "French", "Spanish", "German", "Italian"};
 static constexpr std::array GameLanguagePreferences{0, 2, 3, 4, 5};
-#else
-static constexpr std::array GameLanguages{"English", "French", "Spanish"};
-// Keep 0.4.5's stored option indices so existing French and Spanish choices survive.
-static constexpr std::array GameLanguagePreferences{0, 2, 3};
-#endif
+
+static size_t GameLanguageCount() { return EuropeanPreview ? GameLanguages.size() : 3; }
 
 static int GameLanguageChoice() {
     const auto stored = Preference("GameLanguage", 0);
-    const auto found = std::find(GameLanguagePreferences.begin(), GameLanguagePreferences.end(), stored);
-    return found == GameLanguagePreferences.end() ? 0 : int(found - GameLanguagePreferences.begin());
+    const auto end = GameLanguagePreferences.begin() + GameLanguageCount();
+    const auto found = std::find(GameLanguagePreferences.begin(), end, stored);
+    return found == end ? 0 : int(found - GameLanguagePreferences.begin());
 }
 
 static void UpdateGraphicsOptions() {
@@ -624,9 +615,8 @@ void ReMaskedAzaharPublishTouchHud(const CGRect* controls) {
     double _launcherInputTime;
 }
 @property(nonatomic,strong) NSURL* root;
-#ifdef MM3D_EUR_PREVIEW
-@property(nonatomic) BOOL importingEuropeanROM;
-#endif
+@property(nonatomic,strong) NSURL* documents;
+@property(nonatomic) BOOL importingROM;
 @property(nonatomic,strong) MTKView* screen;
 @property(nonatomic,strong) UIView* airPlayBackdrop;
 @property(nonatomic,strong) ReMaskedBottomTouchView* bottomTouchView;
@@ -722,9 +712,8 @@ static __weak ReMaskedPrototype* airPlayHost;
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = UIColor.blackColor;
-    self.root = [[NSFileManager.defaultManager URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask] firstObject];
-    LoadGamePreferences();
-    dataDirectory = self.root.fileSystemRepresentation;
+    self.documents = [[NSFileManager.defaultManager URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask] firstObject];
+    [self selectCartridgeRegion:Preference("EuropeanCartridge", 0)];
     self.screen = [[MTKView alloc] initWithFrame:self.view.bounds device:MTLCreateSystemDefaultDevice()];
     self.screen.framebufferOnly = YES;
     self.screen.clearColor = MTLClearColorMake(0,0,0,1);
@@ -958,8 +947,18 @@ static constexpr std::array<const char*, 13> TouchControlNames{
     ReMaskedIOS_SetTouchControlsMenuVisible(1);
     ReMaskedIOS_EditTouchLayout();
 }
+- (void)selectCartridgeRegion:(BOOL)european {
+    EuropeanPreview = european;
+    self.root = european ? [self.documents URLByAppendingPathComponent:@"European Rev 1" isDirectory:YES]
+                         : self.documents;
+    dataDirectory = self.root.fileSystemRepresentation;
+    SavePreference("EuropeanCartridge", european);
+    LoadGamePreferences();
+}
+
 - (NSURL*)rom { return [self.root URLByAppendingPathComponent:@"Majora.cci"]; }
 - (void)chooseROM {
+    if (self.live || self.importingROM || self.syncingDrive) return;
     self.pickerPurpose = @"rom";
     auto picker = [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypeData] asCopy:NO];
     picker.delegate = self;
@@ -1289,36 +1288,45 @@ static constexpr std::array<const char*, 13> TouchControlNames{
     }
     NSURL* inputURL = urls.firstObject;
     if (!inputURL) return;
-    if ([NSFileManager.defaultManager fileExistsAtPath:self.rom.path]) {
-        self.status.text = @"A local ROM is already imported.";
-        return;
-    }
-#ifdef MM3D_EUR_PREVIEW
-    if (self.importingEuropeanROM) return;
-    self.importingEuropeanROM = YES;
-    self.status.text = @"Verifying European Rev 1 and preparing the ReMasked HUD…";
-    NSURL* root = self.root;
-    NSURL* destination = self.rom;
+    if (self.live || self.importingROM || self.syncingDrive) return;
+    self.importingROM = YES;
+    self.status.text = @"Checking the cartridge…";
+    NSURL* documents = self.documents;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        NSString* error = ImportEuropeanROM(inputURL, root, destination);
+        const BOOL access = [inputURL startAccessingSecurityScopedResource];
+        const auto title = CartridgeProgramID(inputURL);
+        const bool european = title == 0x0004000000125600ULL;
+        NSURL* root = european ? [documents URLByAppendingPathComponent:@"European Rev 1" isDirectory:YES] : documents;
+        NSURL* destination = [root URLByAppendingPathComponent:@"Majora.cci"];
+        NSString* failure = nil;
+        NSFileManager* files = NSFileManager.defaultManager;
+        if (!european && title != 0x0004000000125500ULL) {
+            failure = @"Choose a decrypted USA Rev 1 or European Rev 1 cartridge.";
+        } else if (![files fileExistsAtPath:destination.path]) {
+            if (european) {
+                failure = ImportEuropeanROM(inputURL, root, documents, destination);
+            } else {
+                NSError* error = nil;
+                if (![files copyItemAtURL:inputURL toURL:destination error:&error])
+                    failure = error.localizedDescription ?: @"Could not copy the selected cartridge.";
+            }
+        }
+        if (access) [inputURL stopAccessingSecurityScopedResource];
         dispatch_async(dispatch_get_main_queue(), ^{
-            self.importingEuropeanROM = NO;
-            self.status.text = error ?: @"European Rev 1 ready";
+            self.importingROM = NO;
+            self.status.text = failure ?: (european ? @"European Rev 1 ready" : @"USA Rev 1 ready");
+            if (failure && self.presentedViewController) [self settingsNotice:failure];
+            if (!failure) {
+                [self selectCartridgeRegion:european];
+                if ([self.presentedViewController isKindOfClass:ReMaskedSettingsPanel.class]) {
+                    [self dismissViewControllerAnimated:NO completion:^{ [self openSettings]; }];
+                }
+            }
         });
     });
-#else
-    BOOL access = [inputURL startAccessingSecurityScopedResource];
-    NSError* error = nil;
-    BOOL ok = [NSFileManager.defaultManager copyItemAtURL:inputURL toURL:self.rom error:&error];
-    if (access) [inputURL stopAccessingSecurityScopedResource];
-    self.status.text = ok ? @"ROM ready" : error.localizedDescription;
-#endif
 }
 - (void)startGame {
-#ifdef MM3D_EUR_PREVIEW
-    if (self.importingEuropeanROM) return;
-    setenv("REMASKED_EUR_PREVIEW", "1", 1);
-#endif
+    if (self.importingROM) return;
     if (self.syncingDrive && !self.live) return;
     if (self.live) {
         launcherConfirmHeldOnStart = gameplayController().extendedGamepad.buttonA.pressed;
@@ -1881,9 +1889,9 @@ static constexpr std::array<const char*, 13> TouchControlNames{
     sync.Available = [driveReady] { return driveReady() && Preference("ICloudDriveEnabled", 1); };
     sync.UnavailableReason = "Enable iCloud Drive from startup Settings.";
     if (!EuropeanPreview) dataTab.Rows.push_back(std::move(sync));
-    auto rom = action("Choose ROM", EuropeanPreview ?
-        "Select a decrypted European Rev 1 cartridge dump. Setup also reads verified Project Restoration inputs from the app’s restoration folder in Files." :
-        "Select your local game file in Files.", [self] { [self chooseROM]; });
+    auto rom = action("Choose ROM",
+        "Choose USA Rev 1 or European Rev 1. European setup reads the verified Restoration files from the app’s restoration folder in Files.",
+        [self] { [self chooseROM]; });
     rom.Available = stopped;
     rom.UnavailableReason = "Choose the ROM from startup Settings.";
     dataTab.Rows.push_back(std::move(rom));
@@ -1931,9 +1939,9 @@ static constexpr std::array<const char*, 13> TouchControlNames{
     };
     generalTab.Rows.push_back(std::move(icons));
     generalTab.Rows.push_back(heading("Language"));
-    auto language = PreferenceRow("GameLanguage", "Game language", 0, 0, int(GameLanguages.size()) - 1);
+    auto language = PreferenceRow("GameLanguage", "Game language", 0, 0, int(GameLanguageCount()) - 1);
     language.Kind = Menu::RowKind::Choice;
-    language.Choices.assign(GameLanguages.begin(), GameLanguages.end());
+    language.Choices.assign(GameLanguages.begin(), GameLanguages.begin() + GameLanguageCount());
     language.Read = GameLanguageChoice;
     language.Write = [](int index) {
         SavePreference("GameLanguage", GameLanguagePreferences.at(index));

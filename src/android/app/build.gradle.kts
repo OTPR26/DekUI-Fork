@@ -27,8 +27,6 @@ val abiFilter = listOf("arm64-v8a", "x86_64")
 // Opt-in compile experiment. The normal Azahar Android baseline stays intact.
 // Game asset reconstruction/deployment is still a separate local setup step.
 val dekuiPresentation = providers.gradleProperty("dekuiPresentation").orNull == "true"
-val eurPreview = providers.gradleProperty("remaskedEurPreview").orNull == "true"
-require(!eurPreview || dekuiPresentation) { "EUR preview requires ReMasked presentation" }
 val dekuiReleaseVersion = if (dekuiPresentation)
     file("../../../resources/mm3d/release-version.txt").readText().trim() else ""
 val dekuiQtRoot = providers.gradleProperty("dekuiQtRoot").orNull
@@ -101,15 +99,10 @@ android {
         // the Play Store listing, which was originally set up for Lime3DS, to still be used.
         applicationId = "org.azahar_emu.azahar"
         if (dekuiPresentation) {
-            applicationId = if (eurPreview) "io.github.otpr26.dekuifork.eurpreview" else "io.github.otpr26.dekuifork"
+            applicationId = "io.github.otpr26.dekuifork"
         }
         buildConfigField("boolean", "DEKUI_PRESENTATION", dekuiPresentation.toString())
-        buildConfigField("boolean", "EUR_PREVIEW", eurPreview.toString())
-        manifestPlaceholders["applicationLabel"] = when {
-            eurPreview -> "ReMasked EUR Preview"
-            dekuiPresentation -> "Majora ReMasked"
-            else -> "@string/app_name"
-        }
+        manifestPlaceholders["applicationLabel"] = if (dekuiPresentation) "Majora ReMasked" else "@string/app_name"
         minSdk = 29
         targetSdk = 37
         versionCode = autoVersion
@@ -136,7 +129,6 @@ android {
                         // Qt Android uses the shared STL. Match it so AGP also packages libc++_shared.so.
                         "-DANDROID_STL=c++_shared",
                         "-DENABLE_MM3D_GAME_FOLDER=OFF",
-                        "-DENABLE_MM3D_EUR_PREVIEW=${if (eurPreview) "ON" else "OFF"}",
                         "-DENABLE_BUILTIN_KEYBLOB=OFF",
                         "-DENABLE_VULKAN=ON",
                         "-DENABLE_TESTS=OFF",

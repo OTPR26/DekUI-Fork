@@ -35,11 +35,10 @@ for directory in runtime_dirs:
 runtime = build / 'python-embed-arm64.zip'
 run('python', 'tools/mm3d/windows_python.py', str(runtime), '--architecture', 'arm64')
 run('python', 'tools/mm3d/build_desktop_tp_runtime.py')
-version = subprocess.check_output(['python', 'tools/mm3d/release_version.py', '--artifact'], text=True).strip()
+version = subprocess.check_output(['python', 'tools/mm3d/release_version.py'], text=True).strip()
 package = f'artifacts/Majora-ReMasked-{version}-Windows-arm64.zip'
-preview_args = ['--experimental-eur'] if os.getenv('REMASKED_EXPERIMENTAL_EUR') == 'true' else []
 run('python', 'tools/mm3d/package_windows.py', str(build / 'bundle'), package,
-    '--python-archive', str(runtime), '--architecture', 'arm64', *preview_args)
+    '--python-archive', str(runtime), '--architecture', 'arm64')
 run('python', 'tools/mm3d/check_binary_arch.py', package, 'arm64')
 run('python', 'tools/mm3d/windows/smoke_setup.py', package)
 run('python', 'tools/mm3d/package_source.py',

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 package org.citra.citra_emu.activities
 
-import org.citra.citra_emu.BuildConfig
 import org.citra.citra_emu.utils.DekuiStorage
 import android.content.Intent
 import android.net.Uri
@@ -16,7 +15,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import org.citra.citra_emu.NativeLibrary
 import org.citra.citra_emu.utils.DekuiTextureStorage
 import org.citra.citra_emu.utils.DekuiGameSetup
 import org.citra.citra_emu.utils.DirectoryInitialization
@@ -33,7 +31,7 @@ class DekuiLaunchActivity : AppCompatActivity() {
     private val settings = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == RESULT_OK &&
             result.data?.getStringExtra(DekuiSettingsActivity.GAME_ACTION) == DekuiSettingsActivity.CHOOSE_ROM &&
-            !game.isFile) {
+            !preparingStorage) {
             picker.launch(arrayOf("*/*"))
         }
     }
@@ -52,11 +50,12 @@ class DekuiLaunchActivity : AppCompatActivity() {
         prepareSharedStorage()
     }
     private var preparingStorage=false
+    private var importingGame = false
     private fun prepareSharedStorage() {
         if(preparingStorage)return
         if(!org.citra.citra_emu.utils.DekuiStorage.hasAccess(this)) {
             val panel=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setPadding(48,48,48,48) }
-            panel.addView(TextView(this).apply { text="Game data folder\n\nMajora ReMasked stores saves, mods and settings in Internal storage/${DekuiStorage.sharedRoot().name}. Allow file access to create this folder and migrate existing data. Your existing private data will be kept as a backup.";textSize=20f })
+            panel.addView(TextView(this).apply { text="Game data folder\n\nMajora ReMasked stores saves, mods and settings in Internal storage/${DekuiStorage.sharedRoot(this@DekuiLaunchActivity).name}. Allow file access to create this folder and migrate existing data. Your existing private data will be kept as a backup.";textSize=20f })
             panel.addView(Button(this).apply { text="Allow file access";setOnClickListener {
                 if(android.os.Build.VERSION.SDK_INT>=30)storagePermission.launch(Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,Uri.parse("package:$packageName")))
                 else legacyStoragePermission.launch(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
@@ -64,7 +63,7 @@ class DekuiLaunchActivity : AppCompatActivity() {
             setContentView(panel);return
         }
         preparingStorage=true
-        val message=TextView(this).apply {text="Preparing Internal storage/${DekuiStorage.sharedRoot().name}…\nCopying and verifying existing data. Originals will be retained.";textSize=20f;setPadding(48,48,48,48)}
+        val message=TextView(this).apply {text="Preparing Internal storage/${DekuiStorage.sharedRoot(this@DekuiLaunchActivity).name}…\nCopying and verifying existing data. Originals will be retained.";textSize=20f;setPadding(48,48,48,48)}
         setContentView(message)
         lifecycleScope.launch {
             val result=withContext(Dispatchers.IO){runCatching{org.citra.citra_emu.utils.DekuiStorage.migrate(this@DekuiLaunchActivity)}}
@@ -145,7 +144,7 @@ class DekuiLaunchActivity : AppCompatActivity() {
             menuButton("Exit") { finishAndRemoveTask() }
         status=TextView(this).apply {
             typeface=normal;textSize=12f;setTextColor(dim);gravity=android.view.Gravity.END
-            text=if(game.isFile&&prefs.getBoolean("ready",false)) "" else "Select your Majora’s Mask 3D ${if (BuildConfig.EUR_PREVIEW) "European Rev 1" else "USA Rev 1"} ROM to begin."
+            text=if(game.isFile&&prefs.getBoolean("ready",false)) "" else "Select a decrypted USA Rev 1 or European Rev 1 cartridge."
             setPadding(0,dp(6),dp(12),0)
             accessibilityLiveRegion=android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE
         }
@@ -186,6 +185,8 @@ class DekuiLaunchActivity : AppCompatActivity() {
     }
 
     private fun importGame(uri: Uri) {
+        if (importingGame) return
+        importingGame = true
         select.isEnabled = false
         status.text = "Preparing your game…"
         lifecycleScope.launch {
@@ -198,22 +199,38 @@ class DekuiLaunchActivity : AppCompatActivity() {
                         contentResolver.openInputStream(uri)?.use { input ->
                             stage.outputStream().use { output -> input.copyTo(output) }
                         } ?: error("The selected file could not be opened")
-                        DekuiGameSetup.prepare(this@DekuiLaunchActivity, stage, File(NativeLibrary.getUserDirectory()))
-                        check(!game.exists()) { "A game is already installed" }
-                        check(stage.renameTo(game)) { "Could not finish importing the game" }
+                        val context = this@DekuiLaunchActivity
+                        val european = DekuiGameSetup.isEuropean(stage)
+                        val currentRegion = DekuiStorage.isEuropean(context)
+                        val root = DekuiStorage.prepareRegion(context, european)
+                        DekuiGameSetup.prepare(context, stage, root, european)
+                        val destination = File(root, "game/game.cci")
+                        if (!destination.isFile) {
+                            check(destination.parentFile!!.isDirectory || destination.parentFile!!.mkdirs())
+                            check(stage.renameTo(destination)) { "Could not finish importing the game" }
+                        }
+                        if (european != currentRegion) {
+                            try {
+                                DekuiStorage.activate(context, european)
+                            } catch (error: Exception) {
+                                DekuiStorage.activate(context, currentRegion)
+                                throw error
+                            }
+                        }
                         check(prefs.edit().putBoolean("ready",true).commit())
                     } finally { stage.delete() }
                 }
             }
+            importingGame = false
             result.fold({ buildLauncher();openSettings("Graphics") }, {
                 status.text = it.message ?: "Game preparation failed. Please select the supported game file."
                 select.isEnabled = true
-                select.text = "Select ROM"
+                select.text = if (game.isFile && prefs.getBoolean("ready", false)) "Start game" else "Select ROM"
             })
         }
     }
     private fun openSettings(page: String="General") {
-        settings.launch(Intent(this,DekuiSettingsActivity::class.java).putExtra("page",page))
+        if (!importingGame) settings.launch(Intent(this,DekuiSettingsActivity::class.java).putExtra("page",page))
     }
     private fun openGame() {
         if(org.citra.citra_emu.utils.DekuiAdultLinkSetup.generating || org.citra.citra_emu.utils.DekuiTwilightLinkSetup.generating) {

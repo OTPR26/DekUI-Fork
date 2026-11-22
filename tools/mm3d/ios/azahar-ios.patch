@@ -3363,3 +3363,19 @@
      const auto textures = GetTextures(title_id);
      if (!ReadConfig(title_id)) {
          use_new_hash = false;
+--- a/src/common/file_util.cpp
++++ b/src/common/file_util.cpp
+@@ -933,6 +933,13 @@
+ } // namespace
+ 
+ void SetUserPath(const std::string& path) {
++#ifdef IOS
++    // A fresh game can use a different region directory in the same host process.
++    if (!path.empty() && g_paths.contains(UserPath::UserDir) &&
++        g_paths.at(UserPath::UserDir) != path) {
++        g_paths.clear();
++    }
++#endif
+     std::string& user_path = g_paths[UserPath::UserDir];
+ 
+     if (!path.empty() && CreateFullPath(path)) {
