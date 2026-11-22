@@ -875,9 +875,11 @@ struct Hook {
         return Transform(m,layout+8,writes,seen,{p.scale,0,0,p.scale,
             p.x+200.f*(1-p.scale),p.y+120.f*(1-p.scale)});
     }
-    template<class Memory> void HideFaceSlotLabels(Memory& m,U32 layout,std::vector<Write>& writes) {
+    template<class Memory> void HideFaceSlotLabels(Memory& m,U32 layout,std::vector<Write>& writes,
+                                                  bool lower_hud=false) {
         if(!LayoutNamed(m,layout,"MenuItem")&&!LayoutNamed(m,layout,"MenuMask")&&
-           !LayoutNamed(m,layout,"ItemIconSet")&&!LayoutNamed(m,layout,"ItemIconSet2"))return;
+           !LayoutNamed(m,layout,"ItemIconSet")&&!LayoutNamed(m,layout,"ItemIconSet2")&&
+           !(lower_hud&&(LayoutNamed(m,layout,"HudItemIconSet")||LayoutNamed(m,layout,"Hud2"))))return;
         std::vector<U32> seen,pending{layout+8};
         while(!pending.empty()&&seen.size()<1024) {
             const U32 pane=pending.back();
@@ -886,7 +888,8 @@ struct Hook {
             seen.push_back(pane);
             const U32 owner=m.Read(pane+4).value_or(0);
             if((Named(m,pane,"disp_x_pane")||Named(m,pane,"disp_y_pane"))&&
-               (LayoutNamed(m,owner,"ItemIconSet")||LayoutNamed(m,owner,"ItemIconSet2"))) {
+               (LayoutNamed(m,owner,"ItemIconSet")||LayoutNamed(m,owner,"ItemIconSet2")||
+                (lower_hud&&LayoutNamed(m,owner,"HudItemIconSet")))) {
                 if(const auto flags=m.Read(pane+0xd4);flags&&(*flags&1u))
                     writes.push_back({pane+0xd4,*flags,*flags&~1u});
             }
@@ -908,11 +911,14 @@ struct Hook {
             for(U32 i=0;i<count;++i)pending.push_back(m.Read(list+i*4).value_or(0));
         }
     }
-    template<class Memory> void Begin(Memory& m,U32 layout,bool widescreen=false) {
+    template<class Memory> void BeginNative(Memory& m,U32 layout,bool lower_hud) {
         frames.emplace_back();
         auto& labels=frames.back();
-        HideFaceSlotLabels(m,layout,labels);
+        HideFaceSlotLabels(m,layout,labels,lower_hud);
         for(const auto& write:labels)m.Write(write.address,write.after);
+    }
+    template<class Memory> void Begin(Memory& m,U32 layout,bool widescreen=false,bool lower_hud=false) {
+        BeginNative(m,layout,lower_hud);
         if(GearPhoto(m,layout)) {
             std::vector<Write> writes;
             if(!PrepareGearPhoto(m,layout,writes))return;

@@ -6,6 +6,7 @@
 namespace MM3D::AndroidCast {
 enum Mode { Off, SingleScreen, TopScreen };
 inline std::atomic_int mode{Off};
+inline std::atomic_bool native_dual_screen{false};
 
 struct LowerScreen {
     unsigned x, y, width, height;

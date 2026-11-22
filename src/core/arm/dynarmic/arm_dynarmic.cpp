@@ -37,6 +37,9 @@
 #include "mm3d/model_mod.h"
 
 #include "mm3d/inventory_shadow.h"
+#ifdef ANDROID
+#include "mm3d/android_cast.h"
+#endif
 #include "mm3d/items_map_prompt.h"
 #include "mm3d/menu_help.h"
 #include "mm3d/world_map_prompt.h"
@@ -155,6 +158,8 @@ public:
     MM3D::WorldMapPrompt::Hook world_map_prompt_hook;
     MM3D::MenuTabs::Hook menu_tabs_hook;
     MM3D::NativeInventory::Hook inventory_hook;
+    bool native_inventory_draw=false;
+    bool native_lower_draw=false;
     MM3D::OptionsMenu::Hook options_hook;
     MM3D::MenuPageSwitch::Hook menu_page_switch;
     MM3D::MenuMemory::Hook menu_memory;
@@ -1152,7 +1157,23 @@ public:
             auto& regs=parent.jit->Regs();
             switch(swi-MM3D::NativeInventory::FirstSVC) {
             case 0: inventory_hook.Capture(guest,regs[0]); regs[4]=regs[0]; break;
-            case 1: MM3D::ScreenShrink::Update(guest); if(MM3D::MenuBackdrop::CodeMatches(guest))menu_backdrop.Pass(guest,regs[0],regs[1]);
+            case 1:
+#ifdef ANDROID
+                {
+                    const bool dual=MM3D::AndroidCast::native_dual_screen.load();
+                    native_lower_draw=dual&&regs[1]>=4;
+                    native_inventory_draw=dual&&inventory_hook.inventory_owner&&
+                        guest.Read(MM3D::MenuBackdrop::ScreenContext+8)==inventory_hook.inventory_owner&&
+                        inventory_hook.CurrentPanel(guest);
+                }
+#endif
+                if(native_inventory_draw) {
+                    // Keep the native grid, item sprites, and cursor together on the lower screen.
+                    inventory_hook.routed.clear();
+                    regs[4]=regs[0];
+                    break;
+                }
+                MM3D::ScreenShrink::Update(guest); if(MM3D::MenuBackdrop::CodeMatches(guest))menu_backdrop.Pass(guest,regs[0],regs[1]);
                 options_hook.Pass(guest,regs[0],regs[1]); song_reset_hook.Pass(guest,regs[0],regs[1]); double_time_hook.Pass(guest,regs[0],regs[1]); dungeon_map_hook.Pass(guest,regs[0],regs[1]); song_hook.Pass(guest,regs[0],regs[1]); ocarina_hook.Pass(guest,regs[0],regs[1]); item_present_hook.Pass(guest,regs[0],regs[1]);
                 if(regs[1]==4) MM3D::ItemSlideInterpolation::Publish({MM3D::guest_frames.load(),
                     MM3D::LinkPoseCapture::interpolation_generation.load(),item_present_hook.panel?item_present_hook.owner:0,
@@ -1183,7 +1204,13 @@ public:
                 if(regs[1]==0) MM3D::BannerInterpolation::Publish(MM3D::guest_frames.load(),
                     MM3D::LinkPoseCapture::interpolation_generation.load(),banner_hook.owner);
                 regs[4]=regs[0]; break;
-            case 2: classic_save_hook.BeginCycleDraw(guest,regs[4]); minigame_hook.Begin(guest,regs[4]); hud_buttons_hook.Begin(guest,regs[4]); song_reset_hook.Begin(guest,regs[4]); banner_hook.Begin(guest,regs[4],MM3D::Widescreen::Active()); double_time_hook.Begin(guest,regs[4]); dungeon_map_hook.Begin(guest,regs[4]); song_hook.Begin(guest,regs[4]); item_present_hook.Begin(guest,regs[4]); loading_icon_hook.Begin(guest,regs[4]); press_hook.Begin(guest,regs[4]); inventory_hook.Begin(guest,regs[4],MM3D::Widescreen::Active()); notebook_hook.Begin(guest,regs[4],MM3D::Widescreen::Active()); file_select_hook.Begin(guest,regs[4],MM3D::Widescreen::Active());
+            case 2:
+                if(native_inventory_draw) {
+                    inventory_hook.BeginNative(guest,regs[4],native_lower_draw);
+                    regs[2]=regs[4]+8;
+                    break;
+                }
+                classic_save_hook.BeginCycleDraw(guest,regs[4]); minigame_hook.Begin(guest,regs[4]); hud_buttons_hook.Begin(guest,regs[4]); song_reset_hook.Begin(guest,regs[4]); banner_hook.Begin(guest,regs[4],MM3D::Widescreen::Active()); double_time_hook.Begin(guest,regs[4]); dungeon_map_hook.Begin(guest,regs[4]); song_hook.Begin(guest,regs[4]); item_present_hook.Begin(guest,regs[4]); loading_icon_hook.Begin(guest,regs[4]); press_hook.Begin(guest,regs[4]); inventory_hook.Begin(guest,regs[4],MM3D::Widescreen::Active(),native_lower_draw); notebook_hook.Begin(guest,regs[4],MM3D::Widescreen::Active()); file_select_hook.Begin(guest,regs[4],MM3D::Widescreen::Active());
                 if(MM3D::ClassicSaving::enabled && classic_save_hook.cycle) {
                     static std::vector<u32> traced_layouts;
                     static u32 traced_cycle=0;
@@ -1273,6 +1300,11 @@ public:
                         MM3D::MessageLayout::Read(guest,regs[4]));
                 break;
             case 3:
+                if(native_inventory_draw) {
+                    inventory_hook.End(guest);
+                    guest.Write(regs[6],regs[0]);
+                    break;
+                }
                 if(const auto sp=double_time_hook.shade_scratch.End(guest))regs[13]=sp;
                 classic_save_hook.EndCycleDraw(guest);
                 if(const auto sp=classic_owl_draw.End(guest))regs[13]=sp;
@@ -1309,6 +1341,11 @@ public:
                 void Write(u32 at,u32 value) { memory.Write32(at,value); }
             } pose{memory};
             const auto layout=parent.jit->Regs()[4];
+            if(native_inventory_draw) {
+                if(swi==MM3D::DialogueScale::BeforeSVC)parent.jit->Regs()[0]=layout+8;
+                else parent.jit->Regs()[13]+=8;
+                return;
+            }
             if(swi==MM3D::DialogueScale::BeforeSVC) {
                 const bool description=item_preview_hook.Description(pose,layout);
                 const bool present_description=item_present_hook.IsDescription(pose,layout);

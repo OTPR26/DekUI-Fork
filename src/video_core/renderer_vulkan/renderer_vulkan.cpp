@@ -173,6 +173,9 @@ RendererVulkan::RendererVulkan(Core::System& system, Pica::PicaCore& pica_,
 }
 
 RendererVulkan::~RendererVulkan() {
+#if defined(ANDROID) && defined(ENABLE_MM3D_PRESENTATION)
+    MM3D::AndroidCast::native_dual_screen.store(false);
+#endif
     vk::Device device = instance.GetDevice();
     scheduler.Finish();
     main_present_window.WaitPresent();
@@ -1534,6 +1537,10 @@ void RendererVulkan::SwapBuffers() {
     // the single-screen interpolation/presentation path.
     secondaryWindowEnabled = secondary_window &&
         secondary_window->GetWindowInfo().render_surface != nullptr;
+    MM3D::AndroidCast::native_dual_screen.store(
+        secondaryWindowEnabled && MM3D::AndroidCast::mode.load() == MM3D::AndroidCast::Off &&
+        secondary_window->GetFramebufferLayout().bottom_screen_enabled &&
+        !secondary_window->GetFramebufferLayout().top_screen_enabled);
 #else
     secondaryWindowEnabled = secondary_window != nullptr;
 #endif
