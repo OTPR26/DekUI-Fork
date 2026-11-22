@@ -3514,6 +3514,11 @@ int main(int argc,char** argv) {
     }
     assert(m.words[right_group+0xd4]==14);
     hook.End(m);assert(m.words==capture_original);
+    hook.BeginNative(m,capture,true);
+    assert(hook.FitMenuBackdrop(m,capture,true));
+    assert(std::abs(f(left_picture+0xec)+13.333333f)<.0001f);
+    assert(std::abs(400*f(left_picture+0xe0)+f(left_picture+0xec)-413.333333f)<.0001f);
+    hook.End(m);assert(m.words==capture_original);
     hook.Pass(m,manager,3);hook.Begin(m,capture,true);hook.End(m);assert(m.words==capture_original);
     // Scope previews to Items, with a shared model anchor for multipart items.
     MM3D::ItemPreview::Hook preview;

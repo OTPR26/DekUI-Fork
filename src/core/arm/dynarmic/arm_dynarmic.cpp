@@ -1170,6 +1170,7 @@ public:
                 if(native_inventory_draw) {
                     // Keep the native grid, item sprites, and cursor together on the lower screen.
                     inventory_hook.routed.clear();
+                    inventory_hook.pass=regs[1];
                     regs[4]=regs[0];
                     break;
                 }
@@ -1207,6 +1208,8 @@ public:
             case 2:
                 if(native_inventory_draw) {
                     inventory_hook.BeginNative(guest,regs[4],native_dual_draw);
+                    // The capture must still cover the expanded top viewport.
+                    inventory_hook.FitMenuBackdrop(guest,regs[4],MM3D::Widescreen::Active());
                     regs[2]=regs[4]+8;
                     break;
                 }

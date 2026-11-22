@@ -918,6 +918,15 @@ struct Hook {
         HideFaceSlotLabels(m,layout,labels,lower_hud);
         for(const auto& write:labels)m.Write(write.address,write.after);
     }
+    template<class Memory> bool FitMenuBackdrop(Memory& m,U32 layout,bool widescreen) {
+        if(!widescreen||pass!=0||!LayoutNamed(m,layout,"UpCommonBG"))return false;
+        std::vector<Write> writes;
+        if(PrepareMenuBackdrop(m,layout,writes)) {
+            for(const auto& w:writes)m.Write(w.address,w.after);
+            frames.back().insert(frames.back().end(),writes.begin(),writes.end());
+        }
+        return true;
+    }
     template<class Memory> void Begin(Memory& m,U32 layout,bool widescreen=false,bool lower_hud=false) {
         BeginNative(m,layout,lower_hud);
         if(GearPhoto(m,layout)) {
@@ -926,13 +935,7 @@ struct Hook {
             for(const auto& w:writes)m.Write(w.address,w.after);
             frames.back().insert(frames.back().end(),writes.begin(),writes.end());return;
         }
-        if(widescreen&&pass==0&&LayoutNamed(m,layout,"UpCommonBG")) {
-            std::vector<Write> writes;
-            if(!PrepareMenuBackdrop(m,layout,writes)) return;
-            for(const auto& w:writes) m.Write(w.address,w.after);
-            frames.back().insert(frames.back().end(),writes.begin(),writes.end());
-            return;
-        }
+        if(FitMenuBackdrop(m,layout,widescreen))return;
         if(layout==shadow_layout&&shadow_layout&&pass==background_pass) {
             std::vector<Write> writes;
             if(!PrepareShadow(m,shadow_draw++%2==1,writes))return;
