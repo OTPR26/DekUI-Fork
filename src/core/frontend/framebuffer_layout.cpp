@@ -83,7 +83,8 @@ FramebufferLayout PortraitOriginalLayout(u32 width, u32 height, bool swapped, bo
     return res;
 }
 
-FramebufferLayout SingleFrameLayout(u32 width, u32 height, bool swapped, bool upright) {
+static FramebufferLayout SingleFrameLayoutForAspect(u32 width, u32 height, bool swapped, bool upright,
+                                                    Settings::AspectRatio aspect_ratio_setting) {
     ASSERT(width > 0);
     ASSERT(height > 0);
     // The drawing code needs at least somewhat valid values for both screens
@@ -98,7 +99,6 @@ FramebufferLayout SingleFrameLayout(u32 width, u32 height, bool swapped, bool up
     Common::Rectangle<u32> bot_screen{0, 0, Core::kScreenBottomWidth, Core::kScreenBottomHeight};
 
     const float window_aspect_ratio = static_cast<float>(height) / static_cast<float>(width);
-    const auto aspect_ratio_setting = Settings::values.aspect_ratio.GetValue();
 
     switch (aspect_ratio_setting) {
     case Settings::AspectRatio::Default:
@@ -144,6 +144,11 @@ FramebufferLayout SingleFrameLayout(u32 width, u32 height, bool swapped, bool up
     } else {
         return res;
     }
+}
+
+FramebufferLayout SingleFrameLayout(u32 width, u32 height, bool swapped, bool upright) {
+    return SingleFrameLayoutForAspect(width, height, swapped, upright,
+                                     Settings::values.aspect_ratio.GetValue());
 }
 
 FramebufferLayout LargeFrameLayout(u32 width, u32 height, bool swapped, bool upright,
@@ -310,7 +315,13 @@ FramebufferLayout AndroidSecondaryLayout(u32 width, u32 height) {
         return SingleFrameLayout(width, height, false, Settings::values.upright_screen.GetValue());
 
     case Settings::SecondaryDisplayLayout::BottomScreenOnly:
+#if defined(ANDROID) && defined(ENABLE_MM3D_PRESENTATION)
+        return SingleFrameLayoutForAspect(width, height, true,
+                                         Settings::values.upright_screen.GetValue(),
+                                         Settings::AspectRatio::Default);
+#else
         return SingleFrameLayout(width, height, true, Settings::values.upright_screen.GetValue());
+#endif
     case Settings::SecondaryDisplayLayout::SideBySide:
         return LargeFrameLayout(width, height, false, Settings::values.upright_screen.GetValue(),
                                 1.0f, Settings::SmallScreenPosition::MiddleRight);

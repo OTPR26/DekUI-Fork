@@ -22,7 +22,6 @@ constexpr std::array android_config_omitted_keys = {
     Settings::Keys::screen_top_stretch,
     Settings::Keys::screen_top_leftright_padding,
     Settings::Keys::screen_top_topbottom_padding,
-    Settings::Keys::screen_bottom_stretch,
     Settings::Keys::screen_bottom_leftright_padding,
     Settings::Keys::screen_bottom_topbottom_padding,
     Settings::Keys::mono_render_option,
@@ -371,6 +370,9 @@ static const char* android_config_default_file_content = (BOOST_HANA_STRING(R"(
 # 2 - Show Bottom Screen Only
 # 3 - Show both screens side by side
 )") DECLARE_KEY(secondary_display_layout) BOOST_HANA_STRING(R"(
+
+# Fill the dedicated bottom screen instead of using the original 4:3 picture.
+)") DECLARE_KEY(screen_bottom_stretch) BOOST_HANA_STRING(R"(
 
 # Screen placement settings when using Cardboard VR (render3d = 4)
 # 30 - 100: Screen size as a percentage of the viewport. 85 (default)

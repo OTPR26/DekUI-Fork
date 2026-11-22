@@ -208,6 +208,9 @@ void Config::ReadValues() {
     ReadSetting("Layout", Settings::values.custom_bottom_y);
     ReadSetting("Layout", Settings::values.custom_bottom_width);
     ReadSetting("Layout", Settings::values.aspect_ratio);
+#ifdef ENABLE_MM3D_PRESENTATION
+    ReadSetting("Layout", Settings::values.screen_bottom_stretch);
+#endif
     ReadSetting("Layout", Settings::values.custom_bottom_height);
     ReadSetting("Layout", Settings::values.cardboard_screen_size);
     ReadSetting("Layout", Settings::values.cardboard_x_shift);

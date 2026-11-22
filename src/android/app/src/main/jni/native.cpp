@@ -1272,6 +1272,7 @@ void Java_org_citra_citra_1emu_NativeLibrary_logUserDirectory(JNIEnv* env,
 void Java_org_citra_citra_1emu_NativeLibrary_reloadSettings([[maybe_unused]] JNIEnv* env,
                                                             [[maybe_unused]] jobject obj) {
     const auto previous_aspect = Settings::values.aspect_ratio.GetValue();
+    const bool previous_bottom_stretch = Settings::values.screen_bottom_stretch.GetValue();
     Config{};
     Core::System& system{Core::System::GetInstance()};
 
@@ -1279,7 +1280,8 @@ void Java_org_citra_citra_1emu_NativeLibrary_reloadSettings([[maybe_unused]] JNI
     if (system.IsPoweredOn()) {
         u64 program_id{};
         system.GetAppLoader().ReadProgramId(program_id);
-        if (previous_aspect != Settings::values.aspect_ratio.GetValue()) {
+        if (previous_aspect != Settings::values.aspect_ratio.GetValue() ||
+            previous_bottom_stretch != Settings::values.screen_bottom_stretch.GetValue()) {
             std::scoped_lock lock(surface_mutex);
             system.GPU().Renderer().UpdateCurrentFramebufferLayout(AndroidUtils::IsPortraitMode());
         }

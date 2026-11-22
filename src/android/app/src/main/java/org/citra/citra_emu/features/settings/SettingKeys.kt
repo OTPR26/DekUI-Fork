@@ -65,6 +65,7 @@ object SettingKeys {
     external fun custom_bottom_height(): String
     external fun custom_second_layer_opacity(): String
     external fun aspect_ratio(): String
+    external fun screen_bottom_stretch(): String
     external fun portrait_layout_option(): String
     external fun custom_portrait_top_x(): String
     external fun custom_portrait_top_y(): String

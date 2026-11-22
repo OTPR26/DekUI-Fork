@@ -81,8 +81,9 @@ namespace {
 #ifdef ENABLE_MM3D_PRESENTATION
 bool AllowsWidescreenExpansion() {
 #ifdef ANDROID
-    // ReMasked widens the authored default picture. Keep an explicit 4:3 frame.
-    return Settings::values.aspect_ratio.GetValue() != Settings::AspectRatio::R4_3;
+    const auto aspect = Settings::values.aspect_ratio.GetValue();
+    return aspect != Settings::AspectRatio::R4_3 &&
+           !(MM3D::AndroidCast::native_dual_screen.load() && aspect == Settings::AspectRatio::Default);
 #else
     return true;
 #endif
@@ -1259,15 +1260,23 @@ void RendererVulkan::DrawScreens(Frame* frame, const Layout::FramebufferLayout& 
         layout.render_3d_mode==Settings::StereoRenderOption::Off;
 #ifdef ANDROID
     const bool casting = MM3D::AndroidCast::mode.load() != MM3D::AndroidCast::Off;
+    const bool dedicated_top = !isSecondaryWindow && layout.top_screen_enabled &&
+                               MM3D::AndroidCast::native_dual_screen.load();
+    if (dedicated_top) {
+        layout.top_screen =
+            Layout::SingleFrameLayout(layout.width, layout.height, false, !layout.is_rotated)
+                .top_screen;
+    }
 #else
     constexpr bool casting = false;
+    constexpr bool dedicated_top = false;
 #endif
     if (!casting || isSecondaryWindow) {
         MM3D::Widescreen::UpdateLayoutSupport(!isSecondaryWindow || casting,
             layout.top_screen_enabled && AllowsWidescreenExpansion(), layout.is_rotated,
             layout.render_3d_mode==Settings::StereoRenderOption::Off);
     }
-    if(wide_supported && MM3D::Widescreen::enabled.load())
+    if(wide_supported && !dedicated_top && MM3D::Widescreen::enabled.load())
         layout.top_screen=MM3D::Widescreen::FitTop(layout.top_screen,layout.bottom_screen,
             layout.width,layout.bottom_screen_enabled);
     if(wide_supported&&MM3D::ScreenShrink::native_normalized.load())

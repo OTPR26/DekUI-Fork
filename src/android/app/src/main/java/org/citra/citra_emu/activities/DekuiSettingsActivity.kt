@@ -511,20 +511,29 @@ class DekuiSettingsActivity : AppCompatActivity() {
     private fun graphics() {
         section("Display")
         val aspectValues = listOf(0, 2, 1, 3, 5)
-        choice("Aspect ratio", listOf("Original 3DS (5:3)", "4:3", "16:9", "21:9", "Stretch to fill"),
+        val secondaryEnabled = BooleanSetting.ENABLE_SECONDARY_DISPLAY
+        val secondaryLayout = IntSetting.SECONDARY_DISPLAY_LAYOUT
+        val dualScreen = secondaryEnabled.boolean && secondaryLayout.int != SecondaryDisplayLayout.NONE.int
+        val aspectTitle = if (dualScreen) "Top screen aspect ratio" else "Aspect ratio"
+        choice(aspectTitle, listOf("Original 3DS (5:3)", "4:3", "16:9", "21:9", "Stretch to fill"),
             aspectValues.indexOf(IntSetting.ASPECT_RATIO.int).coerceAtLeast(0)) {
             IntSetting.ASPECT_RATIO.int = aspectValues[it]
             save(IntSetting.ASPECT_RATIO)
         }
-        val secondaryEnabled = BooleanSetting.ENABLE_SECONDARY_DISPLAY
-        val secondaryLayout = IntSetting.SECONDARY_DISPLAY_LAYOUT
-        val dualScreen = secondaryEnabled.boolean && secondaryLayout.int != SecondaryDisplayLayout.NONE.int
         choice("Screen mode", listOf("Single screen", "Dual screen"), if (dualScreen) 1 else 0) { mode ->
             secondaryEnabled.boolean = mode == 1
             if (mode == 1) secondaryLayout.int = SecondaryDisplayLayout.BOTTOM_SCREEN.int
             save(secondaryEnabled, secondaryLayout)
         }
         note("Dual screen shows the 3DS touchscreen on a second display when one is available.")
+        if (dualScreen) {
+            val stretch = BooleanSetting.SCREEN_BOTTOM_STRETCH
+            choice("Bottom screen aspect ratio", listOf("Original 3DS (4:3)", "Stretch to fill"),
+                if (stretch.boolean) 1 else 0) {
+                stretch.boolean = it == 1
+                save(stretch)
+            }
+        }
         section("Rendering")
         val data = store.read()
         val interpolation = data.optBoolean("interpolation_60fps", true)
