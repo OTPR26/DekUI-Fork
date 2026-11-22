@@ -92,9 +92,29 @@ int main(int argc,char** argv) {
             }
             m.writes=0;Apply(m,Memory::Self,r.id);assert(m.writes==0);
         }
+        const auto neutral_text=m.data;
+        Apply(m,Memory::Self,r.id,false);
+        assert(m.data==(basic?original:neutral_text));
+        Apply(m,Memory::Self,r.id,true);
+        assert(m.data!=original);
     }
     enabled.store(true);neutral_enabled.store(true);
-    if(argc==5){check(FrenchReplacements,Load(argv[3]));check(SpanishReplacements,Load(argv[4]));}
+    if(argc==5){
+        const auto check_localized=[&](const auto& replacements,const auto& archive) {
+            check(replacements,archive);
+            for(const auto& r:replacements) {
+                Memory m(archive);
+                Apply(m,Memory::Self,r.id,false);
+                assert(m.data==archive&&m.writes==0);
+                Apply(m,Memory::Self,r.id,true);
+                assert(m.data!=archive);
+                Apply(m,Memory::Self,r.id,false);
+                assert(m.data==archive);
+            }
+        };
+        check_localized(FrenchReplacements,Load(argv[3]));
+        check_localized(SpanishReplacements,Load(argv[4]));
+    }
     Memory untouched(original);
     for(U32 id:{0x887,0x1273,0x191f,0x1f41,0x1f42,0x2ac1,0x5145,0xffff})Apply(untouched,Memory::Self,id);
     assert(untouched.data==original&&untouched.writes==0); // ordinary dialogue remains native

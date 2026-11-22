@@ -127,6 +127,10 @@ object NativeLibrary {
     external fun hasDekuiSettings(): Boolean
     external fun openDekuiSettings(): Boolean
     external fun isDekuiSettingsOpen(): Boolean
+    external fun getReMaskedCheatLabels(continuous: Boolean, help: Boolean = false): Array<String>
+    external fun getReMaskedCheatState(): IntArray
+    external fun queueReMaskedCheat(action: Int): Boolean
+    external fun setReMaskedContinuousCheat(index: Int, enabled: Boolean): Boolean
     external fun onDekuiTouch(x: Float, y: Float, action: Int)
 
 

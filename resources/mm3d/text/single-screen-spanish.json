@@ -3,7 +3,7 @@
   "edits": [
     {
       "id": "003e",
-      "text": "SELECT abre el inventario.\nUsa {L}/{R} para elegir Mapa.",
+      "text": "Start abre Objetos.\nUsa {L}/{R} para elegir Mapa.",
       "token_index": 11,
       "token_hash": "0d9a4bbb0f9d1fbb",
       "prefix_length": 0
@@ -31,7 +31,7 @@
     },
     {
       "id": "0078",
-      "text": "SELECT abre el inventario.\nUsa {L}/{R} para elegir\nla pestaña Máscaras.",
+      "text": "Start abre Objetos.\nUsa {L}/{R} para elegir\nla pestaña Máscaras.",
       "token_index": 19,
       "token_hash": "a1459ae39b936824",
       "prefix_length": 0
@@ -52,7 +52,7 @@
     },
     {
       "id": "026b",
-      "text": "SELECT abre el inventario.\nUsa {L}/{R} para elegir\nla pestaña Inventario.",
+      "text": "Start abre Objetos.\nUsa {L}/{R} para elegir\nla pestaña Inventario.",
       "token_index": 8,
       "token_hash": "a1459ae39b936824",
       "prefix_length": 0
@@ -80,7 +80,7 @@
     },
     {
       "id": "0270",
-      "text": "SELECT: inventario.\n{L}/{R}: Equipo.",
+      "text": "Start: Objetos.\n{L}/{R}: Equipo.",
       "token_index": 14,
       "token_hash": "a1459ae39b936824",
       "prefix_length": 0
@@ -122,7 +122,7 @@
     },
     {
       "id": "1d18",
-      "text": "SELECT abre el inventario.\n{L}/{R}: pestaña Mapa.",
+      "text": "Start abre Objetos.\n{L}/{R}: pestaña Mapa.",
       "token_index": 16,
       "token_hash": "40407111a98ab6f3",
       "prefix_length": 0

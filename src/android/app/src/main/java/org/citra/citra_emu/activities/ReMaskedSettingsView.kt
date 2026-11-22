@@ -7,10 +7,15 @@ import android.content.res.Configuration
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.StateListDrawable
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.view.Gravity
 import android.view.View
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.LinearLayout
+import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.widget.SwitchCompat
@@ -18,7 +23,7 @@ import androidx.core.content.res.ResourcesCompat
 import kotlin.math.roundToInt
 import org.citra.citra_emu.R
 
-/** Android counterpart of the iPhone's SettingsPanel, shared at both entry points. */
+/** Settings at both entry points, styled after the in-game overlay. */
 internal class ReMaskedSettingsView(private val context: Context, menuSize: Int) {
     private val density = context.resources.displayMetrics.density
     private val scale = menuSize.coerceIn(50, 125) / 100f
@@ -28,7 +33,8 @@ internal class ReMaskedSettingsView(private val context: Context, menuSize: Int)
     private val landscape = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     private val sideInset = if (landscape) 12 else 0
     private val contentWidth = screenWidth - 2 * sideInset
-    private val sidebarWidth = (contentWidth * .27f).roundToInt().coerceIn(100, 186)
+    private val sidebarWidth = if (landscape) (contentWidth * .27f).roundToInt().coerceIn(110, 186)
+        else (contentWidth * .29f).roundToInt().coerceIn(90, 125)
 
     val content = column()
     val root = column()
@@ -38,13 +44,14 @@ internal class ReMaskedSettingsView(private val context: Context, menuSize: Int)
 
     companion object {
         const val ACCENT = 0xFFB97DF2.toInt()
-        private const val TEXT = 0xFFFFFFFF.toInt()
-        private const val MUTED = 0xFFAEA9B4.toInt()
+        private const val TEXT = 0xFFF2F2F2.toInt()
+        private const val MUTED = 0xFFB0A6BD.toInt()
         private const val BACKGROUND = 0xFF08070D.toInt()
-        private const val PANEL = 0xFF120C1C.toInt()
-        private const val SELECTED = 0xFF372549.toInt()
-        private const val FOCUSED = 0xFF583D76.toInt()
-        private const val SEPARATOR = 0xFF3D2947.toInt()
+        private const val PANEL = 0xFF100D17.toInt()
+        private const val CONTROL = 0xFF241C30.toInt()
+        private const val SELECTED = 0xFF3D1469.toInt()
+        private const val FOCUSED = 0xFF4A1F75.toInt()
+        private const val SEPARATOR = 0xFF403052.toInt()
     }
 
     fun dp(value: Int) = (value * density).roundToInt()
@@ -61,10 +68,12 @@ internal class ReMaskedSettingsView(private val context: Context, menuSize: Int)
         cornerRadius = dp(radius).toFloat()
     }
 
-    private fun rowBackground(active: Boolean) = StateListDrawable().apply {
-        addState(intArrayOf(android.R.attr.state_pressed), fill(FOCUSED))
-        addState(intArrayOf(android.R.attr.state_focused), fill(FOCUSED))
-        addState(intArrayOf(), fill(if (active) SELECTED else PANEL))
+    private fun rowBackground(active: Boolean, category: Boolean = false) = StateListDrawable().apply {
+        addState(intArrayOf(android.R.attr.state_pressed), fill(FOCUSED, 4))
+        addState(intArrayOf(android.R.attr.state_focused), fill(FOCUSED, 4).apply {
+            setStroke(dp(1), ACCENT)
+        })
+        addState(intArrayOf(), fill(if (active) SELECTED else if (category) 0 else CONTROL, 4))
     }
 
     fun text(value: CharSequence, dim: Boolean = false, heading: Boolean = false) = TextView(context).apply {
@@ -80,7 +89,8 @@ internal class ReMaskedSettingsView(private val context: Context, menuSize: Int)
     fun choiceRow(title: String, value: String, action: () -> Unit): View =
         actionRow(title, value, "›", false, action)
 
-    fun button(value: String, action: () -> Unit): View = actionRow(value, null, "›", false, action)
+    fun button(value: String, detail: String? = null, action: () -> Unit): View =
+        actionRow(value, detail, "›", false, action)
 
     fun option(value: String, selected: Boolean, action: () -> Unit): View =
         actionRow(value, null, if (selected) "✓" else null, false, action)
@@ -94,7 +104,8 @@ internal class ReMaskedSettingsView(private val context: Context, menuSize: Int)
         })
     }
 
-    private fun actionRow(title: String, detail: String?, accessory: String?, active: Boolean, action: () -> Unit) =
+    private fun actionRow(title: String, detail: String?, accessory: String?, active: Boolean,
+                          action: () -> Unit, category: Boolean = false) =
         horizontal().apply {
             addView(labels(title, detail), LinearLayout.LayoutParams(0, -2, 1f))
             if (accessory != null) addView(text(accessory, dim = accessory == "›").apply {
@@ -104,7 +115,7 @@ internal class ReMaskedSettingsView(private val context: Context, menuSize: Int)
             isClickable = true
             isFocusable = true
             isSelected = active
-            background = rowBackground(active)
+            background = rowBackground(active, category)
             accessibilityDelegate = object : View.AccessibilityDelegate() {
                 override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {
                     super.onInitializeAccessibilityNodeInfo(host, info)
@@ -137,66 +148,90 @@ internal class ReMaskedSettingsView(private val context: Context, menuSize: Int)
         setOnCheckedChangeListener { _, on -> change(on) }
     }
 
-    fun sliderRow(title: String, caption: TextView, slider: View): View = horizontal().apply {
-        addView(text(title), LinearLayout.LayoutParams(0, -2, 1f))
-        addView(column().apply {
-            caption.gravity = Gravity.START or Gravity.CENTER_VERTICAL
-            caption.setPadding(0, 0, 0, 0)
+    fun sliderRow(title: String, caption: TextView, slider: View, reset: (() -> Unit)? = null): View = column().apply {
+        background = fill(CONTROL, 4)
+        addView(horizontal().apply {
+            addView(text(title), LinearLayout.LayoutParams(0, -2, 1f))
+            caption.gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            caption.setPadding(dp(5), 0, dp(14), 0)
             addView(caption)
-            addView(slider, LinearLayout.LayoutParams(-1, dp(26)))
-        }, LinearLayout.LayoutParams(dp(((contentWidth - sidebarWidth - 24) * .38f).roundToInt()
-            .coerceIn(78, 180)), -2).apply { marginEnd = dp(14) })
-        minimumHeight = dp(52)
+            if (reset != null) {
+                addView(ImageButton(context).apply {
+                    setImageResource(R.drawable.ic_refresh)
+                    imageTintList = ColorStateList.valueOf(ACCENT)
+                    scaleType = ImageView.ScaleType.CENTER
+                    background = rowBackground(false)
+                    setPadding(0, 0, 0, 0)
+                    contentDescription = "Reset $title"
+                    tooltipText = contentDescription
+                    isFocusable = true
+                    setOnClickListener { reset() }
+                }, LinearLayout.LayoutParams(dp(44), dp(44)))
+            }
+        })
+        addView(slider, LinearLayout.LayoutParams(-1, dp(30)).apply {
+            marginStart = dp(10)
+            marginEnd = dp(10)
+            bottomMargin = dp(4)
+        })
     }
 
     private fun addRow(list: LinearLayout, view: View) {
-        list.addView(view, LinearLayout.LayoutParams(-1, -2))
-        list.addView(View(context).apply { setBackgroundColor(SEPARATOR) },
-            LinearLayout.LayoutParams(-1, dp(1).coerceAtLeast(1)).apply {
-                marginStart = dp(16)
-                marginEnd = dp(8)
-            })
+        list.addView(view, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(5) })
     }
 
     fun add(view: View) = addRow(content, view)
 
-    fun show(categories: Collection<String>, current: String, choiceTitle: String?,
+    fun show(categories: Collection<String>, current: String, choiceTitle: String?, inGame: Boolean,
              close: () -> Unit, select: (String) -> Unit) {
         applyInsets(0, 0, 0, 0)
         root.setBackgroundColor(BACKGROUND)
         val header = horizontal()
-        header.addView(text(choiceTitle ?: "Settings", heading = true).apply {
-            textSize = 24f * scale
+        val brand = "Majora ReMasked"
+        val breadcrumb = SpannableString("$brand / Settings").apply {
+            setSpan(ForegroundColorSpan(ACCENT), 0, brand.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        header.addView(text(breadcrumb).apply {
+            textSize = (if (landscape) 21f else 17f) * scale
+            typeface = bold
             setPadding(dp(8), 0, 0, 0)
         }, LinearLayout.LayoutParams(0, -1, 1f))
-        header.addView(text("Back", heading = true).apply {
-            textSize = 17f * scale
+        header.addView(text(if (inGame && choiceTitle == null) "Resume" else "Back").apply {
+            textSize = 15f * scale
             gravity = Gravity.CENTER
+            background = rowBackground(false)
             isFocusable = true
             isClickable = true
             setOnClickListener { close() }
-        }, LinearLayout.LayoutParams(dp(74), -1))
-        root.addView(header, LinearLayout.LayoutParams(-1, dp(44)).apply { bottomMargin = dp(5) })
+        }, LinearLayout.LayoutParams(dp(82), dp(36)))
+        root.addView(header, LinearLayout.LayoutParams(-1, dp(48)).apply { bottomMargin = dp(7) })
 
         val body = horizontal()
         body.gravity = Gravity.TOP
         val rail = column()
         categoryList = rail
         categories.forEach { name ->
-            val item = actionRow(name, null, null, name == current) { select(name) }
+            val item = actionRow(name, null, null, name == current, { select(name) }, category = true)
             if (name == current) activeCategory = item
             addRow(rail, item)
         }
         fun scrolling(list: LinearLayout) = ScrollView(context).apply {
-            background = fill(PANEL, 10)
-            clipToOutline = true
             isVerticalScrollBarEnabled = false
             addView(list)
             isFillViewport = true
         }
-        body.addView(scrolling(rail), LinearLayout.LayoutParams(dp(sidebarWidth), -1))
+        body.addView(scrolling(rail).apply { background = fill(PANEL, 5) },
+            LinearLayout.LayoutParams(dp(sidebarWidth), -1))
         contentScroll = scrolling(content)
-        body.addView(contentScroll, LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = dp(8) })
+        val panel = column().apply {
+            background = fill(PANEL, 5)
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            addView(text(choiceTitle ?: current, heading = true))
+            addView(View(context).apply { setBackgroundColor(SEPARATOR) },
+                LinearLayout.LayoutParams(-1, dp(1).coerceAtLeast(1)).apply { bottomMargin = dp(7) })
+            addView(contentScroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        }
+        body.addView(panel, LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = dp(8) })
         root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
     }
 

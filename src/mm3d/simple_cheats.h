@@ -64,6 +64,26 @@ inline void Reset(){pending=0;continuous=0;ready=false;result=0;availability=Ava
 #endif
 }
 inline void Queue(Action a){if(a<Count)pending.fetch_or(1u<<a);}
+inline std::array<int,4> SessionState() {
+    return {ready.load(), static_cast<int>(continuous.load()), pending.load() != 0, result.load()};
+}
+inline bool RequestAction(int action) {
+    if (!ready.load() || action < 0 || action >= static_cast<int>(Count)) return false;
+    Queue(static_cast<Action>(action));
+    return true;
+}
+inline bool SetContinuous(int index, bool enabled) {
+    if (index == -1 && !enabled) {
+        continuous.store(0);
+        return true;
+    }
+    if (index < 0 || index >= static_cast<int>(Ammunition.size() + 2) || (enabled && !ready.load()))
+        return false;
+    const U32 bit = 1u << index;
+    if (enabled) continuous.fetch_or(bit);
+    else continuous.fetch_and(~bit);
+    return true;
+}
 inline constexpr std::array<std::pair<U32,U32>,7> Guards{{
     {0x4bfab4,0xe92d4ff0},{0x4bfabc,0xe1a04000},{0x4bfdbc,0x7752d8},
     {0x4bfdc0,0x626c3c},{0x58d920,0x7752d8},

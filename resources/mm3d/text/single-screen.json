@@ -3,7 +3,7 @@
   "edits": [
     {
       "id": "003e",
-      "text": "Press SELECT to open your inventory.\nUse {L}/{R} to choose the Map tab.",
+      "text": "Press Start to open Items.\nUse {L}/{R} to choose the Map tab.",
       "token_index": 9,
       "token_hash": "03f1edfb091d28c6",
       "prefix_length": 0
@@ -24,7 +24,7 @@
     },
     {
       "id": "0078",
-      "text": "Press SELECT to open your inventory.\nUse {L}/{R} to choose the Masks tab.",
+      "text": "Press Start to open Items.\nUse {L}/{R} to choose the Masks tab.",
       "token_index": 20,
       "token_hash": "03f1edfb091d28c6",
       "prefix_length": 0
@@ -45,7 +45,7 @@
     },
     {
       "id": "026b",
-      "text": "Press SELECT to open your inventory.\nUse {L}/{R} to choose the Items tab.",
+      "text": "Press Start to open Items.\nUse {L}/{R} to choose the Items tab.",
       "token_index": 7,
       "token_hash": "03f1edfb091d28c6",
       "prefix_length": 0
@@ -73,7 +73,7 @@
     },
     {
       "id": "0270",
-      "text": "Press SELECT to open your inventory.\nUse {L}/{R} to choose Gear and view\nwhat you've collected.",
+      "text": "Press Start to open Items.\nUse {L}/{R} to choose Gear and view\nwhat you've collected.",
       "token_index": 15,
       "token_hash": "03f1edfb091d28c6",
       "prefix_length": 0
@@ -108,7 +108,7 @@
     },
     {
       "id": "1d18",
-      "text": "SELECT opens your inventory.\n{L}/{R}: Map tab.",
+      "text": "Start opens Items.\n{L}/{R}: Map tab.",
       "token_index": 17,
       "token_hash": "03f1edfb091d28c6",
       "prefix_length": 0
@@ -360,8 +360,8 @@
     {
       "id": "003e",
       "run": 2,
-      "text": "Open your inventory and\nchoose the {Color:3}Map tab{Color:11}.",
-      "source_hash": "26924a2fad176353"
+      "text": "Open Items, then choose\nthe {Color:3}Map tab{Color:11}.",
+      "source_hash": "e7bbd7b68377176e"
     },
     {
       "id": "003e",
@@ -480,8 +480,8 @@
     {
       "id": "0078",
       "run": 2,
-      "text": "{Color:11}Open your inventory and\nchoose the {Color:3}Masks tab{Color:11}.",
-      "source_hash": "18268c3682479653"
+      "text": "{Color:11}Open Items, then choose\nthe {Color:3}Masks tab{Color:11}.",
+      "source_hash": "9cc59905e638cfee"
     },
     {
       "id": "0078",
@@ -612,8 +612,8 @@
     {
       "id": "026b",
       "run": 1,
-      "text": "{Color:5}Open your inventory and\nchoose the {Color:1}Items tab{Color:5}.",
-      "source_hash": "eb15317b69d01a2f"
+      "text": "{Color:5}Open Items to equip\nwhat you've found.",
+      "source_hash": "a43937ed12629fba"
     },
     {
       "id": "026b",
@@ -636,8 +636,8 @@
     {
       "id": "0270",
       "run": 1,
-      "text": "{Color:5}Open your inventory and choose\n{Color:1}Gear{Color:5} to view what you've collected.",
-      "source_hash": "702e21f1e9711bac"
+      "text": "{Color:5}Open Items, then choose\n{Color:1}Gear{Color:5} to view what you've collected.",
+      "source_hash": "fab5b52b62535159"
     },
     {
       "id": "027a",
@@ -1146,8 +1146,8 @@
     {
       "id": "1d18",
       "run": 2,
-      "text": "{Color:11}Open your inventory and\nchoose the {Color:1}Map tab{Color:11}.",
-      "source_hash": "fc6428cc6286b0a3"
+      "text": "{Color:11}Open Items, then choose\nthe {Color:1}Map tab{Color:11}.",
+      "source_hash": "74d8302dbdaecb50"
     },
     {
       "id": "1f4f",

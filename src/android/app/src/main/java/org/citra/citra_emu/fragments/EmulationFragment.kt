@@ -1383,7 +1383,6 @@ class EmulationFragment :
                 binding.surfaceInputOverlay.refreshControls()
                 editControlsPlacement()
             }
-            org.citra.citra_emu.activities.DekuiSettingsActivity.OPEN_GAME_TOOLS -> NativeLibrary.openDekuiSettings()
         }
     }
 

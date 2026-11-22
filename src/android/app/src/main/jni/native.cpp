@@ -569,6 +569,48 @@ void Java_org_citra_citra_1emu_NativeLibrary_closeDekuiSettings(JNIEnv*, jclass)
 #endif
 }
 
+jobjectArray Java_org_citra_citra_1emu_NativeLibrary_getReMaskedCheatLabels(
+    JNIEnv* env, jclass, jboolean continuous, jboolean help) {
+    using namespace MM3D::SimpleCheats;
+    constexpr auto infinite_labels = [] {
+        std::array<const char*, Ammunition.size() + 2> labels{};
+        for (std::size_t i = 0; i < Ammunition.size(); ++i)
+            labels[i] = Ammunition[i].label;
+        labels[Ammunition.size()] = "Infinite health";
+        labels[Ammunition.size() + 1] = "Infinite magic";
+        return labels;
+    }();
+    const auto num_labels = static_cast<jsize>(continuous ? infinite_labels.size() : Labels.size());
+    const auto string_class = env->FindClass("java/lang/String");
+    if (!string_class) return nullptr;
+    const auto labels = env->NewObjectArray(num_labels, string_class, nullptr);
+    if (!labels) return nullptr;
+    const auto& one_time_labels = help ? Help : Labels;
+    for (jsize i = 0; i < num_labels; ++i) {
+        const auto label = env->NewStringUTF(continuous ? infinite_labels[i] : one_time_labels[i]);
+        if (!label) return nullptr;
+        env->SetObjectArrayElement(labels, i, label);
+        env->DeleteLocalRef(label);
+    }
+    return labels;
+}
+
+jintArray Java_org_citra_citra_1emu_NativeLibrary_getReMaskedCheatState(JNIEnv* env, jclass) {
+    const auto values = MM3D::SimpleCheats::SessionState();
+    const auto state = env->NewIntArray(values.size());
+    if (state) env->SetIntArrayRegion(state, 0, values.size(), values.data());
+    return state;
+}
+
+jboolean Java_org_citra_citra_1emu_NativeLibrary_queueReMaskedCheat(JNIEnv*, jclass, jint action) {
+    return MM3D::SimpleCheats::RequestAction(action);
+}
+
+jboolean Java_org_citra_citra_1emu_NativeLibrary_setReMaskedContinuousCheat(
+    JNIEnv*, jclass, jint index, jboolean enabled) {
+    return MM3D::SimpleCheats::SetContinuous(index, enabled);
+}
+
 jboolean Java_org_citra_citra_1emu_NativeLibrary_hasDekuiSettings(JNIEnv*, jclass) {
 #ifdef ENABLE_MM3D_PRESENTATION
     return MM3D::presentation_available.load();

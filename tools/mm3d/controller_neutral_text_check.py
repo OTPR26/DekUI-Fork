@@ -51,7 +51,7 @@ def check(data, spec):
     assert 're fa la re' in ''.join(t for t in patched[0x51a2] if isinstance(t,str))
     assert 'ti ti la fa fa la ti fa' in ''.join(t for t in patched[0x51a3] if isinstance(t,str))
     # A changed review anchor must fail closed instead of editing the wrong run.
-    broken = dict(spec, neutral_runs=[dict(spec['neutral_runs'][0], original='changed source')])
+    broken = dict(spec, neutral_runs=[dict(spec['neutral_runs'][0], source_hash='0000000000000000')])
     try:
         compile_messages(data, broken)
     except ValueError as error:

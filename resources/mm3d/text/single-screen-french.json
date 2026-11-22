@@ -3,7 +3,7 @@
   "edits": [
     {
       "id": "003e",
-      "text": "Appuyez sur SELECT pour ouvrir\nl'inventaire. Avec {L}/{R},\nchoisissez l'onglet Carte.",
+      "text": "Appuyez sur Start pour ouvrir\nObjets. Avec {L}/{R},\nchoisissez l'onglet Carte.",
       "token_index": 9,
       "token_hash": "67a37708c15a7f45",
       "prefix_length": 0
@@ -31,7 +31,7 @@
     },
     {
       "id": "0078",
-      "text": "SELECT ouvre l'inventaire.\nAvec {L}/{R}, choisissez\nl'onglet Masques.",
+      "text": "Start ouvre Objets.\nAvec {L}/{R}, choisissez\nl'onglet Masques.",
       "token_index": 20,
       "token_hash": "7542a8e08cc6789f",
       "prefix_length": 0
@@ -59,7 +59,7 @@
     },
     {
       "id": "026b",
-      "text": "SELECT ouvre ton inventaire.\nAvec {L}/{R}, choisis\nl'onglet Inventaire.",
+      "text": "Start ouvre Objets.\nAvec {L}/{R}, choisis\nl'onglet Inventaire.",
       "token_index": 7,
       "token_hash": "645d6e2809dbbce5",
       "prefix_length": 0
@@ -87,7 +87,7 @@
     },
     {
       "id": "0270",
-      "text": "SELECT: inventaire.\n{L}/{R}: Équipement.",
+      "text": "Start : Objets.\n{L}/{R}: Équipement.",
       "token_index": 17,
       "token_hash": "645d6e2809dbbce5",
       "prefix_length": 0
@@ -122,7 +122,7 @@
     },
     {
       "id": "1d18",
-      "text": "SELECT ouvre l'inventaire.\n{L}/{R}: onglet Carte.",
+      "text": "Start ouvre Objets.\n{L}/{R}: onglet Carte.",
       "token_index": 14,
       "token_hash": "09802b418174d4bd",
       "prefix_length": 0

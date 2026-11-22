@@ -40,8 +40,8 @@ class DekuiSettingsActivity : AppCompatActivity() {
     private var generatingMod=false
     private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(this) }
     private val purple = ReMaskedSettingsView.ACCENT
-    private val pages = listOf("General", "Controls", "Touch", "Graphics", "Audio", "HUD",
-        "Difficulty", "Restoration Fixes", "Quality of life", "Models", "About", "Data", "Cheats")
+    private val pages = listOf("General", "Controls", "Touch", "Graphics", "Models", "Audio", "HUD",
+        "Restoration Fixes", "Quality of Life", "Cheats", "Difficulty", "Data", "About")
     private val inGame by lazy { intent.getBooleanExtra(GAMEPLAY, false) }
     private var presentationChanged = false
     private var configChanged = false
@@ -52,7 +52,6 @@ class DekuiSettingsActivity : AppCompatActivity() {
         const val CONFIG_CHANGED = "remasked.configChanged"
         const val GAME_ACTION = "remasked.gameAction"
         const val EDIT_TOUCH_LAYOUT = "editTouchLayout"
-        const val OPEN_GAME_TOOLS = "openGameTools"
         const val CHOOSE_ROM = "chooseRom"
     }
 
@@ -174,12 +173,11 @@ class DekuiSettingsActivity : AppCompatActivity() {
     }
     override fun onStop() { DekuiAndroidMenu.launcherCapture=false;DekuiAndroidMenu.cancel();super.onStop() }
     private fun error(t: Throwable) { Toast.makeText(this,t.message ?: "Could not save settings",Toast.LENGTH_LONG).show() }
-    private fun update(vararg values: Pair<String,Any>) {
+    private fun update(vararg values: Pair<String,Any>): Boolean =
         runCatching { store.update(values.toMap()) }.onSuccess {
             presentationChanged = true
             publishResult()
-        }.onFailure { error(it) }
-    }
+        }.onFailure { error(it) }.isSuccess
     private fun save(vararg settings: AbstractSetting) {
         if (!SettingsFile.saveDekuiSettings(settings.asList())) {
             error(IllegalStateException("Could not save settings"))
@@ -203,7 +201,8 @@ class DekuiSettingsActivity : AppCompatActivity() {
     private fun bool(text: String,key: String,default: Boolean=false) { toggle(text,store.read().optBoolean(key,default)) { update(key to it) } }
     private fun nativeBool(text: String,setting: BooleanSetting) { toggle(text,setting.boolean) { setting.boolean=it;save(setting) } }
     private fun slider(text: String,current: Float,min: Float,max: Float,step: Float=1f,
-                       format: (Float) -> String = { "%.2f".format(it) }, save: (Float)->Unit) {
+                       format: (Float) -> String = { "%.2f".format(it) },
+                       reset: (() -> Float?)? = null, save: (Float)->Unit) {
         val caption = menu.text(format(current), dim = true).apply {
             setTextColor(purple)
         }
@@ -231,11 +230,24 @@ class DekuiSettingsActivity : AppCompatActivity() {
                 override fun onStopTrackingTouch(view: SeekBar) { touched=false;save(min+view.progress*step) }
             })
         }
-        menu.add(menu.sliderRow(text, caption, seek))
+        menu.add(menu.sliderRow(text, caption, seek, reset?.let { restore ->
+            {
+                restore()?.let { value ->
+                    seek.progress = ((value - min) / step).roundToInt().coerceIn(0, seek.max)
+                    caption.text = format(value)
+                }
+            }
+        }))
     }
     private fun number(text: String,key: String,default: Float,min: Float,max: Float,step: Float=1f,
+                       resettable: Boolean = false,
                        format: (Float) -> String = { if (step % 1f == 0f) it.roundToInt().toString() else "%.2f".format(it) }) {
-        slider(text,store.read().optDouble(key,default.toDouble()).toFloat(),min,max,step,format) { update(key to it) }
+        val reset: (() -> Float?)? = if (resettable) {
+            { if (update(key to default)) default else null }
+        } else null
+        slider(text,store.read().optDouble(key,default.toDouble()).toFloat(),min,max,step,format,reset) {
+            update(key to it)
+        }
     }
     private fun iconSelection() {
         val icons = intArrayOf(R.mipmap.launcher_icon_0, R.mipmap.launcher_icon_1,
@@ -283,7 +295,7 @@ class DekuiSettingsActivity : AppCompatActivity() {
         menu = ReMaskedSettingsView(this, size)
         val choice = openChoice
         val root = menu.root
-        menu.show(pages, page, choice?.title, ::goBack) { category ->
+        menu.show(pages, page, choice?.title, inGame, ::goBack) { category ->
                 openChoice = null
                 page = category
                 render()
@@ -476,18 +488,15 @@ class DekuiSettingsActivity : AppCompatActivity() {
                 if (inGame) note("Classic saving can be changed from startup Settings.")
                 else bool("Classic saving","classic_saving")
             }
-            "Quality of life" -> {
+            "Quality of Life" -> {
                 section("Link movement")
-                number("Walk speed (x)","walk_speed",1f,.5f,3f,.25f,::multiplier)
-                number("Climb speed (x)","climb_speed",1f,.5f,3f,.25f,::multiplier)
-                number("Swim speed (x)","swim_speed",1f,.5f,3f,.25f,::multiplier)
+                number("Walk speed (x)","walk_speed",1f,.5f,3f,.25f,format=::multiplier)
+                number("Climb speed (x)","climb_speed",1f,.5f,3f,.25f,format=::multiplier)
+                number("Swim speed (x)","swim_speed",1f,.5f,3f,.25f,format=::multiplier)
                 addButton("Reset movement speeds") { update("walk_speed" to 1f,"climb_speed" to 1f,"swim_speed" to 1f);render() }
                 note("1x is normal speed. Walk affects grounded movement; climb affects ladders and vines. Swim includes underwater movement.")
                 bool("Disable low-heart beeping","disable_low_health_beep");bool("Disable Tatl reminders","disable_tatl_reminders") }
-            "Cheats" -> {
-                if (inGame) addButton("Open in-game tools") { returnToGame(OPEN_GAME_TOOLS) }
-                else note("Load a game to use cheats and other in-game tools.")
-            }
+            "Cheats" -> cheats()
             "About" -> {
                 info("Version", BuildConfig.VERSION_NAME)
                 info("Build", BuildConfig.VERSION_CODE.toString())
@@ -508,6 +517,49 @@ class DekuiSettingsActivity : AppCompatActivity() {
         restoreScroll = null
         menu.focusCategory()
     }
+    private fun cheats() {
+        if (!inGame) {
+            note("Load a game to use cheats.")
+            return
+        }
+        val (ready, continuous, pending, result) = NativeLibrary.getReMaskedCheatState()
+        if (ready == 0) note("Load a supported save to use cheats.")
+        note("One-time cheats apply when you resume. Inventory changes can be saved with the game.")
+        val status = menu.text(when {
+            pending != 0 -> "Cheat queued. Resume the game to apply."
+            result > 0 -> "Cheat applied."
+            result < 0 -> "Cheat could not be applied."
+            else -> ""
+        }, dim = true)
+        if (status.text.isEmpty()) status.visibility = View.GONE
+        menu.add(status)
+        section("One-time cheats")
+        val descriptions = NativeLibrary.getReMaskedCheatLabels(false, help = true)
+        NativeLibrary.getReMaskedCheatLabels(false).forEachIndexed { index, label ->
+            menu.add(menu.button(label, descriptions[index]) {
+                status.text = if (NativeLibrary.queueReMaskedCheat(index))
+                    "Cheat queued. Resume the game to apply." else "Load a supported save to use cheats."
+                status.visibility = View.VISIBLE
+            }.apply { isEnabled = ready != 0; alpha = if (isEnabled) 1f else .55f })
+        }
+        section("Infinite resources")
+        note("These cheats last until you turn them off or quit the game.")
+        NativeLibrary.getReMaskedCheatLabels(true).forEachIndexed { index, label ->
+            val enabled = continuous and (1 shl index) != 0
+            menu.add(menu.toggle(label, enabled) { on ->
+                if (!NativeLibrary.setReMaskedContinuousCheat(index, on)) {
+                    Toast.makeText(this, "Load a supported save to use cheats.", Toast.LENGTH_SHORT).show()
+                    render()
+                }
+            }.apply { isEnabled = ready != 0 || enabled })
+        }
+        addButton("Turn off all infinite cheats") {
+            NativeLibrary.setReMaskedContinuousCheat(-1, false)
+            restoreScroll = menu.scrollPosition
+            render()
+        }
+    }
+
     private fun graphics() {
         section("Display")
         val aspectValues = listOf(0, 2, 1, 3, 5)
@@ -564,11 +616,10 @@ class DekuiSettingsActivity : AppCompatActivity() {
         addButton("Use app texture folder") { DekuiTextureStorage.clear();render() }
         note("Folder changes apply on the next game launch.")
         section("Camera")
-        number("Camera Distance (x)","camera_distance",1f,.5f,3f,.05f,::multiplier)
-        addButton("Reset camera distance") { update("camera_distance" to 1f);render() }
-        number("Field of view","game_camera_fov",65f,45f,70f,.5f)
-        number("Enemy / NPC draw distance","actor_draw_distance",1f,1f,3f,.05f,::multiplier)
-        number("Vegetation / prop draw distance","prop_draw_distance",1f,1f,3f,.05f,::multiplier)
+        number("Camera Distance (x)","camera_distance",1f,.5f,3f,.05f,resettable=true,format=::multiplier)
+        number("Field of view","game_camera_fov",65f,45f,70f,.5f,resettable=true) { "%.1f°".format(it) }
+        number("Enemy / NPC draw distance","actor_draw_distance",1f,1f,3f,.05f,resettable=true,format=::multiplier)
+        number("Vegetation / prop draw distance","prop_draw_distance",1f,1f,3f,.05f,resettable=true,format=::multiplier)
         section("Casting")
         choice("Cast layout", listOf("Off", "Cast single screen gameplay", "Cast top screen"),
             ReMaskedCast.mode(this)) { ReMaskedCast.setMode(this, it) }

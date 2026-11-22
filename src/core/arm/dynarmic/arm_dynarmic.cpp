@@ -1042,7 +1042,12 @@ public:
             auto& r=parent.jit->Regs();
             classic_double_time_hook.Message(guest,r[0],r[1]);
             MM3D::ClassicSaving::ObserveMessage(r[1]);
-            MM3D::SingleScreenText::Apply(guest,r[0],r[1]);
+            bool single_screen = true;
+#ifdef ANDROID
+            single_screen = !MM3D::AndroidCast::native_dual_screen.load() &&
+                MM3D::AndroidCast::mode.load() != MM3D::AndroidCast::TopScreen;
+#endif
+            MM3D::SingleScreenText::Apply(guest,r[0],r[1],single_screen);
             if(MM3D::Prices::CodeMatches(guest))MM3D::Prices::Message(guest,r[0],r[1],MM3D::Prices::multiplier.load());
             r[3]=memory.Read32(r[0]+4); // original LDR r3,[r0,#4]
             return;

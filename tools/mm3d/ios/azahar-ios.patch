@@ -1,0 +1,3320 @@
+--- a/src/citra_libretro/CMakeLists.txt
++++ b/src/citra_libretro/CMakeLists.txt
+@@ -93,7 +93,7 @@
+ if (CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR
+     CMAKE_SYSTEM_NAME STREQUAL "iOS" OR
+     CMAKE_SYSTEM_NAME STREQUAL "tvOS")
+-  target_link_libraries(citra_libretro PRIVATE "-Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/libretro.osx.def")
++  target_link_options(citra_libretro PRIVATE "LINKER:-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/libretro.osx.def")
+ else()
+   target_link_libraries(citra_libretro PRIVATE "-Wl,-Bsymbolic")
+ endif()
+--- a/src/citra_libretro/citra_libretro.cpp
++++ b/src/citra_libretro/citra_libretro.cpp
+@@ -31,6 +31,16 @@
+ #include "citra_libretro/citra_libretro.h"
+ #include "citra_libretro/core_settings.h"
+ #include "citra_libretro/environment.h"
++#include "citra_libretro/remasked_touch_bridge.h"
++#include "mm3d/touch_hud.h"
++#include "citra_libretro/remasked_settings_bridge.h"
++#include "mm3d/native_startup.h"
++#include "mm3d/hud_adjustments.h"
++#include "mm3d/tatl_reminders.h"
++#include "mm3d/music.h"
++#include "mm3d/movement_speed.h"
++#include "mm3d/camera_distance.h"
++#include "core/arm/fastinterp/remasked_gameplay.h"
+ #include "citra_libretro/input/input_factory.h"
+ 
+ #include "common/arch.h"
+@@ -216,6 +226,9 @@
+  * libretro callback; Called every game tick.
+  */
+ void retro_run() {
++    bool pictograph = false;
++    LibRetro::TryEnvironment(RemaskedGetPictograph, &pictograph);
++    if (pictograph) RemaskedPictographRequested = RemaskedPictographTime();
+     if (!emu_instance->game_loaded) {
+         // Game failed to load (e.g. encrypted ROM, bad path).
+         // Present an empty frame so RetroArch doesn't hang.
+@@ -223,6 +236,12 @@
+         LibRetro::UploadVideoFrame(nullptr, 0, 0, 0);
+         return;
+     }
++
++    RemaskedPictureSettings picture;
++    LibRetro::TryEnvironment(RemaskedGetPicture, &picture);
++    RemaskedPictureAspect = std::clamp(picture.aspect, RemaskedNativeAspect, 3.f);
++    RemaskedPictureLeftInset = std::clamp(picture.leftInset, 0.f, 100.f);
++    RemaskedPictureRightInset = std::clamp(picture.rightInset, 0.f, 100.f);
+ 
+     // Check to see if we actually have any config updates to process.
+     if (LibRetro::HasUpdatedConfig()) {
+@@ -268,6 +287,50 @@
+         emu_instance->emu_window->UpdateLayout();
+ 
+         screen_swap_button_state = screen_swap_btn;
++    }
++
++    MM3D::TouchHud::State touch_hud{};
++    if (!Settings::values.swap_screen.GetValue()) {
++        LibRetro::TryEnvironment(RemaskedGetTouchHud, &touch_hud);
++    }
++    MM3D::TouchHud::Publish(touch_hud);
++
++    static RemaskedGameSettings previous;
++    RemaskedGameSettings settings;
++    if (LibRetro::TryEnvironment(RemaskedGetSettings, &settings) && settings != previous) {
++        MM3D::NativeStartup::Options title;
++        const auto pose = [&](unsigned i) {
++            const auto& values = settings.title[i];
++            return MM3D::GearMenu::Pose{values[0], values[1], values[2]};
++        };
++        title.logo = pose(0);
++        title.copyright = pose(1);
++        title.press_start = pose(2);
++        title.loading_icon = pose(3);
++        MM3D::NativeStartup::Apply(title);
++        MM3D::HudAdjustments::overall = settings.hudSize;
++        MM3D::HudAdjustments::opacity = settings.hudOpacity / 100.f;
++        namespace Hud = MM3D::HudAdjustments;
++        Hud::magic_height_steps = settings.magicHeight;
++        Hud::heart_spacing = settings.heartSpacing;
++        Hud::hide_menu_prompts = settings.hideMenuPrompts;
++        MM3D::SingleScreenText::enabled = settings.singleScreenInstructions;
++        MM3D::SingleScreenText::neutral_enabled = settings.controllerNeutralItemPrompts;
++        MM3D::AzaharGameplay::single_screen = settings.singleScreen;
++        for (unsigned part = 0; part < settings.hudParts.size(); ++part) {
++            Hud::elements[part] = settings.hudParts[part].size;
++            Hud::x[part] = settings.hudParts[part].x + (part == Hud::Dpad ? -2 : 0);
++            Hud::y[part] = settings.hudParts[part].y + (part == Hud::Dpad || part == Hud::Buttons ? 20 : 0);
++        }
++        MM3D::TatlReminders::disabled = settings.disableTatlReminders;
++        MM3D::Music::muted = settings.muteMusic;
++        MM3D::Music::disable_low_health_beep = settings.disableLowHealthBeep;
++        MM3D::MovementSpeed::walk = settings.speed[0];
++        MM3D::MovementSpeed::climb = settings.speed[1];
++        MM3D::MovementSpeed::swim = settings.speed[2];
++        MM3D::CameraDistance::multiplier = settings.cameraDistance;
++        MM3D::AzaharGameplay::Apply(settings.gameplay);
++        previous = settings;
+     }
+ 
+ #ifdef ENABLE_OPENGL
+@@ -643,6 +703,7 @@
+ }
+ 
+ void retro_unload_game() {
++    MM3D::AzaharClassicSave::Saves.Reset();
+     LOG_DEBUG(Frontend, "Unloading game...");
+     Core::System::GetInstance().Shutdown();
+ }
+--- a/src/citra_libretro/environment.cpp
++++ b/src/citra_libretro/environment.cpp
+@@ -30,6 +30,10 @@
+ static retro_hw_get_current_framebuffer_t framebuffer_cb;
+ 
+ } // namespace
++
++bool TryEnvironment(unsigned command, void* data) {
++    return environ_cb && environ_cb(command, data);
++}
+ 
+ bool GetSoftwareFramebuffer(retro_framebuffer* fb, int width, int height) {
+     fb->data = nullptr;
+--- a/src/citra_libretro/environment.h
++++ b/src/citra_libretro/environment.h
+@@ -13,6 +13,8 @@
+ #include "libretro.h"
+ 
+ namespace LibRetro {
++
++bool TryEnvironment(unsigned command, void* data);
+ 
+ /// May fetch a framebuffer that can be rendered into for software rendering
+ /// @see RETRO_ENVIRONMENT_GET_CURRENT_SOFTWARE_FRAMEBUFFER
+--- /dev/null
++++ b/src/citra_libretro/remasked_settings_bridge.h
+@@ -0,0 +1,46 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++#pragma once
++
++#include <array>
++#include <libretro.h>
++#include "mm3d/hud_adjustments.h"
++
++inline constexpr unsigned RemaskedGetSettings = RETRO_ENVIRONMENT_PRIVATE | 2;
++
++struct RemaskedGameplayOptions {
++    bool disableBomberApproach = false, swordActivateOwls = false, classicDoubleTime = false;
++    bool fastTime = false, weakerEnhancedDefense = false;
++    bool disableHeartDrops = false, disableRupeeDrops = false, disableFairyDrops = false;
++    bool disableMagicDrops = false, disableAmmoPickups = false;
++    bool loseRupeesOnDeath = false, endWorldOnDeath = false, advanceTimeOnDeath = false;
++    bool doubleShopPrices = false, classicSaving = false;
++    int damageMultiplier = 1, redPotionHearts = 20, bluePotionHearts = 20, bottledFairyHearts = 10;
++    friend bool operator==(const RemaskedGameplayOptions&, const RemaskedGameplayOptions&) = default;
++};
++
++// Shared by the UIKit frontend and the local Azahar core.
++struct RemaskedGameSettings {
++    // Logo, copyright, Press Start, loading icon. Each pose is X, Y, and scale.
++    std::array<std::array<float, 3>, 4> title{{
++        {-9, -9, .90f}, {-.89f, 17.92f, .60f}, {0, -3.60f, .47f}, {20.90f, .10f, .54f}}};
++    int hudSize = 0;
++    int hudOpacity = 100;
++    struct HudPart {
++        int size = 0, x = 0, y = 0;
++        friend bool operator==(const HudPart&, const HudPart&) = default;
++    };
++    std::array<HudPart, MM3D::HudAdjustments::Count> hudParts{};
++    int magicHeight = 0;
++    int heartSpacing = 0;
++    bool hideMenuPrompts = false;
++    bool singleScreenInstructions = true;
++    bool controllerNeutralItemPrompts = true;
++    bool singleScreen = true;
++    bool disableTatlReminders = false;
++    bool muteMusic = false;
++    bool disableLowHealthBeep = false;
++    std::array<float, 3> speed{{1, 1, 1}};
++    float cameraDistance = 1;
++    RemaskedGameplayOptions gameplay;
++    friend bool operator==(const RemaskedGameSettings&, const RemaskedGameSettings&) = default;
++};
+--- /dev/null
++++ b/src/citra_libretro/remasked_touch_bridge.h
+@@ -0,0 +1,29 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++#pragma once
++
++#include <atomic>
++#include <chrono>
++#include <cstdint>
++#include <libretro.h>
++
++// Private core/frontend command. The result is an MM3D::TouchHud::State in
++// native 400x240 top-screen coordinates, with a zero diameter for hidden controls.
++inline constexpr unsigned RemaskedGetTouchHud = RETRO_ENVIRONMENT_PRIVATE | 1;
++
++inline constexpr unsigned RemaskedGetPictograph = RETRO_ENVIRONMENT_PRIVATE | 3;
++inline auto RemaskedPictographTime() {
++    return std::chrono::duration_cast<std::chrono::milliseconds>(
++        std::chrono::steady_clock::now().time_since_epoch()).count();
++}
++inline std::atomic<std::int64_t> RemaskedPictographRequested{0};
++
++inline constexpr unsigned RemaskedGetPicture = RETRO_ENVIRONMENT_PRIVATE | 4;
++inline constexpr float RemaskedNativeAspect = 400.f / 240.f;
++struct RemaskedPictureSettings {
++    float aspect = RemaskedNativeAspect;
++    float leftInset = 0.f;
++    float rightInset = 0.f;
++};
++inline std::atomic<float> RemaskedPictureAspect{RemaskedNativeAspect};
++inline std::atomic<float> RemaskedPictureLeftInset{0.f};
++inline std::atomic<float> RemaskedPictureRightInset{0.f};
+--- /dev/null
++++ b/src/core/arm/fastinterp/RemaskedPauseDraw.h
+@@ -0,0 +1,287 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++#pragma once
++#include "core/arm/fastinterp/remasked_inventory_options.h"
++#include "core/arm/fastinterp/remasked_presentation_values.h"
++#include "mm3d/inventory_shadow.h"
++#include "mm3d/world_map_prompt.h"
++#include "core/arm/fastinterp/pause_arrow_hints.h"
++
++namespace Core::FastInterp {
++
++inline void ApplyRemaskedPausePresentation() {
++    using namespace MM3D;
++    using NativeInventory::ButtonPose;
++    const auto value = PresentationValue;
++    const auto pose = [&](std::string_view prefix, auto previous) {
++        const std::string key(prefix);
++        return decltype(previous){value(key + "_x", previous.x), value(key + "_y", previous.y),
++                                  value(key + "_scale", previous.scale)};
++    };
++
++    InventoryMenu::Options inventory;
++    const auto panel = pose("inventory_panel", ButtonPose{inventory.x, inventory.y, inventory.scale});
++    inventory.x = panel.x;
++    inventory.y = panel.y;
++    inventory.scale = panel.scale;
++    const auto masks = pose("inventory_masks", ButtonPose{});
++    inventory.masks_x = masks.x;
++    inventory.masks_y = masks.y;
++    inventory.masks_scale = masks.scale;
++    const auto bar = pose("inventory_bar", ButtonPose{});
++    inventory.bar_x = bar.x;
++    inventory.bar_y = bar.y;
++    inventory.bar_scale = bar.scale;
++    inventory.bar_spacing = value("inventory_bar_spacing", inventory.bar_spacing);
++    const auto description = pose("inventory_description", ButtonPose{});
++    inventory.description_x = description.x;
++    inventory.description_y = description.y;
++    inventory.description_scale = description.scale;
++    const auto model = pose("inventory_model", ButtonPose{});
++    inventory.model_x = model.x;
++    inventory.model_y = model.y;
++    inventory.model_scale = model.scale;
++    inventory.background = pose("inventory_background", ButtonPose{});
++    inventory.background.y = value("brown_background_y", inventory.background.y);
++    inventory.background.scale = value("brown_background_scale", inventory.background.scale);
++    inventory.shadow_width = value("brown_shadow_width", inventory.shadow_width);
++    inventory.shadow_opacity = value("brown_shadow_opacity", inventory.shadow_opacity);
++    inventory.gear_button = pose("inventory_button_gear", ButtonPose{});
++    inventory.help.pose = pose("inventory_help_0", inventory.help.pose);
++    inventory.help.horizontal = value("inventory_help_horizontal", inventory.help.horizontal) != 0;
++    inventory.help.spacing = value("inventory_help_spacing", inventory.help.spacing);
++    inventory.help.button_gap = value("inventory_help_button_gap", inventory.help.button_gap);
++    inventory.help.button_scale = value("inventory_help_button_scale", inventory.help.button_scale);
++    inventory.help.text_scale = value("inventory_help_text_scale", inventory.help.text_scale);
++    inventory.map_prompt = pose("inventory_map_prompt", inventory.map_prompt);
++    constexpr std::array<std::string_view, 3> tabs{"back", "masks", "items"};
++    constexpr std::array<std::string_view, 3> prompt_parts{"r", "arrow", "text"};
++    for (unsigned i = 0; i < tabs.size(); ++i) {
++        inventory.buttons[i] = pose(std::string("inventory_button_") + std::string(tabs[i]), ButtonPose{});
++        inventory.map_prompt_elements[i] = pose(std::string("inventory_map_prompt_") +
++            std::string(prompt_parts[i]), inventory.map_prompt_elements[i]);
++    }
++    for (unsigned i = 0; i < GearMenu::Count; ++i)
++        inventory.gear.poses[i] = pose("gear_" + std::to_string(i), inventory.gear.poses[i]);
++    InventoryMenu::Apply(inventory);
++
++    DungeonMap::Options map;
++    for (unsigned i = 0; i < DungeonMap::Count; ++i)
++        map.poses[i] = pose("dungeon_map_" + std::to_string(i), map.poses[i]);
++    for (unsigned i = 0; i < map.panels.size(); ++i)
++        map.panels[i] = pose("dungeon_map_panel_" + std::to_string(i), map.panels[i]);
++    map.top_panel = pose("dungeon_map_top_panel", map.top_panel);
++    map.panel_darkness = value("dungeon_map_panel_darkness", map.panel_darkness);
++    DungeonMap::Apply(map);
++
++    NativeNotebook::Options notebook;
++    for (unsigned i = 0; i < NativeNotebook::Count; ++i)
++        notebook.poses[i] = pose("notebook_live_" + std::to_string(i), notebook.poses[i]);
++    notebook.map_prompt_y = value("notebook_map_prompt_y", notebook.map_prompt_y);
++    NativeNotebook::Apply(notebook);
++
++    NativeItemPresent::Options present;
++    for (unsigned i = 0; i < NativeItemPresent::Count; ++i)
++        present.poses[i] = pose("item_present_" + std::to_string(i), present.poses[i]);
++    present.horizontal = value("item_present_horizontal", present.horizontal) != 0;
++    NativeItemPresent::Apply(present);
++    auto mask = present;
++    mask.horizontal = false;
++    for (unsigned i = 0; i < NativeItemPresent::Count; ++i)
++        mask.poses[i] = pose("mask_present_" + std::to_string(i), mask.poses[i]);
++    NativeItemPresent::ApplyMask(mask);
++
++    ItemsMapPrompt::ReturnOptions returning;
++    returning.pose = pose("map_items_prompt", returning.pose);
++    for (unsigned i = 0; i < prompt_parts.size(); ++i) {
++        const auto part = i == 0 ? std::string_view{"l"} : prompt_parts[i];
++        returning.elements[i] = pose("map_items_prompt_" + std::string(part), returning.elements[i]);
++    }
++    ItemsMapPrompt::ApplyReturn(returning);
++    WorldMapPrompt::Apply(pose("world_map_zoom_prompt", ButtonPose{0, 0, .8f}));
++}
++
++struct RemaskedPauseDraw {
++    MM3D::NativeItemPresent::Hook present;
++    MM3D::InventoryShadow::Hook shadow;
++    MM3D::ItemsMapPrompt::Hook items_map;
++    MM3D::PauseArrowHints::Hook map_items, map_notebook, notebook_map;
++    MM3D::MenuTabs::Hook tabs;
++    MM3D::MenuHelp::Hook help{.direct_item_bumpers = true};
++    MM3D::MenuHelp::Hook select_help;
++    MM3D::WorldMapPrompt::Hook zoom;
++    MM3D::DialogueScale::Hook dialogue;
++
++    template<class Memory> void BeginDual(Memory& memory, MM3D::NativeInventory::Hook& inventory,
++                                          u32 layout, bool lower) {
++        using MM3D::NativeInventory::Pointer;
++        auto& writes = fit_frames.emplace_back();
++        std::vector<u32> panes;
++        std::vector<u32> pending{layout + 8};
++        // A standalone lower HUD entry may contain an embedded item set.
++        // Walk its submitted panes without requiring an entire tree to be
++        // transformable or assuming the name of the enclosing layout.
++        while (!pending.empty() && panes.size() < 1024) {
++            const u32 pane = pending.back();
++            pending.pop_back();
++            if (!Pointer(pane, 0x140) || std::find(panes.begin(), panes.end(), pane) != panes.end()) continue;
++            panes.push_back(pane);
++            if (auto embedded = memory.Read(pane + 0x20).value_or(0); Pointer(embedded, 0x148)) {
++                pending.push_back(embedded + 8);
++                continue;
++            }
++            if (const auto group = memory.Read(pane + 0x24).value_or(0xffff) & 0xffff; group != 0xffff) {
++                const auto owner = memory.Read(pane + 4).value_or(0);
++                if (!Pointer(owner, 0x14c)) continue;
++                const auto groups = memory.Read(owner + 0x144).value_or(0);
++                const auto count = memory.Read(owner + 0x148).value_or(0);
++                if (group < count && count <= 1024 && Pointer(groups, 4*count))
++                    if (auto child = memory.Read(groups + 4*group).value_or(0); Pointer(child, 0x144))
++                        pending.push_back(child + 4);
++                continue;
++            }
++            const auto list = memory.Read(pane + 0x14).value_or(0);
++            const auto count = memory.Read(pane + 0x18).value_or(0);
++            if (!count || count > 256 || !Pointer(list, 4*count)) continue;
++            for (u32 i = 0; i < count; ++i) pending.push_back(memory.Read(list + i*4).value_or(0));
++        }
++        UpdateItemSlotLabels(memory, inventory, panes, writes, lower);
++        for (const auto& write : writes) memory.Write(write.address, write.after);
++    }
++
++    template<class Memory> void EndDual(Memory& memory) {
++        if (fit_frames.empty()) return;
++        for (auto it = fit_frames.back().rbegin(); it != fit_frames.back().rend(); ++it)
++            memory.Write(it->address, it->before);
++        fit_frames.pop_back();
++    }
++
++    template<class Memory>
++    u32 Root(Memory& memory, MM3D::NativeInventory::Hook& inventory,
++             MM3D::ItemPreview::Hook& preview, MM3D::DungeonMap::Hook& map,
++             MM3D::NativeNotebook::Hook& notebook,
++             u32 layout, u32 stack, u32 root, std::int64_t guest_us) {
++        const u32 original = layout + 8;
++        const auto push = [&] { return root == original ? stack : root; };
++
++        if (root == original) root = shadow.Root(memory, inventory, layout, push(), &present);
++        else shadow.scratch.frames.emplace_back();
++        items_map.ResolveDescription(memory, preview.owner, inventory.panel);
++        root = items_map.Root(memory, inventory, layout, push(), root, false, guest_us);
++        if (root == original) root = map.PromptRoot(memory, layout, push(), false);
++        else map.map_prompts.scratch.frames.emplace_back();
++        if (root == original) root = map.PanelRoot(memory, layout, push());
++        else map.panel_scratch.frames.emplace_back();
++        if (root == original) root = map.ShadowRoot(memory, layout, push());
++        else map.shadow_scratch.frames.emplace_back();
++        root = map_items.MapRoot(memory, map, layout, push(), root, false, guest_us);
++        root = map_notebook.MapRoot(memory, map, layout, push(), root, false, guest_us, true);
++        root = notebook_map.NotebookRoot(memory, notebook, layout, push(), root, false, guest_us);
++        root = zoom.Root(memory, map, layout, push(), root, false);
++        root = tabs.Root(memory, inventory, layout, push(), root);
++        help.source.ResolveDescription(memory, preview.owner, inventory.panel);
++        root = help.Root(memory, inventory, layout, push(), root);
++        if (!present.IsDescription(memory, select_help.source.description))
++            select_help.source.description = 0;
++        root = select_help.Root(memory, inventory, layout, push(), root, &present);
++        FitPausePicture(memory, inventory, preview, map, layout, root);
++        return root;
++    }
++
++    template<class Memory> void End(Memory& memory, MM3D::DungeonMap::Hook& map, u32& stack) {
++        const auto restore = [&](auto& scratch) {
++            if (const auto saved = scratch.End(memory)) stack = saved;
++        };
++        EndDual(memory);
++        restore(select_help.scratch);
++        restore(help.scratch);
++        restore(tabs.scratch);
++        restore(zoom);
++        restore(notebook_map.prompt);
++        restore(map_notebook.prompt);
++        restore(map_items.prompt);
++        restore(map.shadow_scratch);
++        restore(map.panel_scratch);
++        restore(map.map_prompts.scratch);
++        restore(items_map.prompt);
++        restore(shadow.scratch);
++    }
++
++private:
++    using Write = MM3D::NativeInventory::Hook::Write;
++    std::vector<std::vector<Write>> fit_frames;
++
++    template<class Memory> void UpdateItemSlotLabels(Memory& memory, MM3D::NativeInventory::Hook& inventory,
++                                                    const std::vector<u32>& panes, std::vector<Write>& writes,
++                                                    bool lower = false) {
++        using namespace MM3D::NativeInventory;
++        const u32 atlas = help.source.prompt.Parts(memory);
++        for (u32 pane : panes) {
++            const auto geometry = memory.Read(pane + 0x28);
++            if (!geometry || !Pointer(*geometry, 0x7c) ||
++                (memory.Read(*geometry + 4).value_or(0) & 0xffffu) != 6) continue;
++            const auto owner = memory.Read(pane + 4);
++            if (!owner || !(LayoutNamed(memory, *owner, "ItemIconSet") ||
++                            LayoutNamed(memory, *owner, "ItemIconSet2") ||
++                            (lower && LayoutNamed(memory, *owner, "HudItemIconSet")))) continue;
++            const bool left = Named(memory, pane, "disp_1_pane");
++            const bool right = Named(memory, pane, "disp_2_pane");
++            const bool face = Named(memory, pane, "disp_x_pane") || Named(memory, pane, "disp_y_pane");
++            if (!left && !right && !face) continue;
++
++            std::vector<Write> label;
++            const auto stage = [&](u32 address, u32 bits) {
++                return inventory.Stage(memory, label, address, bits);
++            };
++            const auto uv = [&](u32 address, float value) {
++                return stage(address, std::bit_cast<u32>(value));
++            };
++            if (face) {
++                // The face letters are separate from the backgrounds, item art and counters.
++                const auto flags = memory.Read(pane + 0xd4);
++                if (!flags || !stage(pane + 0xd4, *flags & ~1u)) continue;
++            } else {
++                // Reuse the same L/R sprites as the existing pause prompts.
++                // Override the label pane's native UV transform for this draw only.
++                if (!atlas || !stage(*geometry + 0x10, atlas) ||
++                    !uv(*geometry + 0x28, (left ? 176.f : 192.f) / 256) ||
++                    !uv(*geometry + 0x2c, 0.f) || !uv(*geometry + 0x30, 16.f / 256) ||
++                    !uv(*geometry + 0x34, 16.f / 128) ||
++                    !uv(pane + 0x110, 1.f) || !uv(pane + 0x114, 0.f) ||
++                    !uv(pane + 0x118, 0.f) || !uv(pane + 0x11c, 0.f) ||
++                    !uv(pane + 0x120, 1.f) || !uv(pane + 0x124, 0.f)) continue;
++            }
++            writes.insert(writes.end(), label.begin(), label.end());
++        }
++    }
++
++    template<class Memory> void FitPausePicture(Memory& memory, MM3D::NativeInventory::Hook& inventory,
++                                                MM3D::ItemPreview::Hook& preview,
++                                                MM3D::DungeonMap::Hook& map, u32 layout, u32 root) {
++        using MM3D::NativeInventory::LayoutNamed;
++        fit_frames.emplace_back();
++        const auto active = memory.Read(0x72f5bc + 8);
++        if (!active || !*active || (inventory.pass != 2 && inventory.pass != 3)) return;
++        const bool inventoryOpen = *active == inventory.inventory_owner || *active == inventory.gear_page;
++        const bool mapOpen = map.valid && *active == map.owner;
++        const bool owned = (inventoryOpen &&
++            (preview.Description(memory, layout) || LayoutNamed(memory, layout, "SubMenuTitle") ||
++             LayoutNamed(memory, layout, "ItemIconButton") ||
++             std::find(inventory.routed.begin(), inventory.routed.end(), layout) != inventory.routed.end())) ||
++            (mapOpen && (LayoutNamed(memory, layout, "UpWorldMapHud") ||
++             LayoutNamed(memory, layout, "SubMenuTitle") || map.IsDescription(memory, layout)));
++        if (!owned) return;
++
++        // Android's centered 16:9 UI canvas extends by 13 1/3 guest pixels
++        // on each side. Fit that coordinate range inside Azahar's 400 px.
++        std::vector<Write> writes;
++        std::vector<u32> seen;
++        if (!inventory.Transform(memory, root, writes, seen, {.9375f, 0, 0, 1, 12.5f, 0})) return;
++        if (inventoryOpen && (LayoutNamed(memory, layout, "MenuItem") ||
++                              LayoutNamed(memory, layout, "MenuMask")))
++            UpdateItemSlotLabels(memory, inventory, seen, writes);
++        for (const auto& write : writes) memory.Write(write.address, write.after);
++        fit_frames.back() = std::move(writes);
++    }
++};
++
++} // namespace Core::FastInterp
+--- /dev/null
++++ b/src/core/arm/fastinterp/RemaskedPicture.h
+@@ -0,0 +1,48 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++#pragma once
++
++#include "citra_libretro/remasked_touch_bridge.h"
++#include "core/arm/fastinterp/remasked_picture_draws.h"
++#include "mm3d/widescreen.h"
++
++namespace MM3D::AzaharPicture {
++
++template<class Registers, class VertexShader>
++float ClipScale(const Registers& regs, VertexShader& vertex, bool depthWrite) {
++    const float aspect = RemaskedPictureAspect.load();
++    const auto viewport = regs.rasterizer.GetViewportRect();
++    if (aspect <= RemaskedNativeAspect ||
++        !Widescreen::IsTopViewport(viewport.GetWidth(), viewport.GetHeight()))
++        return 1.f;
++
++    // Fullscreen fades and mask effects span the expanded frame. Apply the
++    // donor's layout-pane exception so ordinary widgets keep their shape.
++    if (!depthWrite && regs.pipeline.num_vertices <= 24) {
++        const auto& textures = regs.texturing.main_config;
++        const auto& merger = regs.framebuffer.output_merger;
++        const WidescreenProbe::Draw draw{
++            vertex.GetProgramCodeHash(), vertex.GetSwizzleDataHash(),
++            u32(regs.pipeline.num_vertices), unsigned(viewport.GetWidth()), unsigned(viewport.GetHeight()),
++            unsigned(textures.texture0_enable) | (unsigned(textures.texture1_enable) << 1) |
++                (unsigned(textures.texture2_enable) << 2),
++            unsigned(merger.alpha_blending.factor_source_rgb.Value()) |
++                (unsigned(merger.alpha_blending.factor_dest_rgb.Value()) << 4) |
++                (unsigned(merger.alpha_blending.blend_equation_rgb.Value()) << 8) |
++                (unsigned(merger.alphablend_enable) << 16),
++            u32(merger.depth_color_mask)};
++        if (draw == WidescreenProbe::TransitionOverlay ||
++            std::find(FullscreenDraws.begin(), FullscreenDraws.end(), draw) != FullscreenDraws.end()) {
++            const auto row = [&](unsigned index) {
++                std::array<float, 4> result{};
++                for (unsigned component = 0; component < result.size(); ++component)
++                    result[component] = vertex.uniforms.f[index][component].ToFloat32();
++                return result;
++            };
++            if (!WidescreenProbe::LocalLayoutPane(draw.shader, draw.swizzle, draw.vertices,
++                                                   draw.textures, row(10), row(11), row(12)))
++                return 1.f;
++        }
++    }
++    return RemaskedNativeAspect / aspect;
++}
++}
+--- a/src/core/arm/fastinterp/fastinterp.cpp
++++ b/src/core/arm/fastinterp/fastinterp.cpp
+@@ -10,6 +10,7 @@
+ #include "common/logging/log.h"
+ #include "core/arm/dynarmic/arm_tick_counts.h"
+ #include "core/arm/fastinterp/fastinterp.h"
++#include "core/arm/fastinterp/remasked_startup.h"
+ #include "core/core.h"
+ #include "core/core_timing.h"
+ #include "core/hle/kernel/svc.h"
+@@ -31,7 +32,8 @@
+ ARM_FastInterp::ARM_FastInterp(Core::System& system, Memory::MemorySystem& memory, u32 id,
+                                std::shared_ptr<Core::Timing::Timer> timer)
+     : ARM_Interface(id, timer), memory_(memory),
+-      svc_context_(std::make_unique<Kernel::SVCContext>(system)) {
++      svc_context_(std::make_unique<Kernel::SVCContext>(system)),
++      remasked_startup_(std::make_unique<RemaskedStartup>(system, memory)) {
+     LOG_INFO(Core_ARM11, "FastInterp ARM interpreter created for core {}", id);
+     state_.regs.fill(0);
+     state_.vfp_regs.fill(0);
+@@ -43,6 +45,10 @@
+ }
+ 
+ ARM_FastInterp::~ARM_FastInterp() = default;
++
++u32 ARM_FastInterp::ReadArmInstruction(u32 pc) {
++    return remasked_startup_->Rewrite(pc, ReadMemory32(pc));
++}
+ 
+ // Log each unique unhandled encoding once: a bad decode in a loop would
+ // otherwise flood the log on every block entry.
+@@ -133,8 +139,8 @@
+         block = cache_.LookupOrAllocate(pc, was_hit);
+         block->inst_count = 0;
+ 
+-        u32 inst = ReadMemory32(pc);
+-        DecodeARM(inst, pc, block->instructions[0]);
++        const u32 inst = ReadMemory32(pc);
++        DecodeARM(remasked_startup_->Rewrite(pc, inst), pc, block->instructions[0]);
+         u16 slot = 0;
+         // Resolve PC-source reads (fold to constants or PcSetup prefix),
+         // matching DecodeBlockInto. Step() always decodes ARM, so pc+8.
+--- a/src/core/arm/fastinterp/fastinterp.h
++++ b/src/core/arm/fastinterp/fastinterp.h
+@@ -22,6 +22,8 @@
+ }
+ 
+ namespace Core::FastInterp {
++
++class RemaskedStartup;
+ 
+ class ARM_FastInterp final : public ARM_Interface {
+ public:
+@@ -103,6 +105,7 @@
+     /// Memory access helpers (decode-time; ExecuteBlock uses the MEM_* fast paths)
+     u16 ReadMemory16(u32 addr);
+     u32 ReadMemory32(u32 addr);
++    u32 ReadArmInstruction(u32 pc);
+ 
+     /// Barrel shifter operations
+     u32 ShiftImm(u32 value, ShiftType type, u8 amount, bool& carry_out);
+@@ -132,6 +135,7 @@
+ 
+     // Reused across SVC calls: constructing one per call heap-allocates
+     std::unique_ptr<Kernel::SVCContext> svc_context_;
++    std::unique_ptr<RemaskedStartup> remasked_startup_;
+ 
+     bool halted_{false};
+ 
+--- a/src/core/arm/fastinterp/fastinterp_decode.cpp
++++ b/src/core/arm/fastinterp/fastinterp_decode.cpp
+@@ -1180,7 +1180,7 @@
+             return false;
+         }
+         fusion_stats_.fusions_attempted++;
+-        const u32 next_inst = ReadMemory32(pc + 4);
++        const u32 next_inst = ReadArmInstruction(pc + 4);
+         if ((next_inst & 0x0F000000) != 0x0A000000) {
+             return false;
+         }
+@@ -1223,14 +1223,14 @@
+     // ADD Rd, Rn, #imm; CMP Rd, Rm; B<cond> - three-instruction iterator loop
+     if (inst.opcode == Opcode::Add && inst.cond == 0xE && inst.rd != 15 && inst.dp.rm == 0xFF) {
+         fusion_stats_.fusions_attempted++;
+-        const u32 next_inst = ReadMemory32(pc + 4);
++        const u32 next_inst = ReadArmInstruction(pc + 4);
+         // Next must be CMP Rd, Rm (unconditional) comparing the ADD result:
+         // cccc 00I1 0101 nnnn 0000 oooo oooo oooo
+         if ((next_inst & 0x0FF0F000) != 0x01500000 || ((next_inst >> 28) & 0xF) != 0xE ||
+             ((next_inst >> 16) & 0xF) != inst.rd) {
+             return false;
+         }
+-        const u32 third_inst = ReadMemory32(pc + 8);
++        const u32 third_inst = ReadArmInstruction(pc + 8);
+         if ((third_inst & 0x0F000000) != 0x0A000000) {
+             return false;
+         }
+@@ -1363,7 +1363,7 @@
+                 current_pc += 2;
+             }
+         } else {
+-            u32 arm_inst = ReadMemory32(current_pc);
++            u32 arm_inst = ReadArmInstruction(current_pc);
+             DecodeARM(arm_inst, current_pc, inst);
+             if (!resolve_pc_sources(inst, current_pc + 8))
+                 break; // no room for the PcSetup prefix: end block here
+--- a/src/core/arm/fastinterp/handlers/arm_misc.inc
++++ b/src/core/arm/fastinterp/handlers/arm_misc.inc
+@@ -18,6 +18,15 @@
+ 
+ handle_Swi: {
+     CHECK_COND();
++    if (inst->inst_size == 4 && inst->imm32 >= MM3D::AzaharGameplay::FirstSVC) {
++        u32 next_pc = GET_PC() + inst->inst_size;
++        if (remasked_startup_->Run(GET_PC(), inst->imm32, state_, next_pc)) {
++            SET_PC(next_pc);
++            SYNC_PC();
++            executed += inst->ticks;
++            goto done;
++        }
++    }
+     // Software interrupt - dispatch to kernel SVC handler
+     SET_PC(GET_PC() + inst->inst_size);
+     SYNC_PC();
+--- /dev/null
++++ b/src/core/arm/fastinterp/menu_page_switch.h
+@@ -0,0 +1,275 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++#pragma once
++#include "mm3d/native_inventory.h"
++#include "core/arm/fastinterp/pause_navigation.h"
++
++namespace MM3D::IOSMenuPageSwitch {
++using NativeInventory::U32;
++using NativeInventory::Pointer;
++using NativeInventory::LayoutNamed;
++// Restoration + HD HUD v110 USA. Keep the screen manager's Prepare/Open/Close
++// calls and resource-ready checks; only this requested handoff skips animation.
++constexpr U32 FirstSVC=0xffff90;
++constexpr std::array<U32,8> PCs{0x104dd0,0x10fda4,0x161aec,0x5c27b8,0x5c2468,0x5a5ff4,0x5a5ef0,0x59730c};
++constexpr std::array<U32,8> Words{0xe1a04000,0xe12fff32,0xe1a04000,0xeaefe2d8,0x1bef58fd,0xebefca1a,0xeddf0a32,0xebf1a4f4};
++constexpr U32 ItemsVtable=0x639ec4,MasksVtable=0x639f74,GearVtable=0x63a270,MapVtable=0x639de4;
++constexpr std::array<std::pair<U32,U32>,23> Guards{{
++    {0x104dd8,0xeb002bad},{0x104e0c,0xe5912030},
++    {0x104e24,0xe591201c},{0x104e48,0xe5912020},
++    {0x10fda0,0xe1a01004},{0x10fda8,0xe5c40011},
++    {0x161ae8,0xe92d4030},{0x161af8,0xeeb09a40},
++    {ItemsVtable+0x1c,0x59e5c4},{ItemsVtable+0x20,0x59e864},
++    {GearVtable+0x1c,0x5a6158},{GearVtable+0x20,0x5a6b40},
++    {0x5c27b4,0xe2800010},{0x5a5ff8,0xe5940100},
++    {0x5a5ffc,0xe5c06186},{0x5c2464,0x12800010},{0x5a5fc0,0x3f000000},
++    {MasksVtable+0x1c,0x59f7c4},{MasksVtable+0x20,0x59fa80},
++    {MapVtable+0x1c,0x5975ac},{MapVtable+0x20,0x59937c},
++    {0x597304,0xe59f013c},{0x597310,0xe5970004}
++}};
++inline U32 Instruction(U32 pc,U32 word) {
++    for(unsigned i=0;i<PCs.size();++i)
++        if(pc==PCs[i]&&word==Words[i])return (word&0xf0000000)|0x0f000000|(FirstSVC+i);
++    return word;
++}
++template<class M> bool CodeMatches(M& m) {
++    for(unsigned i=0;i<PCs.size();++i)if(m.Read(PCs[i])!=Words[i])return false;
++    for(auto [at,word]:Guards)if(m.Read(at)!=word)return false;
++    return true;
++}
++template<class M> std::optional<U32> Byte(M& m,U32 at) {
++    auto w=m.Read(at&~3u);if(!w)return {};return (*w>>((at&3)*8))&255;
++}
++// Items/Masks capture conversion keeps one quarter of scene brightness.
++// Gear instead draws a black overlay; use 75% alpha for the same dimming.
++inline U32 GearBackdropAlpha() {
++    return std::bit_cast<U32>(GearMenu::enabled.load()?.75f:.5f);
++}
++constexpr U32 NotebookVtable=0x0063a3bc;
++template<class M> bool NotebookCodeMatches(M& m) {
++    // Constructor's vtable literal, PrepareOpen, Open and Calc, v1.1 USA.
++    return m.Read(0x005b49d0)==NotebookVtable &&
++           m.Read(NotebookVtable+0x1c)==0x005b4444 &&
++           m.Read(NotebookVtable+0x20)==0x005b475c &&
++           m.Read(NotebookVtable+0x24)==0x005b3ff8;
++}
++// Start is the Android pause-menu toggle. Let the native page handle its
++// normal Back action, including selection cleanup, sounds and close animation.
++// Never synthesize Back on title screens, modal details or a pending handoff.
++template<class M> bool StartBack(M& m,U32 ctx,bool& armed) {
++    if(!PauseNavigation::enabled.load() || !Pointer(ctx,20) || m.Read(ctx+12)!=0 ||
++       Byte(m,ctx+16)!=1 || Byte(m,ctx+17)!=1){armed=false;return false;}
++    const auto ui=m.Read(ctx+4),current=m.Read(ctx+8);
++    if(!ui || !current || !Pointer(*ui,0x170) || !Pointer(*current,0x198)){armed=false;return false;}
++    const auto game=m.Read(*ui+0x16c);
++    if(!game || !Pointer(*game,0x140) || Byte(m,*game+0x13d)!=4){armed=false;return false;}
++    const auto pressed=m.Read(*game+0x34),held=m.Read(*game+0x30);
++    if(!pressed || !held){armed=false;return false;}
++    const auto vtable=m.Read(*current);
++    bool ready=false;
++    if((m.Read(0x656b10)==current && vtable==ItemsVtable) ||
++       (m.Read(0x656b18)==current && vtable==MasksVtable)) {
++        const auto state=Byte(m,*current+0x9f);ready=state==2 || state==3;
++    } else if(m.Read(0x656b0c)==current && vtable==GearVtable)ready=Byte(m,*current+0x194)==2;
++    else if(m.Read(0x656b14)==current && vtable==MapVtable)ready=Byte(m,*current+0x78e)==0;
++    else if(m.Read(0x656b08)==current && vtable==NotebookVtable && NotebookCodeMatches(m))
++        ready=Byte(m,*current+0xc)==0;
++    if(!ready){armed=false;return false;}
++    // Opening can reach a ready page while its Start edge is still present.
++    // Require release inside the menu before a subsequent press may go Back.
++    if(!((*pressed|*held)&8u)){armed=true;return false;}
++    if(!armed || !(*pressed&8u))return false;
++    armed=false;
++    m.Write(*game+0x34,(*pressed&~8u)|2u); // replace only Start edge with B
++    return true;
++}
++struct Hook {
++    U32 context=0,source=0,target=0,target_vtable=0;
++    unsigned opening_ticks=0,waiting_ticks=0;
++    bool preserve_capture=false,start_back_armed=false;
++    template<class M> bool PairPending(M& m,U32 ctx) const {
++        return context&&ctx==context&&m.Read(ctx+8)==source&&m.Read(ctx+12)==target;
++    }
++    template<class M,class Registers> void MapCloseSound(M& m,Registers& r) const {
++        // Map's Close unconditionally plays the exit sound. A bumper handoff
++        // is still inside the menu; keep the native sound for real exits.
++        const bool page_switch=PairPending(m,context)&&target_vtable==ItemsVtable&&
++            m.Read(source)==MapVtable&&m.Read(target)==ItemsVtable;
++        r[14]=PCs[7]+4;
++        r[15]=page_switch?r[14]:0x2006e4;
++    }
++    template<class M> bool KeepCapture(M& m,U32 capture) const {
++        if(!preserve_capture||!PairPending(m,context))return false;
++        auto ui=m.Read(context+4);
++        if(!ui||!Pointer(*ui,0x170))return false;
++        auto game=m.Read(*ui+0x16c);
++        return game&&Pointer(*game,0x11030)&&Byte(m,*game+0x13d)==4&&capture==*game+0x11010;
++    }
++    // Replay the original branches when no page handoff owns this capture.
++    // Gear also clears a byte on its graphics owner after Close. Preserve that
++    // byte only if the owner is the shared capture state; otherwise replay it.
++    template<class M,class Registers> void CaptureCall(M& m,Registers& r,unsigned site) const {
++        const bool keep=KeepCapture(m,r[0]);
++        if(site==3) {r[15]=keep?r[14]:0x1bb320;return;} // tail B: preserve LR
++        r[14]=PCs[site]+4;
++        r[15]=keep?r[14]:0x198864;
++        if(keep&&site==5) {
++            auto owner=m.Read((r[0]-0x11010)+0x100),state=m.Read(0x66889c);
++            if(owner&&state&&Pointer(*owner,0x188)&&*owner==*state)r[15]=0x5a6000;
++        }
++    }
++    template<class M> void Tick(M& m,U32 ctx,bool retained_gear_scene=false,bool native_lower_input=false) {
++        if(context) {
++            if(ctx!=context||++waiting_ticks>120) {*this={};return;}
++            if(PairPending(m,ctx))return;
++            if(m.Read(ctx+8)==target&&m.Read(ctx+12)==0&&opening_ticks) {
++                --opening_ticks;return;
++            }
++            *this={};
++        }
++        if(StartBack(m,ctx,start_back_armed))return;
++        if(!NativeInventory::enabled.load()||!GearMenu::enabled.load()||!Pointer(ctx,20)||
++           m.Read(ctx+12)!=0||Byte(m,ctx+16)!=1||Byte(m,ctx+17)!=1)return;
++        auto current=m.Read(ctx+8),ui=m.Read(ctx+4);
++        if(!current||!ui||!Pointer(*ui,0x170))return;
++        auto game=m.Read(*ui+0x16c);
++        if(!game||!Pointer(*game,0x140)||Byte(m,*game+0x13d)!=4)return;
++        auto pressed=m.Read(*game+0x34),items=m.Read(0x656b10),gear=m.Read(0x656b0c),
++             masks=m.Read(0x656b18),map=m.Read(0x656b14),notebook=m.Read(0x656b08);
++        if(!pressed||!items||!gear||!masks||!map||
++           !Pointer(*items,0xc4)||!Pointer(*masks,0xc4)||!Pointer(*gear,0x198)||!Pointer(*map,0x794)||
++           m.Read(*items)!=ItemsVtable||m.Read(*masks)!=MasksVtable||
++           m.Read(*gear)!=GearVtable||m.Read(*map)!=MapVtable)return;
++        // Gear <- Masks <-> Items -> Map -> Notebook. The middle pair remains native.
++        if(*pressed&0xc0f)return;
++        const U32 shoulder=*pressed&0x300;
++        if(native_lower_input&&shoulder&&(*current==*items||*current==*masks)) {
++            // Native lower tabs synthesize a shoulder edge on release. They
++            // request the opposite inventory page, never an outer Gear/Map tab.
++            // Actual host shoulders retain the custom controller ordering below.
++            const auto state=Byte(m,*current+0x9f);
++            const bool from_items=*current==*items;
++            auto layout=m.Read(*current+0xc0);
++            if((state!=2&&state!=3)||!layout||!LayoutNamed(m,*layout,from_items?"MenuItem":"MenuMask"))return;
++            target=from_items?*masks:*items;
++            target_vtable=from_items?MasksVtable:ItemsVtable;
++        } else if((*current==*items&&shoulder==0x100)||(*current==*masks&&shoulder==0x200)) {
++            // Native inventory accepts shoulders in both browsing (2) and
++            // selected-item (3) states. Otherwise selection falls through to
++            // its original two-page toggle instead of our outer-page route.
++            const auto state=Byte(m,*current+0x9f);
++            if(state!=2&&state!=3)return;
++            auto layout=m.Read(*current+0xc0);
++            const bool from_items=*current==*items;
++            if(!layout||!LayoutNamed(m,*layout,from_items?"MenuItem":"MenuMask"))return;
++            if(from_items) {
++                auto mode=m.Read(*map+0x78c);if(!mode)return;
++                // Same reset as Restoration's map shortcut: never reopen Soaring.
++                m.Write(*map+0x78c,*mode&~0x00ff0000u);
++                target=*map;target_vtable=MapVtable;
++            } else {target=*gear;target_vtable=GearVtable;}
++        } else if(*current==*gear&&shoulder==0x100) {
++            const auto state=Byte(m,*gear+0x194);
++            // A retained scene makes the photo's load/open wait irrelevant to
++            // tab navigation. The native destructor cancels an unfinished photo.
++            if(state!=2&&!(retained_gear_scene&&(state==0||state==1)))return;
++            auto layout=m.Read(*gear+0x14);
++            if(!layout||!LayoutNamed(m,*layout,"MenuCollect"))return;
++            target=*masks;target_vtable=MasksVtable;
++        } else if(PauseNavigation::enabled.load()&&
++                  ((*current==*map&&shoulder==0x100)||
++                   (notebook&&*current==*notebook&&shoulder==0x200))) {
++            if(!notebook||!Pointer(*notebook,0x7b0)||
++               m.Read(*notebook)!=NotebookVtable||!NotebookCodeMatches(m))return;
++            if(*current==*map&&shoulder==0x100) {
++                auto collect=m.Read(0x7751d8+0x1f8);
++                auto layout=m.Read(*map+0x18);
++                if(!collect||!PauseNavigation::NotebookUnlocked(*collect)||
++                   Byte(m,*map+0x78e)!=0||!layout||
++                   !LayoutNamed(m,*layout,"MenuMapDungeon"))return;
++                target=*notebook;target_vtable=NotebookVtable;
++            } else if(*current==*notebook&&shoulder==0x200) {
++                // Keep schedule/detail navigation native; leave from the main
++                // Event Notes page only, when its layout is ready.
++                auto layout=m.Read(*notebook+0x40);
++                if(Byte(m,*notebook+0xc)!=0||!layout||
++                   !LayoutNamed(m,*layout,"MenuQuestlist"))return;
++                auto mode=m.Read(*map+0x78c);if(!mode)return;
++                m.Write(*map+0x78c,*mode&~0x00ff0000u);
++                target=*map;target_vtable=MapVtable;
++            } else return;
++        } else if(*current==*map&&shoulder==0x200) {
++            if(Byte(m,*map+0x78e)!=0)return;
++            auto layout=m.Read(*map+0x18);
++            if(!layout||!LayoutNamed(m,*layout,"MenuMapDungeon"))return;
++            target=*items;target_vtable=ItemsVtable;
++        } else return;
++        if(target_vtable==NotebookVtable||(notebook&&*current==*notebook)) {
++            // Notebook owns a different set of resources. Use the ordinary
++            // screen-manager transition, including asynchronous readiness and
++            // its own capture lifetime, rather than inventory's fast handoff.
++            m.Write(ctx+12,target);
++            m.Write(*game+0x34,*pressed&~shoulder);
++            *this={};return;
++        }
++        // A map opened independently may not own an inventory capture. In that
++        // case allow native Items PrepareOpen to create one normally.
++        auto capture=m.Read(*game+0x11018);
++        preserve_capture=(capture&&Pointer(*capture,0xb0))||(*current==*gear&&retained_gear_scene);
++        context=ctx;source=*current;opening_ticks=1;waiting_ticks=0;
++        m.Write(ctx+12,target);
++        m.Write(*game+0x34,*pressed&~shoulder); // consume only this pressed edge
++    }
++    template<class M> void FinishMapBackground(M& m,U32 layout) const {
++        if(Byte(m,target+0x78d)!=0||Byte(m,target+0x78e)!=0||
++           !LayoutNamed(m,layout,"BackGround"))return;
++        // BackGround is shared with gameplay. Direct menu entry must select
++        // its native reveal track as well as seek it; a hidden/outgoing track
++        // inherited from the previous screen cannot be fixed by a larger delta.
++        auto player=m.Read(layout+0x170),intro=m.Read(layout+0x174);
++        if(!player||!intro||!Pointer(*player,0x18)||!Pointer(*intro,0x18))return;
++        auto name=m.Read(*intro+8),duration=m.Read(*intro+12),flags=m.Read(*player+8);
++        if(!name||!duration||!*duration||*duration>120||!flags||
++           !MM3D::DialogueScale::Name(m,*name,"in_background_anim"))return;
++        m.Write(*player+12,*intro);
++        m.Write(*player+0x10,std::bit_cast<U32>(float(*duration)));
++        m.Write(*player+8,(*flags&0xff000000u)|0x10001); // Play, no loop, dirty
++    }
++    template<class M> void FinishMapHud(M& m,U32 layout) const {
++        // The title and X prompt share UpWorldMapHud's six-frame intro. Seek
++        // that track before its native evaluation, including its delayed keys.
++        // Keep zoom/detail and exit tracks under normal native control.
++        if(!LayoutNamed(m,layout,"UpWorldMapHud"))return;
++        auto player=m.Read(layout+0x19c),intro=m.Read(layout+0x1a4);
++        if(!player||!intro||!Pointer(*player,0x18)||!Pointer(*intro,0x18)||
++           m.Read(*player+12)!=intro)return;
++        auto flags=m.Read(*player+8),duration=m.Read(*intro+12),name=m.Read(*intro+8);
++        if(!flags||(*flags&0xffff)!=1||!duration||!*duration||*duration>120||!name||
++           !MM3D::DialogueScale::Name(m,*name,"in_wmap_hud_anim"))return;
++        m.Write(*player+0x10,std::bit_cast<U32>(float(*duration)));
++        m.Write(*player+8,*flags|0x10000); // native SetFrame's dirty flag
++    }
++    template<class M> bool FinishLayout(M& m,U32 layout) const {
++        if(!context||m.Read(context+8)!=target||m.Read(context+12)!=0||
++           m.Read(target)!=target_vtable)return false;
++        // Only layouts owned by the incoming page. The large native layout step
++        // evaluates animation endpoints before drawing; gameplay time is untouched.
++        if(target_vtable==GearVtable) {
++            for(U32 offset:{0xcu,0x10u,0x14u,0x18u,0x130u})
++                if(m.Read(target+offset)==layout)return layout!=0;
++        } else if(target_vtable==MapVtable) {
++            for(U32 offset:{0xcu,0x10u,0x14u,0x18u,0x1cu,0x20u,0x24u,0x2cu})
++                if(layout&&m.Read(target+offset)==layout) {
++                    // Native map reveal counter is clamped to five by Calc.
++                    m.Write(target+0x750,5);
++                    if(m.Read(target+0x14)==layout)FinishMapBackground(m,layout);
++                    if(m.Read(target+0x1c)==layout)FinishMapHud(m,layout);
++                    return true;
++                }
++        } else {
++            for(U32 offset:{4u,8u,12u,0x24u,0x28u,0x68u,0xc0u})
++                if(m.Read(target+offset)==layout)return layout!=0;
++        }
++        return false;
++    }
++};
++}
+--- /dev/null
++++ b/src/core/arm/fastinterp/pause_arrow.h
+@@ -0,0 +1,228 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++#pragma once
++#include <chrono>
++#include "mm3d/notebook_prompt.h"
++
++namespace MM3D::PauseArrow {
++using namespace NativeInventory;
++struct Options { bool enabled=true; float x=0,y=0,scale=1,icon_scale=1,spacing=22; };
++inline std::atomic<bool> enabled{true};
++inline std::atomic<float> x{0},y{0},scale{1},icon_scale{1},spacing{22};
++inline std::atomic<unsigned> status{0};
++inline void Apply(const Options& o){enabled=o.enabled;x=o.x;y=o.y;scale=o.scale;icon_scale=o.icon_scale;spacing=o.spacing;}
++struct SinglePrompt { ButtonPose pose; U32 content_root; U32 arrow_texture=0; std::array<ButtonPose,3> elements{}; bool reverse=false; std::string_view label{}; U32 button_u=144; std::string_view arrow_label{}; };
++struct PairPrompt { Options options; U32 content_root; std::array<std::string_view,2> labels; std::array<U32,2> buttons; };
++struct Hook {
++    NotebookPrompt::Hook scratch;
++    U32 pass=~0u,panel=0,icon=0,text=0,texture=0;
++    std::chrono::steady_clock::time_point opened{};
++    float native_alpha=0;
++    bool map_mode=false,list_mode=false;
++    U32 instrument_layout=0;
++    // Main package, group0 resource11 is the localized parts atlas. Resolve the
++    // live record each frame; never retain a resource across package unloading.
++    template<class M> U32 Parts(M& m,U32 id=11) {
++        constexpr U32 registry=NotebookPrompt::Registry;
++        if(m.Read(NotebookPrompt::RegistryLiteral)!=std::optional<U32>(registry))return 0;
++        // The resource registry is the manager subobject at +4.
++        // Manager+24 is the layout-name table, not the resource groups.
++        auto groups=m.Read(registry+4+0x24),entries=m.Read(registry+4+0x28);
++        if(!groups||!entries||!Pointer(*groups,8)||!Pointer(*entries))return 0;
++        auto range=m.Read(*groups);if(!range||(*range&65535)<=id)return 0;
++        const U32 index=(*range>>16)+id;
++        if(index>4096)return 0;
++        auto record=m.Read(*entries+index*4);
++        if(!record||!Pointer(*record,0x60)||m.Read(*record+4)!=std::optional<U32>(id<<16))return 0;
++        return *record+0xc;
++    }
++    template<class M> bool Templates(M& m,U32 layout) {
++        icon=text=0;native_alpha=1;texture=Parts(m);if(!texture)return false;
++        auto list=m.Read(layout+0x154),count=m.Read(layout+0x158);
++        if(!list||!count||*count>256||!Pointer(*list,*count*4))return false;
++        unsigned buttons=0;
++        for(unsigned i=0;i<*count;++i) {
++            auto w=m.Read(*list+4*i);if(!w)continue;
++            if(Named(m,*w,"btn_quit_g")||Named(m,*w,"btn_music_g")) {
++                auto a=m.Read(*w+0x134),flags=m.Read(*w+0xd4);if(!a||!flags)return false;
++                const float alpha=std::bit_cast<float>(*a);if(!std::isfinite(alpha)||alpha<0||alpha>1)return false;
++                native_alpha=std::min(native_alpha,(*flags&1)?alpha:0.f);++buttons;
++            }
++            auto geo=m.Read(*w+0x28);if(!geo||!Pointer(*geo,0x14))continue;
++            auto kind=m.Read(*geo+4);if(!kind)continue;
++            if(Named(m,*w,"btn_music_pane")&&((*kind&65535)==6||(*kind&65535)==4))icon=*w;
++            if(Named(m,*w,"e_message_pane")&&(*kind&65535)==3)text=*w;
++        }
++        return icon&&text&&buttons==2;
++    }
++    template<class M> void Pass(M& m,U32 manager,U32 screen) {
++        pass=screen;if(screen!=5)return;
++        const U32 previous=panel;panel=0;status=0;
++        if(!enabled||!Pointer(manager,0x20))return;
++        auto bottom=m.Read(manager+28),top=m.Read(manager+20);
++        NativeInventory::Hook helper;NativeInventory::Hook::Buckets from,to;
++        if(!bottom||!top||*bottom==*top||!helper.ReadQueue(m,*bottom,from)||!helper.ReadQueue(m,*top,to))return;
++        U32 candidate=0,list=0;list_mode=false;
++        for(const auto* buckets:{&from,&to})for(const auto& bucket:*buckets)for(U32 layout:bucket)
++            if(LayoutNamed(m,layout,"MenuMusicList"))list=layout;
++        for(const auto& bucket:from)for(U32 layout:bucket)if(LayoutNamed(m,layout,"MenuOcarina")) {
++            if(candidate)return;candidate=layout;
++        }
++        if(candidate)instrument_layout=candidate;
++        if(list&&!candidate&&LayoutNamed(m,instrument_layout,"MenuOcarina"))candidate=instrument_layout;
++        if(!candidate)return;status=1;
++        if(!Templates(m,candidate)||to[15].size()>=32)return;
++        if(list) {
++            const auto all=scratch.Child(m,list+8,"all"),music=scratch.Child(m,all,"btn_music_g");
++            const auto alpha=m.Read(music+0x134),flags=m.Read(music+0xd4);
++            if(!alpha||!flags)return;
++            const float a=std::bit_cast<float>(*alpha);if(!std::isfinite(a)||a<0||a>1)return;
++            list_mode=true;native_alpha=(*flags&1)?a:0.f;
++        }
++        for(const auto& bucket:to)if(std::find(bucket.begin(),bucket.end(),candidate)!=bucket.end())return;
++        const U32 at=*top+4+15*0x80+U32(to[15].size())*4;
++        auto total=m.Read(*top+0x844);if(!total||!m.Read(at))return;
++        panel=candidate;if(panel!=previous)opened=std::chrono::steady_clock::now();
++        m.Write(at,panel);m.Write(*top+0x804+15*4,U32(to[15].size()+1));m.Write(*top+0x844,*total+1);status=2;
++    }
++    template<class M> U32 Root(M& m,U32 layout,U32 sp,bool wide,const SinglePrompt* single=nullptr,const PairPrompt* pair=nullptr) {
++        scratch.frames.emplace_back();auto& frame=scratch.frames.back();
++        if(pass!=3||!panel||layout!=panel)return layout+8;
++        // If scratch/font validation fails, suppress the extra top-screen copy.
++        const U32 root=pair?pair->content_root:single?single->content_root:layout+8;
++        const bool flat=single&&!single->label.empty();
++        if(single&&!flat&&!single->arrow_texture)return root;
++        auto flags=m.Read(root+0xd4);if(!flags)return root;
++        if(!map_mode&&!single&&!pair){frame.writes.push_back({root+0xd4,*flags,*flags&~1u});m.Write(root+0xd4,*flags&~1u);}
++        constexpr U32 Size=0x2400;
++        if(sp<0x104000||(sp&7))return root;
++        const float s=pair?pair->options.scale:single?single->pose.scale:map_mode?NotebookPrompt::pose.scale.load():scale.load(),
++            is=pair?pair->options.icon_scale:single?1.f:map_mode?NotebookPrompt::icon_scale.load():icon_scale.load(),dx=pair?pair->options.x:single?single->pose.x:map_mode?0:x.load(),dy=pair?pair->options.y:single?single->pose.y:map_mode?0:y.load(),
++            gap=pair?pair->options.spacing:single?0:map_mode?NotebookPrompt::pose.y.load()-NotebookPrompt::map_pose.y.load():spacing.load();
++        if(!std::isfinite(s)||s<(single?.25f:.5f)||s>2||!std::isfinite(is)||is<.5f||is>2||!std::isfinite(dx)||!std::isfinite(dy)||!std::isfinite(gap)||gap<0||gap>60)return root;
++        const float fade=std::clamp(std::chrono::duration<float>(std::chrono::steady_clock::now()-opened).count()/.2f,0.f,1.f);
++        const float alpha=((map_mode||single||pair)?1.f:fade)*native_alpha;if(alpha<=0)return root;
++        const U32 base=sp-Size;
++        for(U32 at=base-Size;at<sp;at+=4)if(!m.Read(at))return root;
++        auto ig=m.Read(icon+0x28),tg=m.Read(text+0x28);if(!ig||!tg)return root;
++        auto font=m.Read(*tg+0x28);if(!font||!Pointer(*font,0x14))return root;
++        const std::array<std::string_view,2> labels=pair?pair->labels:single?std::array<std::string_view,2>{flat?single->label:!single->arrow_label.empty()?single->arrow_label:single->reverse?"Items":"Map",""}:map_mode?
++            std::array<std::string_view,2>{"Move cursor","Return"}:std::array<std::string_view,2>{"Songs",list_mode?"Back":"Cancel"};
++        std::array<std::vector<NotebookFont::Glyph>,2> glyphs;
++        float height=0,width=0;
++        for(unsigned row=0;row<(single?1u:2u);++row) {
++            float pen=0;
++            for(char32_t c:PromptText::Codes(PromptText::Get(m,labels[row]))) {auto g=NotebookFont::Lookup(m,*font,unsigned(c),pen);if(!g)return root;glyphs[row].push_back(*g);pen+=g->advance;height=std::bit_cast<float>(g->words[9]);}
++            if(glyphs[row].empty()||glyphs[row].size()>16)return root;
++            width=std::max(width,pen);
++        }
++        if(!map_mode&&!single&&!pair) {
++            // Reserve the widest label in either instrument view. Changing
++            // Cancel to Back must not move icons or the text's left anchor.
++            for(const auto label:{"Songs","Cancel","Back"}) {
++                float pen=0;
++                for(char32_t c:PromptText::Codes(PromptText::Get(m,label))) {
++                    auto glyph=NotebookFont::Lookup(m,*font,unsigned(c),pen);if(!glyph)return root;
++                    pen+=glyph->advance;
++                }
++                width=std::max(width,pen);
++            }
++        }
++        if(height<=0||!std::isfinite(height))return root;
++        std::array<U32,Size/4> words{};
++        const auto put=[&](U32 at,U32 v){words[at/4]=v;};
++        const auto number=[&](U32 at,float v){put(at,std::bit_cast<U32>(v));};
++        const auto copy=[&](U32 to,U32 from,U32 n){for(U32 i=0;i<n;i+=4){auto v=m.Read(from+i);if(!v)return false;put(to+i,*v);}return true;};
++        const auto node=[&](U32 at,U32 geo,float px,float py,float factor){
++            put(at+0x14,0);put(at+0x18,0);put(at+0x20,0);put(at+0x24,0xffff);put(at+0x28,geo);put(at+0xd4,15);
++            put(at+0xdc,words[(at+0xdc)/4]&~0xff00u);
++            for(unsigned i=0;i<8;++i)number(at+0xe0+4*i,(i==0||i==5)?factor:0);
++            number(at+0xec,px);number(at+0xfc,py);
++            for(unsigned i=0;i<6;++i)number(at+0x110+4*i,(i==0||i==4)?1:0);
++            for(unsigned i=0;i<3;++i)number(at+0x128+4*i,1);number(at+0x134,alpha);
++        };
++        if(!copy(0,root,0x140))return root;
++        node(0,0,0,0,1);put(0x14,base+0x140);put(0x18,single?(flat?5:7):(map_mode||pair)?9:8);if(single)put(flat?0x150:0x158,root);else if(map_mode||pair)put(0x160,root);
++        const float font_scale=single&&!flat?std::min(12/height,36.f/std::max(1.f,width)):12/height;
++        const float right=(wide?400.f+(240.f*16/9-400)/2:400.f)-12+dx;
++        const float icon_width=16*is,left=right-(single&&!flat?36.f:icon_width+4+width*font_scale)*s;
++        for(unsigned row=0;row<(single?1u:2u);++row) {
++            const U32 offset=0x180+row*0xa00,igoff=offset+0x140,txt=offset+0x1c0,tgoff=offset+0x300,records=offset+0x610;
++            if(!copy(offset,icon,0x140)||!copy(igoff,*ig,0x7c)||!copy(txt,text,0x140)||!copy(tgoff,*tg,0x30c))return root;
++            const U32 shadow=0x1600+row*0x500,shadow_geo=shadow+0x140;
++            const U32 icon_shadow=0x2000+row*0x1c0,icon_shadow_geo=icon_shadow+0x140;
++            // Native emission uses front-first ordering for these equal-depth
++            // panes. Foregrounds must precede their shadow copies.
++            put(0x140+row*16,base+offset);put(0x144+row*16,base+txt);
++            put(0x148+row*16,base+icon_shadow);put(0x14c+row*16,base+shadow);
++            const float cy=228+dy-(single&&!flat?18*s:row==0?gap*s:0);
++            const float text_x=single&&!flat?left+(36-width*font_scale)*.5f*s:left+(icon_width+4)*s;
++            const float text_y=single&&!flat?cy+14*s:cy-6*s;
++            node(offset,base+igoff,left,cy-8*is*s,s*is);
++            put(igoff+4,(words[(igoff+4)/4]&0xffff0000u)|6);put(igoff+0xc,0x00010101);put(igoff+0x10,texture);
++            for(U32 at:{0x14u,0x18u,0x1cu})number(igoff+at,0);
++            number(igoff+0x20,16);number(igoff+0x24,16);
++            // Localized parts.ctxb: START208,0,16x16; B128,0,16x16.
++            number(igoff+0x28,float(pair?pair->buttons[row]:single?(flat?single->button_u:single->reverse?176:192):row?128:map_mode?96:208)/256);number(igoff+0x2c,map_mode&&!single&&!row?16.f/128.f:0.f);
++            number(igoff+0x30,16.f/256);number(igoff+0x34,16.f/128);put(igoff+0x38,0);
++            for(unsigned i=0;i<16;++i)number(igoff+0x3c+4*i,1);
++            node(txt,base+tgoff,text_x,text_y,s*font_scale);
++            number(tgoff+0x34,0);number(tgoff+0x38,0);put(tgoff+0x118,words[(tgoff+0x118)/4]&~0xff00u);
++            put(tgoff+0x2fc,base+records);for(U32 at:{0x300u,0x304u,0x308u})put(tgoff+at,glyphs[row].size());
++            for(unsigned i=0;i<glyphs[row].size();++i)for(unsigned j=0;j<15;++j)put(records+i*60+j*4,glyphs[row][i].words[j]);
++            // Draw the same native glyphs in black behind the white label.
++            // One native pixel down/right; offset and opacity follow the group.
++            for(U32 i=0;i<0x140;i+=4)put(shadow+i,words[(txt+i)/4]);
++            for(U32 i=0;i<0x30c;i+=4)put(shadow_geo+i,words[(tgoff+i)/4]);
++            node(shadow,base+shadow_geo,text_x+s,text_y+s,s*font_scale);
++            for(U32 i=0;i<3;++i)number(shadow+0x128+4*i,0);
++            number(shadow+0x134,alpha*.8f);
++            for(U32 i=0;i<0x140;i+=4)put(icon_shadow+i,words[(offset+i)/4]);
++            for(U32 i=0;i<0x7c;i+=4)put(icon_shadow_geo+i,words[(igoff+i)/4]);
++            node(icon_shadow,base+icon_shadow_geo,left+s*is,cy-7*is*s,s*is);
++            for(U32 i=0;i<3;++i)number(icon_shadow+0x128+4*i,0);
++            number(icon_shadow+0x134,alpha*.8f);
++        }
++        if(single&&!flat) {
++            // menu_common_parts00 (resource8): native right arrow432,104,16x24,
++            // used by UpHintMenu and CursorEventCharSeal. Keep its aspect ratio.
++            constexpr U32 arrow=0xb80,geo=arrow+0x140,shadow=0xd40,shadow_geo=shadow+0x140;
++            for(U32 i=0;i<0x140;i+=4)put(arrow+i,words[(0x180+i)/4]);
++            for(U32 i=0;i<0x7c;i+=4)put(geo+i,words[(0x2c0+i)/4]);
++            node(arrow,base+geo,left+20*s,228+dy-30*s,s);
++            put(geo+0x10,single->arrow_texture);number(geo+0x24,24);
++            number(geo+0x28,432.f/512);number(geo+0x2c,(single->reverse?80.f:104.f)/128);
++            number(geo+0x30,16.f/512);number(geo+0x34,24.f/128);
++            for(U32 i=0;i<0x140;i+=4)put(shadow+i,words[(arrow+i)/4]);
++            for(U32 i=0;i<0x7c;i+=4)put(shadow_geo+i,words[(geo+i)/4]);
++            node(shadow,base+shadow_geo,left+21*s,228+dy-29*s,s);
++            for(U32 i=0;i<3;++i)number(shadow+0x128+4*i,0);
++            number(shadow+0x134,alpha*.8f);
++            put(0x150,base+arrow);put(0x154,base+shadow);
++            // Local adjustments are centered on each element, then carried by
++            // the global prompt pose. Shadows use the same transform.
++            const std::array<std::array<U32,2>,3> nodes{{{0x180,0x2000},{arrow,shadow},{0x340,0x1600}}};
++            const std::array<float,3> centers_x{left+8*s,left+28*s,left+18*s};
++            const std::array<float,3> centers_y{228+dy-18*s,228+dy-18*s,228+dy+2*s};
++            for(unsigned i=0;i<3;++i) {
++                const auto& p=single->elements[i];
++                if(!std::isfinite(p.x)||!std::isfinite(p.y)||!std::isfinite(p.scale)||p.scale<.25f||p.scale>4)return root;
++                for(U32 at:nodes[i]) {
++                    const auto get=[&](U32 field){return std::bit_cast<float>(words[(at+field)/4]);};
++                    number(at+0xec,centers_x[i]+(get(0xec)-centers_x[i])*p.scale+p.x*s);
++                    number(at+0xfc,centers_y[i]+(get(0xfc)-centers_y[i])*p.scale+p.y*s);
++                    number(at+0xe0,get(0xe0)*p.scale);number(at+0xf4,get(0xf4)*p.scale);
++                    if(single->reverse) {
++                        const float w=(i==2?width*font_scale:16.f)*s*p.scale;
++                        // Mirror the arrangement, never the artwork or text.
++                        const float shadow_shift=at==nodes[i][1]?2*s*p.scale:0;
++                        number(at+0xec,400-get(0xec)-w+shadow_shift);
++                    }
++                }
++            }
++        }
++        for(U32 i=0;i<words.size();++i)frame.writes.push_back({base+i*4,*m.Read(base+i*4),words[i]});
++        for(auto w:frame.writes)m.Write(w.address,w.after);frame.sp=sp;status=3;return base;
++    }
++    template<class M> U32 End(M& m){return scratch.End(m);}
++};
++}
+--- /dev/null
++++ b/src/core/arm/fastinterp/pause_arrow_hints.h
+@@ -0,0 +1,105 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++#pragma once
++#include "mm3d/items_map_prompt.h"
++#include "core/arm/fastinterp/menu_page_switch.h"
++#include "core/arm/fastinterp/pause_arrow.h"
++namespace MM3D::PauseArrowHints {
++using namespace ItemsMapPrompt;
++template<class M> bool NotebookHintAvailable(M& m,U32 mapOwner) {
++    const auto notebook=m.Read(0x656b08),collect=m.Read(0x7751d8+0x1f8);
++    return PauseNavigation::enabled.load() && notebook && collect &&
++        Pointer(*notebook,0x7b0) && m.Read(*notebook)==IOSMenuPageSwitch::NotebookVtable &&
++        IOSMenuPageSwitch::NotebookCodeMatches(m) && PauseNavigation::NotebookUnlocked(*collect) &&
++        IOSMenuPageSwitch::Byte(m,mapOwner+0x78e)==0;
++}
++// Match the main Event Notes page's native ZL handoff; schedule/detail pages
++// keep their own navigation and must not advertise a return they cannot take.
++template<class M> bool MapReturnHintAvailable(M& m,U32 owner,U32 layout) {
++    auto map=m.Read(0x656b14);
++    return PauseNavigation::enabled.load() && Pointer(owner,0x7b0) &&
++        m.Read(0x656b08)==owner && m.Read(owner)==IOSMenuPageSwitch::NotebookVtable &&
++        IOSMenuPageSwitch::NotebookCodeMatches(m) && IOSMenuPageSwitch::Byte(m,owner+0xc)==0 &&
++        m.Read(owner+0x40)==layout && LayoutNamed(m,layout,"MenuQuestlist") &&
++        map && Pointer(*map,0x794) && m.Read(*map)==IOSMenuPageSwitch::MapVtable;
++}
++struct Hook {
++    PauseArrow::Hook prompt;
++    template<class M> void Templates(M& m,NativeInventory::Hook& inventory,U32 layout,std::string_view label="Map") {
++        std::vector<NativeInventory::Hook::Write> probe;std::vector<U32> nodes;
++        if(!inventory.Transform(m,layout+8,probe,nodes,{1,0,0,1,0,0}))return;
++        for(auto node:nodes) {
++            auto geo=m.Read(node+0x28);if(!geo||!Pointer(*geo,8))continue;
++            auto kind=m.Read(*geo+4);if(!kind)continue;
++            if(!prompt.icon&&(*kind&65535)==6&&Pointer(*geo,0x7c))prompt.icon=node;
++            if(!prompt.text&&(*kind&65535)==3&&Pointer(*geo,0x30c)) {
++                auto font=m.Read(*geo+0x28);
++                // The font must hold every glyph of the label in the active archive's language.
++                const auto codes=PromptText::Codes(PromptText::Get(m,label));
++                if(font&&!codes.empty()&&std::all_of(codes.begin(),codes.end(),[&](char32_t c){return bool(NotebookFont::Lookup(m,*font,c,0));}))prompt.text=node;
++            }
++        }
++    }
++    template<class M,class BookHook> U32 NotebookRoot(M& m,BookHook& book,U32 layout,U32 sp,U32 content,bool wide,std::int64_t guest_us=0) {
++        prompt.pass=~0u;
++        if(enabled && book.active && !book.schedule && book.pass==3 && layout==book.panel &&
++           MapReturnHintAvailable(m,book.notebook_owner,layout)) {
++            prompt.icon=prompt.text=0;prompt.texture=prompt.Parts(m);
++            Templates(m,book.helper,layout,"Map");
++            const float alpha=book.prompt_hook.ScrollbarOpacity(m,book.notebook_owner,false).value_or(1.f)*book.detail_opacity;
++            if(prompt.icon && prompt.text && prompt.texture && std::isfinite(alpha) && alpha>=0 && alpha<=1) {
++                prompt.native_alpha=alpha*Opacity();prompt.panel=layout;prompt.pass=3;
++            }
++        }
++        PauseArrow::SinglePrompt single{{-return_pose.x.load(),return_pose.y.load(),return_pose.scale.load()},content,prompt.Parts(m,8)};
++        single.reverse=true;single.arrow_label="Map";
++        for(unsigned i=0;i<return_elements.size();++i)
++            single.elements[i]={-return_elements[i].x.load(),return_elements[i].y.load(),return_elements[i].scale.load()};
++        for(unsigned i=0;i<2;++i)single.elements[i].y+=BobY(guest_us);
++        auto root=prompt.Root(m,layout,sp,wide,&single);
++        return root==layout+8?content:root;
++    }
++    template<class M,class MapHook> U32 MapRoot(M& m,MapHook& map,U32 layout,U32 sp,U32 content,bool wide,std::int64_t guest_us=0,bool notebook=false) {
++        prompt.pass=~0u;
++        const std::string_view label=notebook?"Notebook":"Items";
++        auto mode=DungeonMap::Dungeon(m,map.owner);
++        const auto region=mode?m.Read(map.owner+0x74c):std::optional<U32>{};
++        const bool no_world_map=mode&&!*mode&&region&&(*region&255)==6;
++        // Native Map Draw submits UpWorldMapHud in top pass2; the
++        // relocated dungeon panel uses top pass3. Neither is a bottom draw.
++        // Region6 (the early-game no-map view) skips UpWorldMapHud entirely,
++        // but still submits owner+20 SubMenuTitle in pass2. Attach there only
++        // in that state so navigation survives without duplicating the prompt.
++        const bool active=(!notebook||NotebookHintAvailable(m,map.owner))&&enabled&&map.valid&&mode&&map.pass==(*mode?3u:2u)&&
++            m.Read(map.controller+8)==map.owner&&
++            (*mode?(layout==map.panel&&std::find(map.routed.begin(),map.routed.end(),layout)!=map.routed.end()):
++                   no_world_map?(m.Read(map.owner+0x20)==layout&&LayoutNamed(m,layout,"SubMenuTitle")):
++                   (m.Read(map.owner+0x1c)==layout&&LayoutNamed(m,layout,"UpWorldMapHud")));
++        if(active) {
++            prompt.icon=prompt.text=0;prompt.texture=prompt.Parts(m);
++            Templates(m,map.helper,layout,label);
++            if(!prompt.icon||!prompt.text)Templates(m,map.helper,map.panel,label);
++            U32 fade=prompt.scratch.Child(m,layout+8,"all");
++            if(*mode) {
++                auto group=prompt.scratch.Child(m,map.backgrounds[1]+8,"backGround");
++                fade=group?prompt.scratch.Child(m,group,"map_base"):0;
++            }
++            auto alpha=fade?m.Read(fade+0x134):std::optional<U32>{};
++            if(alpha&&prompt.icon&&prompt.text&&prompt.texture) {
++                const float a=std::bit_cast<float>(*alpha);
++                if(std::isfinite(a)&&a>=0&&a<=1) {prompt.native_alpha=a*Opacity();prompt.panel=layout;prompt.pass=3;}
++            }
++        }
++        // Negate offsets before mirroring so positive editor X moves right.
++        PauseArrow::SinglePrompt single{notebook?ButtonPose{pose.x.load(),pose.y.load(),pose.scale.load()}:
++            ButtonPose{-return_pose.x.load(),return_pose.y.load(),return_pose.scale.load()},content,prompt.Parts(m,8)};
++        single.reverse=!notebook;
++        if(notebook)single.arrow_label="Notebook";
++        for(unsigned i=0;i<return_elements.size();++i)
++            single.elements[i]=notebook?ButtonPose{elements[i].x.load(),elements[i].y.load(),elements[i].scale.load()}:
++                ButtonPose{-return_elements[i].x.load(),return_elements[i].y.load(),return_elements[i].scale.load()};
++        for(unsigned i=0;i<2;++i)single.elements[i].y+=BobY(guest_us);
++        auto root=prompt.Root(m,layout,sp,wide,&single);
++        return root==layout+8?content:root;
++    }
++};
++}
+--- /dev/null
++++ b/src/core/arm/fastinterp/pause_navigation.h
+@@ -0,0 +1,22 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++#pragma once
++#include <atomic>
++#include <cstdint>
++namespace MM3D::PauseNavigation {
++// Android ReMasked keeps app settings on Select. Other ports retain their
++// existing layout until separately requested and tested.
++#if 1
++inline std::atomic<bool> enabled{true};
++#else
++inline std::atomic<bool> enabled{false};
++#endif
++inline constexpr bool NotebookUnlocked(std::uint32_t collect) { return (collect & (1u << 18)) != 0; }
++struct SettingsPress {
++    bool held=false;
++    bool Update(bool down, bool pulse=false) {
++        const bool pressed=(down&&!held)||pulse;
++        held=down;
++        return pressed;
++    }
++};
++}
+--- /dev/null
++++ b/src/core/arm/fastinterp/remasked_classic_save.h
+@@ -0,0 +1,151 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++#pragma once
++
++#include "mm3d/classic_saving.h"
++#include <algorithm>
++#include <array>
++#include <cstdio>
++#include <filesystem>
++#include <fstream>
++#include <mutex>
++#include <optional>
++#include <vector>
++
++namespace MM3D::AzaharClassicSave {
++namespace fs = std::filesystem;
++using ClassicSaving::Kind;
++using Bytes = std::vector<std::uint8_t>;
++inline constexpr size_t SnapshotSize = 0x13618;
++inline constexpr std::string_view Archive = "/title/00040000/00125500/data/00000001/save";
++
++inline bool Valid(std::span<const std::uint8_t> bytes, Kind kind) {
++    if (bytes.size() != SnapshotSize || bytes[0] != 'M' || bytes[1] != 'J' ||
++        bytes[2] != 'R' || bytes[3] != 8 || (bytes[0x351e] != 0) != (kind == Kind::Owl))
++        return false;
++    unsigned crc = 0x1017;
++    for (size_t i = 0; i < bytes.size(); ++i) {
++        crc ^= i == 0x1a88 || i == 0x1a89 ? 0 : bytes[i];
++        for (unsigned bit = 0; bit < 8; ++bit) crc = (crc >> 1) ^ ((crc & 1) ? 0xa001 : 0);
++    }
++    return crc == (unsigned(bytes[0x1a88]) | unsigned(bytes[0x1a89]) << 8);
++}
++
++inline Bytes Read(const fs::path& path) {
++    std::ifstream input(path, std::ios::binary | std::ios::ate);
++    if (input.tellg() != SnapshotSize) return {};
++    Bytes result(SnapshotSize);
++    input.seekg(0);
++    if (!input.read(reinterpret_cast<char*>(result.data()), result.size())) return {};
++    return result;
++}
++
++inline fs::path Sidecar(const fs::path& native, std::string_view suffix) {
++    return native.parent_path() / ".classic-saving" / (native.filename().string() + std::string(suffix));
++}
++
++class Service {
++public:
++    // Empty optional denies the archive operation. The normal path remains
++    // the permanent snapshot even while an owl save is available.
++    std::optional<std::string> Open(const std::string& path, bool write) {
++        const auto index = path.rfind(Archive);
++        if (index == std::string::npos || index + Archive.size() + 5 != path.size() ||
++            !path.ends_with(".bin")) return path;
++        const auto slot = unsigned(path[index + Archive.size()] - '0');
++        if (slot >= native.size()) return path;
++        std::scoped_lock lock(mutex);
++        native[slot] = path;
++        if (!ClassicSaving::enabled) return path;
++        if (active == slot) {
++            if (!prepared) return std::nullopt;
++            return Sidecar(path, ".writing").string();
++        }
++        if (!write && Pending(path)) return Sidecar(path, ".owl").string();
++        return path;
++    }
++
++    bool Begin(unsigned slot, Kind kind) {
++        std::scoped_lock lock(mutex);
++        active = slot;
++        prepared = false;
++        if (slot >= native.size() || native[slot].empty()) return false;
++        const auto& path = native[slot];
++        if (kind == Kind::Owl && !MatchesCycle(path)) return false;
++        const auto staging = Sidecar(path, ".writing");
++        std::error_code error;
++        fs::create_directories(staging.parent_path(), error);
++        if (error) return false;
++        fs::copy_file(path, staging, fs::copy_options::overwrite_existing, error);
++        if (error) return false;
++        return prepared = true;
++    }
++
++    bool Finish(unsigned slot, Kind kind) {
++        std::scoped_lock lock(mutex);
++        const bool commit = active == slot && prepared;
++        active = native.size();
++        prepared = false;
++        if (!commit) return false;
++        const auto& path = native[slot];
++        const auto staging = Sidecar(path, ".writing");
++        if (!Valid(Read(staging), kind)) return false;
++        if (kind == Kind::Owl) {
++            return MatchesCycle(path) && std::rename(staging.c_str(), Sidecar(path, ".owl").c_str()) == 0;
++        }
++
++        // Publish the cycle receipt first. A crash here leaves the previous
++        // native save intact. A mismatched receipt can never activate an owl.
++        std::error_code error;
++        fs::copy_file(staging, Sidecar(path, ".cycle-next"), fs::copy_options::overwrite_existing, error);
++        if (error || std::rename(Sidecar(path, ".cycle-next").c_str(), Sidecar(path, ".cycle").c_str()) != 0)
++            return false;
++        fs::remove(Sidecar(path, ".owl"), error);
++        return !error && std::rename(staging.c_str(), path.c_str()) == 0;
++    }
++
++    void Cancel() {
++        std::scoped_lock lock(mutex);
++        active = native.size();
++        prepared = false;
++    }
++
++    void Reset() {
++        std::scoped_lock lock(mutex);
++        native = {};
++        active = native.size();
++        prepared = false;
++    }
++
++    void Load(unsigned slot, std::span<const std::uint8_t> loaded) {
++        std::scoped_lock lock(mutex);
++        ClassicSaving::resume_notice = false;
++        if (slot >= native.size() || !Pending(native[slot])) return;
++        const auto owl = Sidecar(native[slot], ".owl");
++        const auto bytes = Read(owl);
++        if (!std::ranges::equal(loaded, bytes)) return;
++        std::error_code error;
++        // Consumption does not write the permanent slot. On I/O failure the
++        // owl remains available instead of risking the last cycle save.
++        fs::remove(owl, error);
++    }
++
++private:
++    static bool MatchesCycle(const fs::path& path) {
++        const auto permanent = Read(path);
++        return Valid(permanent, Kind::Cycle) && permanent == Read(Sidecar(path, ".cycle"));
++    }
++
++    static bool Pending(const fs::path& path) {
++        std::error_code error;
++        return !path.empty() && fs::exists(Sidecar(path, ".owl"), error) &&
++               MatchesCycle(path) && Valid(Read(Sidecar(path, ".owl")), Kind::Owl);
++    }
++
++    std::mutex mutex;
++    std::array<fs::path, 3> native;
++    unsigned active = native.size();
++    bool prepared = false;
++};
++
++inline Service Saves;
++} // namespace MM3D::AzaharClassicSave
+--- /dev/null
++++ b/src/core/arm/fastinterp/remasked_gameplay.h
+@@ -0,0 +1,235 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++#pragma once
++
++#include <algorithm>
++#include "citra_libretro/remasked_settings_bridge.h"
++#include "mm3d/bomber_approach.h"
++#include "mm3d/bottle_healing.h"
++#include "mm3d/classic_double_time.h"
++#include "mm3d/classic_save_hooks.h"
++#include "core/arm/fastinterp/remasked_classic_save.h"
++#include "mm3d/death_penalties.h"
++#include "mm3d/difficulty.h"
++#include "mm3d/fast_time.h"
++#include "mm3d/native_inventory.h"
++#include "mm3d/owl_sword.h"
++#include "mm3d/prices.h"
++
++namespace MM3D::AzaharGameplay {
++using U32 = std::uint32_t;
++inline std::atomic_bool single_screen{true};
++
++inline void Apply(const RemaskedGameplayOptions& options) {
++    BomberApproach::disabled = options.disableBomberApproach;
++    OwlIntro::disabled = OwlSword::enabled = options.swordActivateOwls;
++    ClassicDoubleTime::enabled = options.classicDoubleTime;
++    FastTime::enabled = options.fastTime;
++    ClassicSaving::enabled = options.classicSaving;
++    Difficulty::damage_multiplier = std::clamp(options.damageMultiplier, 1, 16);
++    Difficulty::weaker_enhanced_defense = options.weakerEnhancedDefense;
++    Difficulty::disable_heart_drops = options.disableHeartDrops;
++    Difficulty::disable_rupee_drops = options.disableRupeeDrops;
++    Difficulty::disable_fairy_drops = options.disableFairyDrops;
++    Difficulty::disable_magic_drops = options.disableMagicDrops;
++    Difficulty::disable_ammo_pickups = options.disableAmmoPickups;
++    DeathPenalties::lose_rupees = options.loseRupeesOnDeath;
++    DeathPenalties::world_ends = options.endWorldOnDeath;
++    DeathPenalties::advance_six_hours = options.advanceTimeOnDeath;
++    Prices::multiplier = options.doubleShopPrices ? 2u : 1u;
++    BottleHealing::red_hearts = std::clamp(options.redPotionHearts, 1, 20);
++    BottleHealing::blue_hearts = std::clamp(options.bluePotionHearts, 1, 20);
++    BottleHealing::fairy_hearts = std::clamp(options.bottledFairyHearts, 1, 20);
++}
++
++using Matcher = U32 (*)(U32, U32);
++
++// Price hooks share a range of SVCs. Find the site by guest PC without
++// scanning the shop table at every instruction decoded by FastInterp.
++inline constexpr auto PriceOrder = [] {
++    std::array<unsigned, Prices::Sites.size()> order{};
++    for (unsigned i = 0; i < order.size(); ++i) order[i] = i;
++    std::sort(order.begin(), order.end(), [](unsigned a, unsigned b) {
++        return Prices::Sites[a].pc < Prices::Sites[b].pc;
++    });
++    return order;
++}();
++
++inline U32 PriceInstruction(U32 pc, U32 word) {
++    const auto it = std::lower_bound(PriceOrder.begin(), PriceOrder.end(), pc,
++        [](unsigned index, U32 address) { return Prices::Sites[index].pc < address; });
++    if (it == PriceOrder.end() || Prices::Sites[*it].pc != pc || Prices::Sites[*it].word != word) return word;
++    return (word & 0xf0000000) | 0x0f000000 | (Prices::FirstSVC + *it);
++}
++
++inline constexpr std::array<Matcher, 11> Matchers{
++    BomberApproach::Instruction, BottleHealing::Instruction, Difficulty::Instruction,
++    Difficulty::SpawnInstruction, DeathPenalties::Instruction, OwlIntro::Instruction,
++    OwlSword::Instruction, ClassicSaving::Instruction, ClassicDoubleTime::Instruction,
++    FastTime::Instruction, PriceInstruction};
++
++inline constexpr U32 FirstSVC = ClassicSaving::FirstSVC;
++
++inline bool Handles(U32 svc) {
++    switch (svc) {
++    case Difficulty::SVC:
++    case Difficulty::DefenseSVC:
++    case Difficulty::SpawnSVC:
++    case DeathPenalties::SceneSoundSVC:
++    case SingleScreenText::SVC:
++        return true;
++    default:
++        return (svc >= ClassicSaving::FirstSVC && svc < ClassicSaving::FirstSVC + ClassicSaving::Sites.size()) ||
++               (svc >= BomberApproach::FirstSVC && svc <= BomberApproach::FirstSVC + 1) ||
++               (svc >= OwlIntro::FirstSVC && svc <= OwlIntro::FirstSVC + 1) ||
++               (svc >= OwlSword::FirstSVC && svc <= OwlSword::FirstSVC + 1) ||
++               (svc >= BottleHealing::FirstSVC && svc <= BottleHealing::FirstSVC + 2) ||
++               (svc >= DeathPenalties::FirstSVC && svc <= DeathPenalties::FirstSVC + 1) ||
++               (svc >= ClassicDoubleTime::FirstSVC && svc < ClassicDoubleTime::FirstSVC + ClassicDoubleTime::Sites.size()) ||
++               (svc >= FastTime::FirstSVC && svc < FastTime::FirstSVC + FastTime::Hooks.size()) ||
++               (svc >= Prices::FirstSVC && svc < Prices::FirstSVC + Prices::Sites.size());
++    }
++}
++
++template<class Memory> U32 Rewrite(Memory& memory, U32 pc, U32 word) {
++    for (unsigned i = 0; i < Matchers.size(); ++i) {
++        const U32 hook = Matchers[i](pc, word);
++        if (hook == word) continue;
++        switch (i) {
++        case 0: return BomberApproach::CodeMatches(memory) ? hook : word;
++        case 1: return BottleHealing::CodeMatches(memory) ? hook : word;
++        case 2: return Difficulty::CodeMatches(memory, pc) ? (word & 0xf0000000) | (hook & 0x0fffffff) : word;
++        case 3: return Difficulty::SpawnCodeMatches(memory, pc) ? hook : word;
++        case 4: return DeathPenalties::CodeMatches(memory) ? hook : word;
++        case 5: return OwlIntro::CodeMatches(memory) ? hook : word;
++        case 6: return OwlSword::CodeMatches(memory) ? hook : word;
++        case 7: return ClassicSaving::CodeMatches(memory) ? hook : word;
++        case 8: return ClassicDoubleTime::CodeMatches(memory) && SingleScreenText::CodeMatches(memory) ? hook : word;
++        case 9: return FastTime::CodeMatches(memory) ? hook : word;
++        case 10: return Prices::CodeMatches(memory) ? hook : word;
++        }
++    }
++    if (const U32 hook = SingleScreenText::Instruction(pc, word); hook != word && SingleScreenText::CodeMatches(memory))
++        return hook;
++    return word;
++}
++
++struct Hook {
++    ClassicDoubleTime::Hook doubleTime;
++    DeathPenalties::RespawnSound respawnSound;
++    ClassicSaving::Hook classicSave;
++
++    template<class Memory, class State> bool Run(Memory& memory, State& state, U32 pc, U32 word,
++                                                U32 svc, U32& nextPC) {
++        auto& r = state.regs;
++        const auto match = [&](Matcher instruction) {
++            const U32 hook = instruction(pc, word);
++            return hook != word && (hook & 0xffffff) == svc;
++        };
++        r[15] = nextPC;
++        switch (svc) {
++        case BomberApproach::FirstSVC:
++        case BomberApproach::FirstSVC + 1: {
++            if (!match(BomberApproach::Instruction)) return false;
++            const bool suppress = BomberApproach::Suppress(memory, r[4]);
++            if (svc == BomberApproach::FirstSVC) {
++                const auto actorState = static_cast<std::int16_t>(memory.memory.Read16(r[5] + 0x8c));
++                r[0] = BomberApproach::State(static_cast<U32>(actorState), suppress);
++            } else if (suppress) r[15] = BomberApproach::ResetPC;
++            else r[1] = 0xf;
++            break;
++        }
++        case BottleHealing::FirstSVC:
++        case BottleHealing::FirstSVC + 1:
++        case BottleHealing::FirstSVC + 2:
++            if (!match(BottleHealing::Instruction)) return false;
++            BottleHealing::Apply(memory, r, svc - BottleHealing::FirstSVC,
++                                 BottleHealing::red_hearts, BottleHealing::blue_hearts, BottleHealing::fairy_hearts);
++            break;
++        case Difficulty::DefenseSVC:
++        case Difficulty::SVC:
++            if (!match(Difficulty::Instruction)) return false;
++            if (svc == Difficulty::DefenseSVC)
++                r[4] = Difficulty::DefenseDelta(r[4], r[1], state.GetCPSR(), Difficulty::weaker_enhanced_defense);
++            else r[2] = Difficulty::ApplyDamage(r[2], r[4], Difficulty::damage_multiplier);
++            break;
++        case Difficulty::SpawnSVC:
++            if (!match(Difficulty::SpawnInstruction)) return false;
++            Difficulty::Spawn(memory, r, Difficulty::disable_heart_drops, Difficulty::disable_rupee_drops,
++                              Difficulty::disable_fairy_drops, Difficulty::disable_magic_drops,
++                              Difficulty::disable_ammo_pickups);
++            break;
++        case DeathPenalties::FirstSVC:
++        case DeathPenalties::FirstSVC + 1:
++        case DeathPenalties::SceneSoundSVC:
++            if (!match(DeathPenalties::Instruction)) return false;
++            if (svc == DeathPenalties::FirstSVC) DeathPenalties::Death(memory, r, DeathPenalties::lose_rupees);
++            else if (svc == DeathPenalties::FirstSVC + 1)
++                DeathPenalties::Continue(memory, r, DeathPenalties::world_ends, DeathPenalties::advance_six_hours, &respawnSound);
++            else respawnSound.SceneInit(memory, r);
++            break;
++        case OwlIntro::FirstSVC:
++        case OwlIntro::FirstSVC + 1:
++            if (!match(OwlIntro::Instruction)) return false;
++            if (svc == OwlIntro::FirstSVC) OwlIntro::Enter(r);
++            else r[0] = OwlIntro::TatlFlags(memory.memory.Read8(r[0] + 0x2d3));
++            break;
++        case OwlSword::FirstSVC:
++        case OwlSword::FirstSVC + 1:
++            if (!match(OwlSword::Instruction)) return false;
++            if (svc == OwlSword::FirstSVC) {
++                r[4] = r[0];
++                OwlSword::Update(memory, r[4]);
++                OwlSword::BlockFeatherAcceptance(memory, r[4], ClassicSaving::enabled);
++            } else if (OwlSword::Locked(memory, r[0]) ||
++                       OwlSword::FeatherBlocked(memory, r[0], ClassicSaving::enabled)) r[0] = 0;
++            else {
++                r[14] = OwlSword::OfferPC + 4;
++                r[15] = 0x3c322c;
++            }
++            break;
++        case SingleScreenText::SVC:
++            if (!match(SingleScreenText::Instruction)) return false;
++            doubleTime.Message(memory, r[0], r[1]);
++            SingleScreenText::Apply(memory, r[0], r[1], single_screen.load());
++            if (Prices::multiplier.load() != 1 && Prices::CodeMatches(memory))
++                Prices::Message(memory, r[0], r[1], Prices::multiplier);
++            r[3] = memory.memory.Read32(r[0] + 4);
++            break;
++        default:
++            if (svc >= ClassicSaving::FirstSVC && svc < ClassicSaving::FirstSVC + ClassicSaving::Sites.size()) {
++                if (!match(ClassicSaving::Instruction)) return false;
++                const unsigned site = svc - ClassicSaving::FirstSVC;
++                auto& saves = AzaharClassicSave::Saves;
++                if (site == 2) saves.Cancel();
++                const bool endWrite = site == 4 && r[4] == classicSave.writer;
++                classicSave.Handle(memory, r, site, saves);
++                if (endWrite && r[0] == 0) {
++                    saves.Cancel();
++                    if (classicSave.pending_quit) {
++                        // Use Azahar's native transition without the desktop renderer's fade handshake.
++                        classicSave.presentation.Reset(memory);
++                        classicSave.pending_frames = 20;
++                        ClassicSaving::exit_fade = ClassicSaving::ExitFade::Idle;
++                    }
++                }
++                if (site == 15 && r[15] == nextPC) r[1] = memory.Read(0x577b74).value_or(0);
++            } else if (svc >= ClassicDoubleTime::FirstSVC && svc < ClassicDoubleTime::FirstSVC + ClassicDoubleTime::Sites.size()) {
++                if (!match(ClassicDoubleTime::Instruction)) return false;
++                doubleTime.Handle(memory, r, svc - ClassicDoubleTime::FirstSVC);
++            } else if (svc >= FastTime::FirstSVC && svc < FastTime::FirstSVC + FastTime::Hooks.size()) {
++                if (!match(FastTime::Instruction)) return false;
++                FastTime::Update(memory, r, svc, FastTime::enabled);
++            } else if (svc >= Prices::FirstSVC && svc < Prices::FirstSVC + Prices::Sites.size()) {
++                if (!match(PriceInstruction)) return false;
++                Prices::Execute(memory, r, svc - Prices::FirstSVC, Prices::multiplier);
++            } else return false;
++        }
++        nextPC = r[15];
++        if (nextPC & 1) {
++            state.thumb_mode = true;
++            nextPC &= ~1u;
++        }
++        return true;
++    }
++};
++} // namespace MM3D::AzaharGameplay
+--- /dev/null
++++ b/src/core/arm/fastinterp/remasked_hud_draw.h
+@@ -0,0 +1,109 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++#pragma once
++#include "mm3d/player_hud.h"
++#include "citra_libretro/remasked_touch_bridge.h"
++
++namespace MM3D {
++
++// Match Android's measured regular-HUD margins in Azahar's 400x240
++// picture. Touch item artwork keeps the exact UIKit anchors.
++struct RemaskedHudDraw {
++    PlayerHud::Hook helper;
++    using Write = PlayerHud::Hook::Write;
++    std::vector<std::vector<Write>> frames;
++
++    template<class Memory> void Begin(Memory& m, u32 layout, bool touch, bool airPlayTop = false) {
++        using namespace NativeInventory;
++        frames.emplace_back();
++        if (!LayoutNamed(m, layout, "Hud") && !LayoutNamed(m, layout, "Hud2") &&
++            !LayoutNamed(m, layout, "HudItemIconSet")) return;
++
++        std::vector<Write> unused;
++        std::vector<u32> nodes, seen;
++        if (!helper.helper.Transform(m, layout + 8, unused, nodes, {1, 0, 0, 1, 0, 0})) return;
++        auto find = [&](const char* name) {
++            const auto it = std::find_if(nodes.begin(), nodes.end(), [&](u32 n) { return Named(m, n, name); });
++            return it == nodes.end() ? 0u : *it;
++        };
++
++        auto& writes = frames.back();
++        // The display-X clip correction adds space evenly around the 400 px
++        // guest canvas. Keep ordinary HUD margins relative to the new edges.
++        const float side = 200.f * (RemaskedPictureAspect.load() / RemaskedNativeAspect - 1.f);
++        const float left = side - RemaskedPictureLeftInset.load();
++        const float right = side - RemaskedPictureRightInset.load();
++        const auto shift = [&](std::initializer_list<const char*> group,
++                               float offset_x = 0, float offset_y = 0,
++                               bool anchor = false, bool from_right = false) {
++            PlayerHud::Bounds bounds;
++            for (const char* name : group) {
++                const u32 node = find(name);
++                PlayerHud::Bounds part;
++                if (node && helper.Measure(m, node, part, true)) bounds.Add(part);
++            }
++            if (!bounds.Valid() || bounds.right - bounds.left > 165.f) return;
++            if (anchor) {
++                offset_x -= from_right ? bounds.right : bounds.left;
++                offset_y -= bounds.top;
++            }
++            const float minimum = 4.f - left - bounds.left, maximum = 396.f + right - bounds.right;
++            if (minimum > maximum) return;
++            const float dx = std::clamp(offset_x, minimum, maximum);
++            if (dx == 0 && offset_y == 0) return;
++            for (const char* name : group) {
++                const u32 node = find(name);
++                if (node) helper.helper.Transform(m, node, writes, seen, {1, 0, 0, 1, dx, offset_y});
++            }
++        };
++        shift({"heart_status"}, (touch ? 0.f : 8.8f) - left);
++        shift({"rupee_g", "key_g"}, -left);
++        if (touch) {
++            shift({"magic_gauge_g"}, -left);
++        } else {
++            const u32 gauge = find("magic_gauge_g");
++            const u32 base = find("gauge_base");
++            PlayerHud::Bounds bounds;
++            if (gauge && base && helper.Measure(m, base, bounds, true)) {
++                const float width = bounds.right - bounds.left, height = bounds.bottom - bounds.top;
++                if (width > 35 && width < 145 && height > 2 && height < 20) {
++                    const float size = HudAdjustments::Scale(HudAdjustments::Magic);
++                    const auto part = HudAdjustments::Magic;
++                    const float sx = 71.7f * size / width;
++                    const float sy = 4.0f * size * HudAdjustments::Factor(HudAdjustments::magic_height_steps.load()) / height;
++                    helper.helper.Transform(m, gauge, writes, seen,
++                        {sx, 0, 0, sy, 13.6f - left + HudAdjustments::X(part) - bounds.left * sx,
++                         21.6f + HudAdjustments::Y(part) - bounds.top * sy});
++                }
++            }
++            shift({"hud_dpad", "chat_alart"}, -left, airPlayTop ? 37.f : 6.f);
++            if (airPlayTop) {
++                // Use the approved phone HUD's native-coordinate anchors.
++                // L sits below the magic bar, while R sits above the face buttons.
++                shift({"icon_item_1_g", "btn_corner01_g"}, 10.f - left, 34.f, true);
++                shift({"icon_item_2_g", "btn_corner03_g"}, 390.f + right, 6.f, true, true);
++            } else {
++                shift({"icon_item_1_g", "btn_corner01_g"}, 7.2f - left, 3.7f);
++                shift({"icon_item_2_g", "btn_corner03_g"}, right);
++            }
++            const float face_y = airPlayTop ? 24.f : 0.f;
++            shift({"a_action_button", "b_action_button"}, right - 11.2f, face_y);
++            shift({"icon_item_x_g", "btn_x_g", "icon_item_y_g", "btn_y_g"}, right - 11.2f, face_y);
++        }
++
++        // X/Y and I/II share the atlas with the item previews but have
++        // their own text panes. Leave the artwork and quantity overlays.
++        for (const char* name : {"disp_x_pane", "disp_y_pane", "disp_1_pane", "disp_2_pane"}) {
++            const u32 node = find(name);
++            if (node) helper.helper.Transform(m, node, writes, seen, {0, 0, 0, 0, 0, 0});
++        }
++        for (const auto& write : writes) m.Write(write.address, write.after);
++    }
++
++    template<class Memory> void End(Memory& m) {
++        if (frames.empty()) return;
++        for (auto it = frames.back().rbegin(); it != frames.back().rend(); ++it)
++            m.Write(it->address, it->before);
++        frames.pop_back();
++    }
++};
++}
+--- /dev/null
++++ b/src/core/arm/fastinterp/remasked_hud_presentation.h
+@@ -0,0 +1,10 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++#pragma once
++#include <array>
++#include <libretro.h>
++
++inline constexpr unsigned RemaskedPresentHud = RETRO_ENVIRONMENT_PRIVATE | 3;
++struct RemaskedHudOutline {
++    float x = 0, y = 0, diameter = 0, opacity = 0;
++};
++using RemaskedHudOutlines = std::array<RemaskedHudOutline, 6>; // A, B, X, Y, L, R
+--- /dev/null
++++ b/src/core/arm/fastinterp/remasked_inventory_options.h
+@@ -0,0 +1,70 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++#pragma once
++#include <cstring>
++#include "mm3d/native_inventory.h"
++#include "mm3d/pause_capture.h"
++#include "mm3d/item_preview.h"
++#include "mm3d/items_map_prompt.h"
++#include "mm3d/menu_tabs.h"
++#include "mm3d/menu_help.h"
++
++namespace MM3D::InventoryMenu {
++struct Options {
++    MenuHelp::Options help;
++    GearMenu::Options gear;
++    bool enabled=true; float x=0.f,y=32.f,scale=.8f;
++    float masks_x=0.f,masks_y=0.f,masks_scale=1.f;
++    bool shared_slide=true;
++    bool high_res_pause=true;
++    bool bar_enabled=true; float bar_x=0.f,bar_y=-13.6f,bar_scale=.65f,bar_spacing=64.f;
++    float description_x=0.f,description_y=0.f,description_scale=1.f;
++    float model_x=0.f,model_y=0.f,model_scale=1.f;
++    NativeInventory::ButtonPose map_prompt=ItemsMapPrompt::DefaultPose,gear_button{};
++    std::array<NativeInventory::ButtonPose,3> map_prompt_elements=ItemsMapPrompt::DefaultElements;
++    bool buttons_enabled=true;
++    std::array<NativeInventory::ButtonPose,3> buttons{};
++    bool background_enabled=true;
++    NativeInventory::ButtonPose background{};
++    float shadow_width=1.f,shadow_opacity=1.f;
++};
++inline void Apply(const Options& o) {
++    MenuHelp::Apply(o.help);
++    GearMenu::Apply(o.gear);
++    MenuTabs::gear_pose.x=o.gear_button.x;
++    MenuTabs::gear_pose.y=o.gear_button.y;
++    MenuTabs::gear_pose.scale=o.gear_button.scale;
++    ItemsMapPrompt::pose.x=o.map_prompt.x;
++    ItemsMapPrompt::pose.y=o.map_prompt.y;
++    ItemsMapPrompt::pose.scale=o.map_prompt.scale;
++    for(unsigned i=0;i<o.map_prompt_elements.size();++i) {
++        ItemsMapPrompt::elements[i].x=o.map_prompt_elements[i].x;
++        ItemsMapPrompt::elements[i].y=o.map_prompt_elements[i].y;
++        ItemsMapPrompt::elements[i].scale=o.map_prompt_elements[i].scale;
++    }
++    NativeInventory::x.store(o.x); NativeInventory::y.store(o.y);
++    NativeInventory::scale.store(o.scale); NativeInventory::enabled.store(o.enabled);
++    NativeInventory::masks_x.store(o.masks_x); NativeInventory::masks_y.store(o.masks_y);
++    NativeInventory::masks_scale.store(o.masks_scale);
++    NativeInventory::shared_slide.store(o.shared_slide);
++    PauseCapture::enabled.store(o.high_res_pause);
++    NativeInventory::bar_enabled.store(o.bar_enabled);
++    NativeInventory::bar_x.store(o.bar_x); NativeInventory::bar_y.store(o.bar_y);
++    NativeInventory::bar_scale.store(o.bar_scale); NativeInventory::bar_spacing.store(o.bar_spacing);
++    DialogueScale::item_x.store(o.description_x); DialogueScale::item_y.store(o.description_y);
++    DialogueScale::item_scale.store(o.description_scale);
++    ItemPreview::model_x.store(o.model_x); ItemPreview::model_y.store(o.model_y);
++    ItemPreview::model_scale.store(o.model_scale);
++    NativeInventory::buttons_enabled.store(o.buttons_enabled);
++    NativeInventory::shadow_width.store(o.shadow_width);
++    NativeInventory::shadow_opacity.store(o.shadow_opacity);
++    NativeInventory::background_enabled.store(o.background_enabled);
++    NativeInventory::background_pose.x.store(o.background.x);
++    NativeInventory::background_pose.y.store(o.background.y);
++    NativeInventory::background_pose.scale.store(o.background.scale);
++    for(unsigned i=0;i<o.buttons.size();++i) {
++        NativeInventory::buttons[i].x.store(o.buttons[i].x);
++        NativeInventory::buttons[i].y.store(o.buttons[i].y);
++        NativeInventory::buttons[i].scale.store(o.buttons[i].scale);
++    }
++}
++} // namespace MM3D::InventoryMenu
+--- /dev/null
++++ b/src/core/arm/fastinterp/remasked_picture_draws.h
+@@ -0,0 +1,14 @@
++#pragma once
++#include "mm3d/widescreen_probe.h"
++namespace MM3D::AzaharPicture {
++inline constexpr std::array FullscreenDraws{
++    WidescreenProbe::Draw{0x89b1ab98da3d9241ULL, 0x6f0b398b1fc186a9ULL, 4, 480, 400, 3, 65553, 3905},
++    WidescreenProbe::Draw{0x89b1ab98da3d9241ULL, 0x6f0b398b1fc186a9ULL, 4, 480, 400, 1, 65654, 3856},
++    WidescreenProbe::Draw{0x89b1ab98da3d9241ULL, 0x6f0b398b1fc186a9ULL, 18, 480, 400, 3, 65654, 3905},
++    WidescreenProbe::Draw{0x89b1ab98da3d9241ULL, 0x6f0b398b1fc186a9ULL, 4, 480, 400, 1, 65537, 3856},
++    WidescreenProbe::Draw{0x89b1ab98da3d9241ULL, 0x6f0b398b1fc186a9ULL, 4, 480, 400, 0, 65537, 3856},
++    WidescreenProbe::Draw{0x9b343fea686d98e0ULL, 0xac22b79e29209c01ULL, 12, 480, 400, 0, 65654, 3840},
++    WidescreenProbe::Draw{0x89b1ab98da3d9241ULL, 0x6f0b398b1fc186a9ULL, 4, 480, 400, 3, 65654, 3856},
++    WidescreenProbe::Draw{0x9b343fea686d98e0ULL, 0xac22b79e29209c01ULL, 6, 480, 400, 0, 65654, 3840},
++};
++}
+--- /dev/null
++++ b/src/core/arm/fastinterp/remasked_player_hud.h
+@@ -0,0 +1,331 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++#pragma once
++#include "mm3d/hud_adjustments.h"
++#include "mm3d/native_inventory.h"
++#include "mm3d/touch_hud.h"
++namespace MM3D::PlayerHud {
++using namespace NativeInventory;
++using namespace HudAdjustments;
++// Developer baseline, independent of player-facing HUD preferences.
++inline AtomicButtonPose rupee_keys,carrots;
++inline std::atomic<float> dpad_x{0},dpad_y{0};
++inline void ApplyDpadPosition(float x,float y){dpad_x=x;dpad_y=y;}
++inline std::atomic<float> magic_height{0}; // Zero leaves the installed layout unchanged.
++inline void ApplyMagicHeight(float height){magic_height=height;}
++inline void ApplyCarrots(const ButtonPose& p){carrots.x=p.x;carrots.y=p.y;carrots.scale=p.scale;}
++inline void ApplyRupeeKeys(const ButtonPose& p){rupee_keys.x=p.x;rupee_keys.y=p.y;rupee_keys.scale=p.scale;}
++struct Bounds {
++    float left=1e9f,top=1e9f,right=-1e9f,bottom=-1e9f;
++    bool Valid() const {return left<=right&&top<=bottom;}
++    void Add(float x,float y){left=std::min(left,x);right=std::max(right,x);top=std::min(top,y);bottom=std::max(bottom,y);}
++    void Add(const Bounds& b){if(b.Valid()){Add(b.left,b.top);Add(b.right,b.bottom);}}
++};
++enum class Anchor {TopLeft,TopRight,BottomLeft,Center};
++inline NativeInventory::Hook::Affine Mapping(const Bounds& b,Anchor anchor,float factor,float padding){
++    const float x=anchor==Anchor::TopRight?b.right:anchor==Anchor::Center?(b.left+b.right)*.5f:b.left;
++    const float y=anchor==Anchor::BottomLeft?b.bottom:anchor==Anchor::Center?(b.top+b.bottom)*.5f:b.top;
++    return {factor,0,0,factor,x*(1-factor),y*(1-factor)+padding};
++}
++struct Hook {
++    NativeInventory::Hook helper;
++    using Write=NativeInventory::Hook::Write;
++    std::vector<std::vector<Write>> frames;
++    // A/B and X/Y/I/II live in different layouts. Cache their unadjusted
++    // rendered bounds so all six scale about the same top-right corner.
++    std::array<Bounds,2> button_bounds;
++    std::array<unsigned,3> touch_trace_frames{};
++    // Tatl (Hud.chat_alart) belongs to the D-pad in Hud2. Keep the native
++    // upper-left bounds so both layouts use the same anchor and vertical push.
++    // Cache bounds, not a transform: slider changes apply in either draw order.
++    std::array<Bounds,3> upper_bounds; // Dpad, Magic, Hearts
++    template<class M> bool Measure(M& m,U32 node,Bounds& bounds,bool visibleOnly=false) {
++        std::vector<Write> unused;std::vector<U32> nodes;
++        if(!helper.Transform(m,node,unused,nodes,{1,0,0,1,0,0}))return false;
++        const auto f=[&](U32 at)->std::optional<float>{auto b=m.Read(at);if(!b)return {};
++            float v=std::bit_cast<float>(*b);return std::isfinite(v)?std::optional<float>(v):std::nullopt;};
++        std::vector<U32> excluded;
++        for(auto n:nodes){
++            if(visibleOnly){
++                if(std::find(excluded.begin(),excluded.end(),n)!=excluded.end())continue;
++                const auto flags=m.Read(n+0xd4),alpha=m.Read(n+0x134);
++                const float opacity=alpha?std::bit_cast<float>(*alpha):1.f;
++                if((flags&&!(*flags&1))||!std::isfinite(opacity)||opacity<=0){
++                    // Hidden counters can retain old child matrices and alpha.
++                    // Exclude their entire subtree, not just the hidden parent.
++                    std::vector<Write> ignored;std::vector<U32> branch;
++                    if(!helper.Transform(m,n,ignored,branch,{1,0,0,1,0,0}))return false;
++                    excluded.insert(excluded.end(),branch.begin(),branch.end());continue;
++                }
++            }
++            auto geo=m.Read(n+0x28);if(!geo)return false;if(!*geo)continue;
++            auto type=m.Read(*geo+4);if(!type)return false;if((*type&65535)!=6)continue;
++            auto x=f(*geo+0x14),y=f(*geo+0x18),w=f(*geo+0x20),h=f(*geo+0x24),
++                 xx=f(n+0xe0),xy=f(n+0xe4),yx=f(n+0xf0),yy=f(n+0xf4),tx=f(n+0xec),ty=f(n+0xfc);
++            if(!x||!y||!w||!h||!xx||!xy||!yx||!yy||!tx||!ty)return false;
++            for(float px:{*x,*x+*w})for(float py:{*y,*y+*h})bounds.Add(*tx+*xx*px+*xy*py,*ty+*yx*px+*yy*py);
++        }
++        return bounds.Valid();
++    }
++    template<class M> void SpaceHearts(M& m,const std::vector<U32>& nodes) {
++        const int steps=std::clamp(heart_spacing.load(),-HeartSpacingLimit,HeartSpacingLimit);
++        if(!steps)return;
++        std::array<U32,20> hearts{};
++        for(unsigned i=0;i<hearts.size();++i) {
++            char name[]="heart00";name[5]='0'+i/10;name[6]='0'+i%10;
++            for(auto node:nodes)if(Named(m,node,name)){hearts[i]=node;break;}
++        }
++        std::vector<Write> writes;std::vector<U32> seen;
++        // Translate whole heart instances (including empty/fill/pulse layers).
++        // Keep the first heart in each row fixed; apply after player scaling so
++        // spacing follows both the editor baseline and player size adjustments.
++        for(unsigned i=0;i<hearts.size();++i) {
++            const auto first=hearts[i/10*10],node=hearts[i];
++            if(!first||!node||i%10==0)continue;
++            const auto a=m.Read(first+0xec),b=m.Read(node+0xec);
++            if(!a||!b)return;
++            const float origin=std::bit_cast<float>(*a),x=std::bit_cast<float>(*b);
++            if(!std::isfinite(origin)||!std::isfinite(x))return;
++            const float dx=(x-origin)*(.005f*steps);
++            if(!helper.Transform(m,node,writes,seen,{1,0,0,1,dx,0}))return;
++        }
++        for(auto w:writes)m.Write(w.address,w.after);
++        frames.back().insert(frames.back().end(),writes.begin(),writes.end());
++    }
++    template<class M> void MoveButtons(M& m,const std::vector<U32>& nodes,bool actions) {
++        constexpr std::array<const char*,6> icons{"icon_item_x_g","icon_item_y_g","icon_item_1_g","icon_item_2_g","a_action_button","b_action_button"};
++        constexpr std::array<const char*,4> bases{"btn_x_g","btn_y_g","btn_corner01_g","btn_corner03_g"};
++        std::vector<Write> writes;std::vector<U32> seen;
++        for(unsigned i=0;i<6;++i) {
++            if(actions!=(i>=4))continue;
++            const int dx=button_x[i].load(),dy=button_y[i].load();if(!dx&&!dy)continue;
++            for(auto n:nodes)if(Named(m,n,icons[i])||(i<4&&Named(m,n,bases[i])))
++                if(!helper.Transform(m,n,writes,seen,{1,0,0,1,float(dx),float(dy)}))return;
++        }
++        for(auto w:writes)m.Write(w.address,w.after);
++        frames.back().insert(frames.back().end(),writes.begin(),writes.end());
++    }
++    template<class M> void PlaceTouchHud(M& m,const std::vector<U32>& nodes,bool actions,bool hud2,const TouchHud::State* anchors=nullptr) {
++        const auto state=anchors?*anchors:TouchHud::Snapshot();if(!state.enabled)return;
++        constexpr const char* icons[]{"a_action_button","b_action_button","icon_item_x_g","icon_item_y_g",
++            "icon_item_1_g","icon_item_2_g","icon_u_container","icon_d_container","icon_l_container","icon_r_container"};
++        constexpr const char* artwork[]{"a_action_text","a_action_icon","icon_x_btn","icon_y_btn",
++            "icon_c_btn01","icon_c_btn03","icon_u","icon_d","icon_l","icon_r"};
++        std::vector<Write> writes;
++        const unsigned kind=actions?0:hud2?1:2;
++        const auto sample=touch_trace_frames[kind]++;
++        const bool trace=sample<2||(sample<18000&&sample%600==0);
++        for(unsigned slot=0;slot<state.anchors.size();++slot){
++            if(slot>=6?!hud2:actions!=(slot<2))continue;
++            const auto target=state.anchors[slot];if(!target.Valid())continue;
++            U32 icon=0;for(auto n:nodes)if(Named(m,n,icons[slot])){icon=n;break;}
++            if(!icon){if(trace)TouchHud::Trace(slot,"missing-icon",target);continue;}
++            std::vector<Write> unused;std::vector<U32> children;
++            if(!helper.Transform(m,icon,unused,children,{1,0,0,1,0,0})){if(trace)TouchHud::Trace(slot,"walk-failed",target);continue;}
++            U32 art=0;for(auto n:children)if(Named(m,n,artwork[slot])){art=n;break;}
++            // Native button backgrounds and their labels have different origins
++            // from the item image. Position from the live image, never its base.
++            Bounds bounds;if(!Measure(m,art?art:icon,bounds,true)){
++                if(trace)TouchHud::Trace(slot,"measure-failed",target,float(art),float(m.Read((art?art:icon)+0x28).value_or(0)));
++                continue;
++            }
++            if(trace)TouchHud::Trace(slot,"bounds",target,bounds.left,bounds.top,bounds.right,bounds.bottom);
++            const float width=bounds.right-bounds.left,height=bounds.bottom-bounds.top;
++            if(width<.01f||height<.01f)continue;
++            const float factor=slot==0?std::min(target.diameter*.85f/width,target.diameter*.28f/height):
++                target.diameter*(slot>=6?.5f:.42f)/std::max(width,height);
++            const float cx=(bounds.left+bounds.right)*.5f,cy=(bounds.top+bounds.bottom)*.5f;
++            std::vector<U32> seen;
++            std::vector<Write> branch;
++            if(!helper.Transform(m,icon,branch,seen,{factor,0,0,factor,target.x-cx*factor,target.y-cy*factor})){
++                if(trace)TouchHud::Trace(slot,"placement-failed",target);continue;
++            }
++            writes.insert(writes.end(),branch.begin(),branch.end());
++        }
++        // The Android view draws the outlines. Suppress the native duplicate
++        // bases and letter labels while retaining live item counts and fades.
++        for(auto n:nodes){
++            bool hide=false;
++            for(const char* name:{"a_button_base","btn_x_g","btn_y_g","btn_corner01_g","btn_corner03_g",
++                "icon_x_base","icon_y_base","icon_1_base","icon_2_base","disp_x_pane","disp_y_pane",
++                "disp_1_pane","disp_2_pane","pane_dpad","always_dpad_outline","icon_item_oca_g"})
++                if(Named(m,n,name)){hide=true;break;}
++            if(hide && (!anchors || !Named(m,n,"pane_dpad"))){std::vector<U32> seen;std::vector<Write> branch;
++                if(helper.Transform(m,n,branch,seen,{0,0,0,0,0,0}))writes.insert(writes.end(),branch.begin(),branch.end());
++                else if(trace)TouchHud::Trace(99,"hide-walk-failed",{},float(n));
++            }
++        }
++        for(auto w:writes)m.Write(w.address,w.after);
++        frames.back().insert(frames.back().end(),writes.begin(),writes.end());
++    }
++    template<class M> void Begin(M& m,U32 layout) {
++        const bool nested=std::any_of(frames.begin(),frames.end(),[](const auto& f){return !f.empty();});
++        frames.emplace_back();if(nested)return;
++        const bool hud=LayoutNamed(m,layout,"Hud"),hud2=LayoutNamed(m,layout,"Hud2"),icons=LayoutNamed(m,layout,"HudItemIconSet");
++        if(!hud&&!hud2&&!icons)return;
++        std::vector<Write> unused;std::vector<U32> nodes;
++        if(!helper.Transform(m,layout+8,unused,nodes,{1,0,0,1,0,0}))return;
++        const auto find=[&](const char* name){for(auto n:nodes)if(Named(m,n,name))return n;return U32{0};};
++        if(hud2)if(auto meter=find("magic_gauge_g")) {
++            const float target=magic_height.load();
++            const auto sy=m.Read(meter+0x4c);
++            Bounds bar;
++            if(auto base=find("gauge_base"))Measure(m,base,bar);
++            if(!bar.Valid())Measure(m,meter,bar);
++            if(std::isfinite(target)&&target>=.5f&&target<=2.f&&sy&&bar.Valid()) {
++                const float installed=std::bit_cast<float>(*sy);
++                if(std::isfinite(installed)&&installed>0) {
++                    // Local Y scale includes the height already baked into the
++                    // archive. Replace it rather than multiplying it twice.
++                    const float ratio=target*Factor(magic_height_steps.load())/installed;
++                    if(ratio!=1.f) {
++                        std::vector<Write> height_writes;std::vector<U32> seen;
++                        // The layout origin is not the visible top edge; panes
++                        // can extend above it. Grow downward from the frame top.
++                        if(!helper.Transform(m,meter,height_writes,seen,{1,0,0,ratio,0,bar.top*(1-ratio)}))return;
++                        for(auto w:height_writes)m.Write(w.address,w.after);
++                        frames.back()=std::move(height_writes);
++                    }
++                }
++            }
++        }
++        struct Group {std::vector<U32> roots;Part part;Anchor anchor;bool bottom=false;U32 anchor_node=0;};
++        std::vector<Group> groups;
++        const auto add=[&](const char* name,Part part,Anchor anchor,bool bottom=false,const char* reference=nullptr){
++            if(auto n=find(name))groups.push_back({{n},part,anchor,bottom,reference?find(reference):0});};
++        if(hud2){
++            add("heart_status",Hearts,Anchor::TopLeft);
++            add("magic_gauge_g",Magic,Anchor::TopLeft,false,"gauge_base");
++            add("hud_dpad",Dpad,Anchor::TopLeft);
++            add("rupee_g",Rupees,Anchor::BottomLeft,true);
++            add("key_g",Rupees,Anchor::BottomLeft,true);
++            add("carrot_status",Carrots,Anchor::Center,true);
++            std::vector<U32> roots;for(const char* name:{"item_icon_set","icon_item_oca_g"})if(auto n=find(name))roots.push_back(n);
++            if(!roots.empty())groups.push_back({roots,Buttons,Anchor::TopRight});
++        }
++        if(icons)groups.push_back({{layout+8},Buttons,Anchor::TopRight});
++        if(hud){
++            add("action_button_g",Buttons,Anchor::TopRight);
++            add("minigame_g",Minigame,Anchor::TopRight);
++            // Both clock displays share the main clock's anchor. Including the
++            // countdown in the bounds would move that anchor when it appears.
++            std::vector<U32> clock_roots;
++            for(const char* name:{"game_timer_g","last_timer_g"})
++                if(auto n=find(name))clock_roots.push_back(n);
++            auto clock_anchor=find("timer_decoration_g");
++            if(!clock_anchor)clock_anchor=find("game_timer_g");
++            if(!clock_roots.empty())groups.push_back({clock_roots,Clock,Anchor::Center,true,clock_anchor});
++            add("eventTimer",Timer,Anchor::Center);
++            add("chat_alart",Dpad,Anchor::TopLeft);
++        }
++        // Measure every group before applying any player transformations.
++        std::vector<Bounds> measured(groups.size());
++        for(unsigned i=0;i<groups.size();++i){
++            const auto& g=groups[i];auto& b=measured[i];
++            if(g.anchor_node)Measure(m,g.anchor_node,b);
++            if(!b.Valid())for(auto n:g.roots)Measure(m,n,b);
++            if(g.part==Carrots) {
++                // Use the six carrot faces, excluding the animated flash layers.
++                // Include spent carrots so using a boost never shifts the pivot.
++                Bounds faces;
++                for(auto n:g.roots) {
++                    std::vector<Write> unused;std::vector<U32> children;
++                    if(helper.Transform(m,n,unused,children,{1,0,0,1,0,0}))
++                        for(auto child:children)if(Named(m,child,"carrot_pane"))Measure(m,child,faces);
++                }
++                if(faces.Valid())b=faces;
++            }
++            if(g.part==Buttons) {
++                // Item artwork, action labels and inactive ocarina panes can extend
++                // far beyond the button circles. They must not define the pivot.
++                Bounds bases;
++                for(auto n:nodes)for(const char* name:{"a_button_base","btn_corner01_g","btn_x_g","btn_y_g","btn_corner03_g"})
++                    if(Named(m,n,name))Measure(m,n,bases);
++                if(bases.Valid())b=bases;
++                if(b.Valid())button_bounds[hud?1:0]=b;
++            }
++        }
++        if(hud2) {
++            upper_bounds={};
++            for(unsigned i=0;i<groups.size();++i)
++                if(groups[i].part==Hearts||groups[i].part==Magic||groups[i].part==Dpad)
++                    upper_bounds[groups[i].part]=measured[i];
++        }
++        Bounds upper;
++        for(const auto& b:upper_bounds)upper.Add(b);
++        const float global=Factor(overall.load());
++        std::vector<Write> writes;
++        for(unsigned i=0;i<groups.size();++i){
++            const auto& g=groups[i];auto b=measured[i];
++            ButtonPose baseline;
++            if(g.part==Rupees||g.part==Carrots) {
++                const auto& pose=g.part==Rupees?rupee_keys:carrots;
++                baseline={pose.x.load(),pose.y.load(),pose.scale.load()};
++                if(!std::isfinite(baseline.x)||!std::isfinite(baseline.y)||!std::isfinite(baseline.scale)||baseline.scale<.25f||baseline.scale>3)baseline={};
++            }
++            const float scale=Scale(g.part)*baseline.scale,padding=g.bottom?-Bottom():Top();
++
++            if(g.part==Buttons){b={};for(const auto& part:button_bounds)b.Add(part);}
++            // Do not scale Tatl around its own corner. Until Hud2 has been
++            // observed, leave it native rather than inventing a D-pad anchor.
++            if(hud&&g.part==Dpad)b=upper_bounds[Dpad];
++            if(!b.Valid())continue;
++            auto mapping=Mapping(b,g.anchor,scale,padding);
++            // EventTimer contains alternate language panes and animated digits.
++            // Their combined bounds are not the visible timer's center. Anchor
++            // horizontal scaling to the native top screen's center instead.
++            if(g.part==Timer)mapping.tx=200.f*(1-scale);
++            // Compose editor size/position before user scaling about the moved
++            // anchor. User offsets/padding remain screen pixels.
++            mapping.tx+=baseline.x;mapping.ty+=baseline.y;
++            if(upper.Valid()&&(g.part==Hearts||g.part==Magic||g.part==Dpad)) {
++                // Scale the upper-left arrangement together, including the gaps.
++                // Individual growth also pushes lower elements down; editor
++                // positions and any intentional baseline overlap remain intact.
++                float push=0;
++                for(const auto part:{Hearts,Magic}) {
++                    const auto& above=upper_bounds[part];
++                    if(part!=g.part&&above.Valid()&&above.bottom<=b.top)
++                        push+=(above.bottom-above.top)*(Factor(elements[part].load())-1);
++                }
++                const float local=Factor(elements[g.part].load());
++                mapping.tx=upper.left*(1-global)+global*b.left*(1-local);
++                mapping.ty=upper.top*(1-global)+global*(b.top*(1-local)+push)+padding;
++            }
++            if(g.part==Dpad){mapping.tx+=dpad_x.load();mapping.ty+=dpad_y.load();}
++            // User offsets are screen-space pixels, after scale and padding.
++            mapping.tx+=X(g.part);mapping.ty+=Y(g.part);
++            if(mapping.xx==1&&mapping.yy==1&&mapping.tx==0&&mapping.ty==0)continue;
++            std::vector<U32> seen;
++            for(auto n:g.roots)if(!helper.Transform(m,n,writes,seen,mapping))return;
++        }
++        for(auto w:writes)m.Write(w.address,w.after);
++        frames.back().insert(frames.back().end(),writes.begin(),writes.end());
++        MoveButtons(m,nodes,hud);
++        if(hud2)SpaceHearts(m,nodes);
++        // Multiply the resolved native alpha, retaining cutscene/transition
++        // fades. Restrict this to gameplay groups, not screen covers or menus.
++        const float alpha=Opacity();
++        if(alpha!=1.f) {
++            std::vector<Write> fades;std::vector<U32> faded;
++            for(const auto& group:groups)for(U32 root:group.roots) {
++                std::vector<Write> unused;std::vector<U32> children;
++                if(!helper.Transform(m,root,unused,children,{1,0,0,1,0,0}))return;
++                for(U32 node:children) {
++                    if(std::find(faded.begin(),faded.end(),node)!=faded.end())continue;
++                    faded.push_back(node);
++                    const auto bits=m.Read(node+0x134);if(!bits)return;
++                    const float native=std::bit_cast<float>(*bits);if(!std::isfinite(native))return;
++                    fades.push_back({node+0x134,*bits,std::bit_cast<U32>(native*alpha)});
++                }
++            }
++            for(auto w:fades)m.Write(w.address,w.after);
++            frames.back().insert(frames.back().end(),fades.begin(),fades.end());
++        }
++        PlaceTouchHud(m,nodes,hud,hud2);
++    }
++    template<class M> void End(M& m){if(frames.empty())return;
++        for(auto i=frames.back().rbegin();i!=frames.back().rend();++i)m.Write(i->address,i->before);
++        frames.pop_back();
++    }
++};
++}
+--- /dev/null
++++ b/src/core/arm/fastinterp/remasked_presentation_values.h
+@@ -0,0 +1,223 @@
++// Generated from the ReMasked Android presentation preset.
++#pragma once
++#include <string_view>
++namespace Core::FastInterp {
++inline constexpr float PresentationValue(std::string_view key, float fallback) {
++    if (key == "brown_background_scale") return 0.6900000f;
++    if (key == "brown_background_y") return 75.5000000f;
++    if (key == "brown_shadow_opacity") return 0.7500000f;
++    if (key == "brown_shadow_width") return 0.9900000f;
++    if (key == "dungeon_map_0_scale") return 1.0000000f;
++    if (key == "dungeon_map_0_x") return 40.2000008f;
++    if (key == "dungeon_map_0_y") return 32.0999985f;
++    if (key == "dungeon_map_1_scale") return 1.0000000f;
++    if (key == "dungeon_map_1_x") return 40.0999985f;
++    if (key == "dungeon_map_1_y") return 28.6000004f;
++    if (key == "dungeon_map_2_scale") return 0.6500000f;
++    if (key == "dungeon_map_2_x") return 40.0999985f;
++    if (key == "dungeon_map_2_y") return 69.8000031f;
++    if (key == "dungeon_map_3_scale") return 0.6200000f;
++    if (key == "dungeon_map_3_x") return 162.5000000f;
++    if (key == "dungeon_map_3_y") return 66.3000031f;
++    if (key == "dungeon_map_4_scale") return 0.8500000f;
++    if (key == "dungeon_map_4_x") return 63.0000000f;
++    if (key == "dungeon_map_4_y") return -168.3999939f;
++    if (key == "dungeon_map_5_scale") return 1.0000000f;
++    if (key == "dungeon_map_5_x") return -512.0000000f;
++    if (key == "dungeon_map_5_y") return -240.0000000f;
++    if (key == "dungeon_map_6_scale") return 0.1000000f;
++    if (key == "dungeon_map_6_x") return -512.0000000f;
++    if (key == "dungeon_map_6_y") return -240.0000000f;
++    if (key == "dungeon_map_7_scale") return 0.2500000f;
++    if (key == "dungeon_map_7_x") return 20.0000000f;
++    if (key == "dungeon_map_7_y") return 1.9000000f;
++    if (key == "dungeon_map_8_scale") return 0.6000000f;
++    if (key == "dungeon_map_8_x") return 0.0000000f;
++    if (key == "dungeon_map_8_y") return 0.0000000f;
++    if (key == "dungeon_map_9_scale") return 0.1000000f;
++    if (key == "dungeon_map_9_x") return -512.0000000f;
++    if (key == "dungeon_map_9_y") return -240.0000000f;
++    if (key == "dungeon_map_panel_0_scale") return 0.4400000f;
++    if (key == "dungeon_map_panel_0_x") return -19.1000004f;
++    if (key == "dungeon_map_panel_0_y") return 134.3000031f;
++    if (key == "dungeon_map_panel_1_scale") return 0.4400000f;
++    if (key == "dungeon_map_panel_1_x") return 288.0000000f;
++    if (key == "dungeon_map_panel_1_y") return 134.3000031f;
++    if (key == "dungeon_map_panel_darkness") return 0.5500000f;
++    if (key == "dungeon_map_side_panels") return 1.0000000f;
++    if (key == "dungeon_map_top") return 1.0000000f;
++    if (key == "dungeon_map_top_panel_scale") return 0.5290000f;
++    if (key == "dungeon_map_top_panel_x") return -45.9000015f;
++    if (key == "dungeon_map_top_panel_y") return 0.0000000f;
++    if (key == "dungeon_map_top_strip") return 1.0000000f;
++    if (key == "gear_0_scale") return 0.5800000f;
++    if (key == "gear_0_x") return -10.6999998f;
++    if (key == "gear_0_y") return 87.9000015f;
++    if (key == "gear_1_scale") return 0.6500000f;
++    if (key == "gear_1_x") return -259.6000061f;
++    if (key == "gear_1_y") return 35.0000000f;
++    if (key == "gear_3_scale") return 1.0000000f;
++    if (key == "gear_3_x") return -257.8999939f;
++    if (key == "gear_3_y") return 0.0000000f;
++    if (key == "gear_6_scale") return 0.8800000f;
++    if (key == "gear_6_x") return 78.6999969f;
++    if (key == "gear_6_y") return -20.6000004f;
++    if (key == "gear_enabled") return 1.0000000f;
++    if (key == "gear_horizontal") return 1.0000000f;
++    if (key == "inventory_background_enabled") return 1.0000000f;
++    if (key == "inventory_background_x") return -73.0999985f;
++    if (key == "inventory_bar_enabled") return 1.0000000f;
++    if (key == "inventory_bar_scale") return 0.6000000f;
++    if (key == "inventory_bar_spacing") return 69.0000000f;
++    if (key == "inventory_bar_x") return -14.3000002f;
++    if (key == "inventory_bar_y") return 34.0000000f;
++    if (key == "inventory_button_back_scale") return 1.0000000f;
++    if (key == "inventory_button_back_x") return -95.5000000f;
++    if (key == "inventory_button_back_y") return 0.0000000f;
++    if (key == "inventory_button_gear_scale") return 0.6200000f;
++    if (key == "inventory_button_gear_x") return -14.8999996f;
++    if (key == "inventory_button_gear_y") return 19.7000008f;
++    if (key == "inventory_button_items_scale") return 0.6400000f;
++    if (key == "inventory_button_items_x") return -61.2000008f;
++    if (key == "inventory_button_items_y") return 21.2999992f;
++    if (key == "inventory_button_masks_scale") return 0.6400000f;
++    if (key == "inventory_button_masks_x") return -31.2999992f;
++    if (key == "inventory_button_masks_y") return 21.2999992f;
++    if (key == "inventory_buttons_enabled") return 1.0000000f;
++    if (key == "inventory_description_scale") return 0.6000000f;
++    if (key == "inventory_description_x") return 83.5000000f;
++    if (key == "inventory_description_y") return 1.8000000f;
++    if (key == "inventory_help_0_scale") return 0.5300000f;
++    if (key == "inventory_help_0_x") return 157.8000031f;
++    if (key == "inventory_help_0_y") return 230.3999939f;
++    if (key == "inventory_help_button_gap") return 4.0999999f;
++    if (key == "inventory_help_button_scale") return 0.9100000f;
++    if (key == "inventory_help_enabled") return 1.0000000f;
++    if (key == "inventory_help_horizontal") return 1.0000000f;
++    if (key == "inventory_help_spacing") return 20.8999996f;
++    if (key == "inventory_help_text_scale") return 1.0000000f;
++    if (key == "inventory_high_res_pause") return 1.0000000f;
++    if (key == "inventory_map_prompt_arrow_scale") return 0.7100000f;
++    if (key == "inventory_map_prompt_arrow_x") return 0.0000000f;
++    if (key == "inventory_map_prompt_arrow_y") return 0.0000000f;
++    if (key == "inventory_map_prompt_r_scale") return 1.0000000f;
++    if (key == "inventory_map_prompt_r_x") return 6.0000000f;
++    if (key == "inventory_map_prompt_r_y") return -1.8000000f;
++    if (key == "inventory_map_prompt_scale") return 0.6000000f;
++    if (key == "inventory_map_prompt_text_scale") return 1.0000000f;
++    if (key == "inventory_map_prompt_text_x") return 0.0000000f;
++    if (key == "inventory_map_prompt_text_y") return -3.5999999f;
++    if (key == "inventory_map_prompt_x") return 9.0000000f;
++    if (key == "inventory_map_prompt_y") return -89.5999985f;
++    if (key == "inventory_masks_scale") return 0.9700000f;
++    if (key == "inventory_masks_x") return 2.4000001f;
++    if (key == "inventory_masks_y") return 0.0000000f;
++    if (key == "inventory_model_scale") return 0.8700000f;
++    if (key == "inventory_model_x") return 4.1100001f;
++    if (key == "inventory_model_y") return 0.4400000f;
++    if (key == "inventory_native") return 1.0000000f;
++    if (key == "inventory_panel_scale") return 0.6000000f;
++    if (key == "inventory_panel_x") return -12.0000000f;
++    if (key == "inventory_panel_y") return 87.6999969f;
++    if (key == "inventory_prompt_opacity") return 0.8500000f;
++    if (key == "inventory_shared_slide") return 1.0000000f;
++    if (key == "item_present_0_x") return -247.3999939f;
++    if (key == "item_present_1_scale") return 0.5300000f;
++    if (key == "item_present_1_x") return -8.8999996f;
++    if (key == "item_present_1_y") return 53.5000000f;
++    if (key == "item_present_2_scale") return 0.5300000f;
++    if (key == "item_present_2_x") return 6.5000000f;
++    if (key == "item_present_2_y") return 163.6999969f;
++    if (key == "item_present_3_scale") return 0.6000000f;
++    if (key == "item_present_3_x") return -36.7999992f;
++    if (key == "item_present_3_y") return -93.5999985f;
++    if (key == "item_present_4_scale") return 1.0000000f;
++    if (key == "item_present_4_x") return -512.0000000f;
++    if (key == "item_present_4_y") return 435.6000061f;
++    if (key == "item_present_5_scale") return 1.0000000f;
++    if (key == "item_present_5_x") return 435.6000061f;
++    if (key == "item_present_5_y") return 481.3999939f;
++    if (key == "item_present_6_scale") return 0.7000000f;
++    if (key == "item_present_6_x") return 69.0000000f;
++    if (key == "item_present_6_y") return 0.6000000f;
++    if (key == "item_present_help_scale") return 0.7200000f;
++    if (key == "item_present_help_spacing") return 0.0000000f;
++    if (key == "item_present_help_x") return -5.6999998f;
++    if (key == "item_present_help_y") return 210.6000061f;
++    if (key == "item_present_horizontal") return 1.0000000f;
++    if (key == "item_present_native") return 1.0000000f;
++    if (key == "map_items_prompt_arrow_scale") return 0.7100000f;
++    if (key == "map_items_prompt_arrow_x") return 0.0000000f;
++    if (key == "map_items_prompt_arrow_y") return 0.0000000f;
++    if (key == "map_items_prompt_l_scale") return 1.0000000f;
++    if (key == "map_items_prompt_l_x") return -6.0000000f;
++    if (key == "map_items_prompt_l_y") return -1.8000000f;
++    if (key == "map_items_prompt_scale") return 0.6000000f;
++    if (key == "map_items_prompt_text_scale") return 1.0000000f;
++    if (key == "map_items_prompt_text_x") return 0.0000000f;
++    if (key == "map_items_prompt_text_y") return -3.5999999f;
++    if (key == "map_items_prompt_x") return -9.0000000f;
++    if (key == "map_items_prompt_y") return -89.5999985f;
++    if (key == "mask_present_1_scale") return 0.4600000f;
++    if (key == "mask_present_1_x") return -8.8999996f;
++    if (key == "mask_present_1_y") return 76.9000015f;
++    if (key == "mask_present_3_scale") return 0.6000000f;
++    if (key == "mask_present_3_x") return -32.2000008f;
++    if (key == "mask_present_3_y") return -67.4000015f;
++    if (key == "mask_present_4_scale") return 1.0000000f;
++    if (key == "mask_present_4_x") return -512.0000000f;
++    if (key == "mask_present_4_y") return 435.6000061f;
++    if (key == "mask_present_5_scale") return 1.0000000f;
++    if (key == "mask_present_5_x") return 435.6000061f;
++    if (key == "mask_present_5_y") return 481.3999939f;
++    if (key == "mask_present_6_scale") return 0.6300000f;
++    if (key == "mask_present_6_x") return 80.5999985f;
++    if (key == "mask_present_6_y") return 5.5999999f;
++    if (key == "mask_present_help_scale") return 0.7200000f;
++    if (key == "mask_present_help_spacing") return 0.0000000f;
++    if (key == "mask_present_help_x") return -5.6999998f;
++    if (key == "mask_present_help_y") return 210.6000061f;
++    if (key == "mask_present_native") return 1.0000000f;
++    if (key == "notebook_live_0_scale") return 0.6900000f;
++    if (key == "notebook_live_0_x") return -47.5999985f;
++    if (key == "notebook_live_0_y") return 9.6000004f;
++    if (key == "notebook_live_10_scale") return 0.6500000f;
++    if (key == "notebook_live_10_x") return 94.6999969f;
++    if (key == "notebook_live_10_y") return 88.1999969f;
++    if (key == "notebook_live_1_scale") return 0.5500000f;
++    if (key == "notebook_live_1_x") return 223.5000000f;
++    if (key == "notebook_live_1_y") return 39.0000000f;
++    if (key == "notebook_live_2_scale") return 0.5900000f;
++    if (key == "notebook_live_2_x") return 221.3999939f;
++    if (key == "notebook_live_2_y") return 62.0999985f;
++    if (key == "notebook_live_3_scale") return 0.6000000f;
++    if (key == "notebook_live_3_x") return -7.8000002f;
++    if (key == "notebook_live_3_y") return 18.6000004f;
++    if (key == "notebook_live_4_scale") return 0.5400000f;
++    if (key == "notebook_live_4_x") return 227.1999969f;
++    if (key == "notebook_live_4_y") return 37.5999985f;
++    if (key == "notebook_live_5_scale") return 1.0000000f;
++    if (key == "notebook_live_5_x") return -512.0000000f;
++    if (key == "notebook_live_5_y") return -512.0000000f;
++    if (key == "notebook_live_6_scale") return 1.0000000f;
++    if (key == "notebook_live_6_x") return -512.0000000f;
++    if (key == "notebook_live_6_y") return -512.0000000f;
++    if (key == "notebook_live_7_scale") return 1.0000000f;
++    if (key == "notebook_live_7_x") return 183.3999939f;
++    if (key == "notebook_live_7_y") return 0.0000000f;
++    if (key == "notebook_live_8_scale") return 1.0000000f;
++    if (key == "notebook_live_8_x") return 179.6000061f;
++    if (key == "notebook_live_8_y") return 0.0000000f;
++    if (key == "notebook_live_9_scale") return 1.0000000f;
++    if (key == "notebook_live_9_x") return -512.0000000f;
++    if (key == "notebook_live_9_y") return -512.0000000f;
++    if (key == "notebook_map_prompt_y") return -16.1000004f;
++    if (key == "world_map_native_zoom_scale") return 1.0000000f;
++    if (key == "world_map_native_zoom_x") return 540.2999878f;
++    if (key == "world_map_native_zoom_y") return 0.0000000f;
++    if (key == "world_map_zoom_prompt_scale") return 0.8000000f;
++    if (key == "world_map_zoom_prompt_x") return 0.0000000f;
++    if (key == "world_map_zoom_prompt_y") return 0.0000000f;
++    return fallback;
++}
++} // namespace Core::FastInterp
+--- /dev/null
++++ b/src/core/arm/fastinterp/remasked_startup.h
+@@ -0,0 +1,525 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++#pragma once
++
++#include <array>
++#include "citra_libretro/remasked_touch_bridge.h"
++#include "common/settings.h"
++#include "core/core.h"
++#include "core/core_timing.h"
++#include "core/hle/kernel/kernel.h"
++#include "core/hle/kernel/process.h"
++#include "core/memory.h"
++#include "mm3d/file_select_prompt.h"
++#include "mm3d/player_hud.h"
++#include "mm3d/tatl_reminders.h"
++#include "mm3d/movement_speed.h"
++#include "mm3d/music.h"
++#include "mm3d/camera_distance.h"
++#include "core/arm/fastinterp/fastinterp_types.h"
++#include "core/arm/fastinterp/menu_page_switch.h"
++#include "core/arm/fastinterp/remasked_gameplay.h"
++#include "mm3d/dungeon_map.h"
++#include "mm3d/native_notebook.h"
++#include "mm3d/hud_buttons.h"
++#include "core/arm/fastinterp/remasked_hud_draw.h"
++#include "core/arm/fastinterp/RemaskedPauseDraw.h"
++#include "mm3d/inventory_navigation.h"
++#include "mm3d/ocarina_prompt.h"
++#include "mm3d/song_list.h"
++
++namespace Core::FastInterp {
++
++class RemaskedStartup {
++public:
++    RemaskedStartup(Core::System& system, Memory::MemorySystem& memory)
++        : system(system), guest{memory} {
++        // ReMasked's desktop presentation defaults.
++        ApplyRemaskedPausePresentation();
++        MM3D::HudButtons::Apply({});
++        // ReMasked's approved regular HUD arrangement from presentation.json.
++        using namespace MM3D::HudAdjustments;
++        y[Buttons] = 20;
++        x[Dpad] = -2;
++        y[Dpad] = 20;
++        button_x[2] = -366;
++        // Fit the approved bumper placements to Azahar's 400x240 picture.
++        button_y[2] = -48;
++        button_x[3] = 20;
++        button_y[3] = -83;
++        MM3D::NativeStartup::Apply({
++            {-9, -9, .90f}, {-.89f, 17.92f, .60f}, {0, -3.60f, .47f}, {20.90f, .10f, .54f}});
++        MM3D::NativeFileSelect::Options files;
++        files.stone_spacing = 10.40f;
++        files.poses = {{{-32.5f, 27.4f, .81f}, {75.8f, 37.7f, .74f}, {85.4f, -32.9f, .72f},
++                        {231.2f, 57.9f, .65f}, {93.5f, 38.2f, .71f}}};
++        MM3D::NativeFileSelect::Apply(files);
++        MM3D::OptionsMenu::Apply({-6, 40.3f, .58f, 48, {89.6f, -59.1f, .69f}});
++        MM3D::FileSelectPrompt::Options prompts;
++        prompts.scale = .81f;
++        prompts.icon_scale = .88f;
++        prompts.spacing = 17;
++        MM3D::FileSelectPrompt::Apply(prompts);
++        MM3D::OcarinaPrompt::Options ocarina_options;
++        ocarina_options.x = 3.1f;
++        ocarina_options.y = -12.5f;
++        ocarina_options.scale = .84f;
++        ocarina_options.spacing = 13.5f;
++        MM3D::OcarinaPrompt::Apply(ocarina_options);
++
++        MM3D::SongList::Options song_options;
++        song_options.background_x = -118.3f;
++        song_options.spacing = 34.6f;
++        song_options.column_spacing = 65.6f;
++        song_options.songs = {-3.9f, 38.4f, .58f};
++        song_options.staff = {111.8f, 154.f, .75f};
++        MM3D::SongList::Apply(song_options);
++    }
++
++    u32 Rewrite(u32 pc, u32 word) {
++        using namespace MM3D;
++        if (pc == ShortcutPC && word == ShortcutWord) {
++            return MatchesTitle() && ShortcutCodeMatches() ? 0xef000000 | ShortcutSVC : word;
++        }
++        if (pc == ItemShoulderPC && word == ItemShoulderWord) {
++            return MatchesTitle() && ItemShoulderCodeMatches() ? 0xef000000 | ItemShoulderSVC : word;
++        }
++        if (const auto instruction = IOSMenuPageSwitch::Instruction(pc, word); instruction != word) {
++            return MatchesTitle() && IOSMenuPageSwitch::CodeMatches(guest) ? instruction : word;
++        }
++        if (const auto instruction = ItemPreview::Instruction(pc, word); instruction != word) {
++            return MatchesTitle() && ItemPreview::CodeMatches(guest) ? instruction : word;
++        }
++        if (const auto instruction = DungeonMap::Instruction(pc, word); instruction != word) {
++            return MatchesTitle() && DungeonMap::CodeMatches(guest) ? instruction : word;
++        }
++        if (const auto instruction = NativeNotebook::Instruction(pc, word); instruction != word) {
++            return MatchesTitle() && NativeNotebook::CodeMatches(guest) ? instruction : word;
++        }
++        if (const auto instruction = NativeNotebook::MapInstruction(pc, word); instruction != word) {
++            return MatchesTitle() && NativeNotebook::MapCodeMatches(guest) ? instruction : word;
++        }
++        if (const auto instruction = HudButtons::VisibilityInstruction(pc, word); instruction != word) {
++            return MatchesTitle() && HudButtons::VisibilityCodeMatches(guest) ? instruction : word;
++        }
++        if (const auto instruction = DialogueScale::Instruction(pc, word); instruction != word) {
++            return MatchesTitle() && DialogueScale::CodeMatches(guest) ? instruction : word;
++        }
++        if (const auto instruction = InventoryNavigation::Instruction(pc, word); instruction != word) {
++            return MatchesTitle() && InventoryNavigation::CodeMatches(guest) ? instruction : word;
++        }
++        if (const auto instruction = NativeStartup::Instruction(pc, word); instruction != word) {
++            return MatchesTitle() && NativeStartup::CodeMatches(guest) ? instruction : word;
++        }
++        if (const auto instruction = NativeInventory::Instruction(pc, word); instruction != word) {
++            return MatchesTitle() && NativeInventory::CodeMatches(guest) ? instruction : word;
++        }
++        if (const auto instruction = TatlReminders::Instruction(pc, word); instruction != word) {
++            return MatchesTitle() && TatlReminders::CodeMatches(guest) ? instruction : word;
++        }
++        if (const auto instruction = Music::Instruction(pc, word); instruction != word) {
++            return MatchesTitle() && Music::CodeMatches(guest) ? instruction : word;
++        }
++        if (const auto instruction = MovementSpeed::Instruction(pc, word); instruction != word) {
++            return MatchesTitle() && MovementSpeed::CodeMatches(guest) ? instruction : word;
++        }
++        if (const auto instruction = CameraDistance::Instruction(pc, word); instruction != word) {
++            return MatchesTitle() && CameraDistance::CodeMatches(guest, pc) ? instruction : word;
++        }
++        if (const auto instruction = OptionsMenu::Instruction(pc, word); instruction != word) {
++            return MatchesTitle() && OptionsMenu::CodeMatches(guest) ? instruction : word;
++        }
++        if (pc == SongList::NavPC && word == SongList::NavWord) {
++            return MatchesTitle() && SongList::CodeMatches(guest) ? 0xef000000 | SongList::NavSVC : word;
++        }
++        if (const auto instruction = AzaharGameplay::Rewrite(guest, pc, word); instruction != word)
++            return MatchesTitle() ? instruction : word;
++        return word;
++    }
++
++    bool Run(u32 pc, u32 svc, InterpreterState& state, u32& next_pc) {
++        using namespace MM3D;
++        auto& regs = state.regs;
++        auto& floats = state.vfp_regs;
++        const auto original = guest.Read(pc);
++        if (!original || *original == (0xef000000 | svc)) return false;
++        const u32 hook = 0xef000000 | svc;
++        if (AzaharGameplay::Handles(svc) && MatchesTitle())
++            return gameplay.Run(guest, state, pc, *original, svc, next_pc);
++        // These hot hooks already passed full code validation during decode.
++        // Check the original instruction again before replaying its operation.
++        if (svc >= MovementSpeed::FirstSVC && svc < MovementSpeed::FirstSVC + MovementSpeed::PCs.size() &&
++            MovementSpeed::Instruction(pc, *original) == hook && MatchesTitle()) {
++            MovementSpeed::Apply(guest, regs, floats, svc - MovementSpeed::FirstSVC,
++                                 MovementSpeed::walk.load(), MovementSpeed::climb.load(),
++                                 MovementSpeed::swim.load());
++            return true;
++        }
++        if (svc >= CameraDistance::FirstSVC && svc < CameraDistance::FirstSVC + CameraDistance::Loads.size() &&
++            CameraDistance::Instruction(pc, *original) == hook && MatchesTitle()) {
++            CameraDistance::ApplyLoad(guest, regs, floats, svc - CameraDistance::FirstSVC,
++                                      CameraDistance::multiplier.load());
++            return true;
++        }
++        if (Rewrite(pc, *original) != ((*original & 0xf0000000) | (hook & 0x0fffffff))) {
++            return false;
++        }
++        const bool dual = Settings::values.layout_option.GetValue() != Settings::LayoutOption::SingleScreen;
++        if (svc >= IOSMenuPageSwitch::FirstSVC &&
++            svc < IOSMenuPageSwitch::FirstSVC + IOSMenuPageSwitch::PCs.size()) {
++            regs[15] = next_pc;
++            const auto site = svc - IOSMenuPageSwitch::FirstSVC;
++            switch (site) {
++            case 0: page_switch.Tick(guest, regs[0]); regs[4] = regs[0]; break;
++            case 1:
++                regs[14] = next_pc;
++                if (page_switch.PairPending(guest, regs[1])) regs[0] = 1;
++                else {
++                    regs[15] = regs[2] & ~1u;
++                    state.thumb_mode = (regs[2] & 1u) != 0;
++                }
++                break;
++            case 2:
++                if (page_switch.FinishLayout(guest, regs[0])) floats[0] = std::bit_cast<u32>(10.f);
++                regs[4] = regs[0];
++                break;
++            case 6: floats[1] = IOSMenuPageSwitch::GearBackdropAlpha(); break;
++            case 7: page_switch.MapCloseSound(guest, regs); break;
++            default: page_switch.CaptureCall(guest, regs, site); break;
++            }
++            next_pc = regs[15];
++            return true;
++        }
++        if (svc >= ItemPreview::FirstSVC && svc < ItemPreview::FirstSVC + ItemPreview::PCs.size()) {
++            switch (svc - ItemPreview::FirstSVC) {
++            case 0:
++                item_preview.Enter(guest, regs[0], regs[1]);
++                inventory.Capture(guest, regs[0]);
++                regs[4] = regs[0];
++                break;
++            case 1: item_preview.Leave(regs[0]); regs[4] = regs[0]; break;
++            case 2: item_preview.ModelFrame(regs[0]); dungeon_map.ModelFrame(guest, regs[0]); regs[4] = regs[0]; break;
++            case 3:
++                item_preview.ModelBegin(guest, regs[4], regs[6]);
++                dungeon_map.preview.ModelBegin(guest, regs[4], regs[6]);
++                regs[1] = regs[6];
++                break;
++            case 4: dungeon_map.preview.ModelEnd(guest); item_preview.ModelEnd(guest); break;
++            case 5:
++                item_preview.EnterGear(guest, regs[0], regs[1]);
++                inventory.CaptureGear(guest, regs[0]);
++                regs[4] = regs[0];
++                break;
++            case 6:
++                item_preview.Leave(regs[0]);
++                if (inventory.gear_page == regs[0]) inventory.Capture(guest, 0);
++                regs[5] = regs[0];
++                break;
++            }
++            return true;
++        }
++        if (svc >= DungeonMap::FirstSVC && svc < DungeonMap::FirstSVC + DungeonMap::PCs.size()) {
++            switch (svc - DungeonMap::FirstSVC) {
++            case 0: dungeon_map.Capture(guest, regs[0], regs[1]); regs[4] = regs[0]; break;
++            case 1: dungeon_map.BeforeMap(guest); regs[14] = next_pc; next_pc = 0x2a326c; break;
++            case 2: dungeon_map.AfterMap(guest); regs[0] = guest.memory.Read8(regs[4] + 0x74c); break;
++            case 3: regs[0] = DungeonMap::FilterA(guest, regs[4], guest.memory.Read8(regs[6] + 0xc)); break;
++            case 4:
++                regs[0] = guest.memory.Read32(regs[4] + 0x1c);
++                if (dungeon_map.SkipWorld(guest, regs[4])) next_pc = DungeonMap::WorldEnd;
++                break;
++            }
++            return true;
++        }
++        if (svc >= InventoryNavigation::FirstSVC && svc <= InventoryNavigation::FirstSVC + 2 &&
++            InventoryNavigation::Instruction(pc, *original) == hook) {
++            const bool vertical = svc == InventoryNavigation::FirstSVC;
++            if (svc == InventoryNavigation::FirstSVC + 2) {
++                regs[2] |= regs[12];
++                if (const auto target = InventoryNavigation::GearMove(guest, regs[0], regs[2])) {
++                    regs[2] = *target;
++                    next_pc = *target == guest.memory.Read8(regs[0] + 0x195) ? 0x5a56e0 : 0x5a574c;
++                }
++            } else if (InventoryNavigation::PresentMove(guest, regs[4], regs[13], vertical, regs[5]) ||
++                       InventoryNavigation::Move(guest, regs[4], regs[13], vertical, regs[5])) {
++                next_pc = vertical ? 0x5a0eb0 : 0x5a14c0;
++            } else {
++                regs[1] = guest.memory.Read8(regs[4] + (vertical ? 0x19 : 0x18));
++            }
++            return true;
++        }
++        switch (svc) {
++        case ShortcutSVC: {
++            // Restoration reads the rising-edge buttons here during gameplay.
++            // Use its existing Select -> Items branch for Start.
++            const u32 pressed = guest.memory.Read32(regs[4] + 0x34);
++            regs[2] = (pressed & ~12u) | ((pressed & 8u) ? 4u : 0u);
++            if (pressed & 8u) regs[3] &= ~0x8000u;
++            break;
++        }
++        case ItemShoulderSVC: {
++            // Restoration copied the held and newly pressed touch buttons into
++            // its private snapshot. Add I/II there so its existing usability
++            // filter and inventory assignment both see the correct inputs.
++            constexpr u32 zl = 0x4000, zr = 0x8000;
++            const auto item_bits = [](u32 buttons) {
++                return ((buttons & zl) ? 1u : 0u) | ((buttons & zr) ? 2u : 0u);
++            };
++            const u32 held = regs[3];
++            const u32 pressed = guest.memory.Read32(regs[4] + 0xc);
++            const u16 touch = guest.memory.Read16(regs[5]);
++            const auto camera_request = RemaskedPictographRequested.exchange(0);
++            const auto now = RemaskedPictographTime();
++            const u16 pictograph = camera_request > 0 && now - camera_request <= 250 ? 0x0404u : 0;
++            guest.memory.Write16(regs[5], static_cast<u16>(touch | pictograph | item_bits(held) |
++                                                           (item_bits(pressed) << 8)));
++            guest.memory.Write32(regs[4] + 8, held & ~(zl | zr));
++            guest.memory.Write32(regs[4] + 0xc, pressed & ~(zl | zr));
++            // Continue at the native copy-back after the old ZL camera and
++            // ZR chord paths. 3DS L/R remain mapped to the host triggers.
++            state.SetCPSR((state.GetCPSR() & ~0xe0000000u) | 0x40000000u);
++            next_pc = ItemShoulderCopyBackPC;
++            break;
++        }
++        case NativeNotebook::SVC:
++            notebook.Capture(guest, regs[0]);
++            regs[4] = regs[0];
++            break;
++        case NativeNotebook::MapInputSVC:
++            state.SetCPSR(NativeNotebook::MapInputFlags(guest, regs[4], regs[3], state.GetCPSR()));
++            break;
++        case 0xffffd3:
++            state.SetCPSR(NativeNotebook::ScheduleInputFlags(guest, regs[4], regs[3], state.GetCPSR()));
++            break;
++        case TatlReminders::SVC:
++            regs[4] = TatlReminders::Request(guest, regs[0], regs[1]);
++            break;
++        case Music::SVC:
++            Music::Store(guest, regs[4], regs[5], floats[16]);
++            break;
++        case NativeStartup::FirstSVC:
++            title.Enter(guest, regs[0]);
++            regs[5] = regs[0];
++            break;
++        case NativeStartup::FirstSVC + 1:
++            if (!dual) title.Matrix(guest, regs[5], regs[4]);
++            regs[0] = guest.memory.Read32(regs[5] + 0xc);
++            break;
++        case SongList::NavSVC: {
++            if (!dual && songs.panel && guest.Read(regs[4] + 0x14) == songs.panel) {
++                const auto context = guest.Read(regs[7] + 4);
++                const auto input = context ? guest.Read(*context + 0x16c) : std::nullopt;
++                const auto first = input ? guest.Read(*input + 0x34) : std::nullopt;
++                const auto second = input ? guest.Read(*input + 0x8c) : std::nullopt;
++                const auto flags = guest.Read(regs[5] + 0x1f8);
++                const auto mask = guest.Read(regs[6] + 0x1c);
++                if (first && second && flags && mask) {
++                    regs[2] = SongList::Selection(regs[1], *first | *second, (*flags & *mask) != 0);
++                }
++            }
++            const u32 left = regs[1], right = regs[2], result = left - right;
++            const u32 flags = (result & 0x80000000u) | (result == 0 ? 0x40000000u : 0) |
++                              (left >= right ? 0x20000000u : 0) |
++                              (((left ^ right) & (left ^ result) & 0x80000000u) >> 3);
++            state.SetCPSR((state.GetCPSR() & 0x0fffffffu) | flags);
++            break;
++        }
++        case NativeInventory::FirstSVC:
++            inventory.Capture(guest, regs[0]);
++            regs[4] = regs[0];
++            break;
++        case NativeInventory::FirstSVC + 1:
++            regs[4] = regs[0];
++            if (dual) {
++                dual_draw_pass = regs[1];
++                if (dual_draw_pass == 4) OcarinaInput::Observe(false);
++                break;
++            }
++            pause.present.Pass(guest, regs[0], regs[1]);
++            options.Pass(guest, regs[0], regs[1]);
++            press_start.Pass(guest, regs[0], regs[1]);
++            dungeon_map.Pass(guest, regs[0], regs[1]);
++            songs.Pass(guest, regs[0], regs[1]);
++            ocarina.Pass(guest, regs[0], regs[1]);
++            inventory.Pass(guest, regs[0], regs[1]);
++            notebook.Pass(guest, regs[0], regs[1]);
++            file_select.Pass(guest, regs[0], regs[1]);
++            if (regs[1] == 5 && file_select.route_status != file_select.last_route_status) {
++                LOG_WARNING(Core_ARM11, "ReMasked file select: {}", file_select.route_status);
++                file_select.last_route_status = file_select.route_status;
++            }
++            break;
++        case NativeInventory::FirstSVC + 2:
++            if (dual) {
++                // Keep the native draw queues on their own 3DS screens.
++                if (dual_draw_pass < 4) {
++                    hud_buttons.Begin(guest, regs[4]);
++                    neutral_hud.Begin(guest, regs[4], false, true);
++                }
++                pause.BeginDual(guest, inventory, regs[4], dual_draw_pass >= 4);
++                regs[2] = regs[4] + 8;
++                break;
++            }
++            pause.present.Begin(guest, regs[4]);
++            hud_buttons.Begin(guest, regs[4]);
++            dungeon_map.Begin(guest, regs[4]);
++            songs.Begin(guest, regs[4]);
++            inventory.Begin(guest, regs[4], false);
++            notebook.Begin(guest, regs[4], false);
++            loading_icon.Begin(guest, regs[4]);
++            press_start.Begin(guest, regs[4]);
++            file_select.Begin(guest, regs[4], false);
++            options.Begin(guest, regs[4]);
++            BeginTouchHud(regs[4]);
++            neutral_hud.Begin(guest, regs[4], TouchHud::Snapshot().enabled);
++            regs[2] = notebook.PromptRoot(guest, regs[4], regs[13]);
++            if (const u32 root = ocarina.Root(guest, regs[4], regs[13], false); root != regs[4] + 8) {
++                regs[2] = root;
++            }
++            if (const u32 root = songs.ShadowRoot(guest, regs[4], regs[13]); root != regs[4] + 8) {
++                regs[2] = root;
++            }
++            regs[2] = pause.Root(guest, inventory, item_preview, dungeon_map, notebook, regs[4], regs[13],
++                                 regs[2], system.CoreTiming().GetGlobalTimeUs().count());
++            regs[2] = file_prompt.Root(guest, file_select, options, regs[4],
++                                       regs[2] == regs[4] + 8 ? regs[13] : regs[2], regs[2], false);
++            if (regs[2] != regs[4] + 8) {
++                regs[13] = regs[2];
++            }
++            break;
++        case NativeInventory::FirstSVC + 3:
++            if (dual) {
++                pause.EndDual(guest);
++                if (dual_draw_pass < 4) {
++                    neutral_hud.End(guest);
++                    hud_buttons.End(guest);
++                }
++                guest.Write(regs[6], regs[0]);
++                break;
++            }
++            if (auto sp = file_prompt.End(guest)) {
++                regs[13] = sp;
++            }
++            pause.End(guest, dungeon_map, regs[13]);
++            if (auto sp = songs.shadow_scratch.End(guest)) regs[13] = sp;
++            if (auto sp = ocarina.End(guest)) regs[13] = sp;
++            if (auto sp = notebook.prompt_hook.End(guest)) regs[13] = sp;
++            neutral_hud.End(guest);
++            touch_hud.End(guest);
++            options.End(guest);
++            file_select.End(guest);
++            press_start.End(guest);
++            loading_icon.End(guest);
++            notebook.End(guest);
++            inventory.End(guest);
++            songs.End(guest);
++            dungeon_map.End(guest);
++            hud_buttons.End(guest);
++            pause.present.End(guest);
++            guest.Write(regs[6], regs[0]);
++            break;
++        case DialogueScale::BeforeSVC: {
++            const u32 layout = regs[4];
++            if (dual) {
++                regs[0] = layout + 8;
++                break;
++            }
++            const bool description = item_preview.Description(guest, layout);
++            const bool map_description = dungeon_map.IsDescription(guest, layout);
++            const bool options_description = options.IsDescription(guest, layout);
++            const auto& map = DungeonMap::poses[DungeonMap::Description];
++            const GearMenu::Pose map_pose{map.x.load(), map.y.load(), map.scale.load()};
++            const auto& item = (pause.present.mask_menu ? NativeItemPresent::mask_poses :
++                NativeItemPresent::poses)[NativeItemPresent::Description];
++            const GearMenu::Pose item_pose{item.x.load(), item.y.load(), item.scale.load()};
++            const bool present_description = pause.present.IsDescription(guest, layout);
++            if (present_description) pause.select_help.source.description = layout;
++            pause.dialogue.Begin(guest, layout, description, description && item_preview.gear,
++                options_description ? &options.frame.description :
++                map_description ? &map_pose : present_description ? &item_pose : nullptr);
++            pause.present.BeginPromptPose(guest, layout);
++            regs[0] = layout + 8;
++            break;
++        }
++        case DialogueScale::AfterSVC:
++            if (!dual) {
++                pause.present.EndPromptPose(guest);
++                pause.dialogue.End(guest, regs[4]);
++            }
++            regs[13] += 8;
++            break;
++        case OptionsMenu::DrawSVC:
++            options.Capture(guest, regs[0]);
++            regs[4] = regs[0];
++            break;
++        case OptionsMenu::SelectSVC:
++            regs[2] = OptionsMenu::Selection(guest, regs[0], regs[2]);
++            regs[4] = regs[0];
++            break;
++        default:
++            return false;
++        }
++        return true;
++    }
++
++private:
++    static constexpr u32 ShortcutPC = 0x7d0684, ShortcutWord = 0xe5942034, ShortcutSVC = 0xffffc3;
++    static_assert(ShortcutSVC > MM3D::InventoryNavigation::FirstSVC + 2);
++    static constexpr u32 ItemShoulderPC = 0x7cfbc4, ItemShoulderWord = 0xe3130901;
++    static constexpr u32 ItemShoulderSVC = 0xffffc4, ItemShoulderCopyBackPC = 0x7cfbf0;
++    static_assert(ItemShoulderSVC > ShortcutSVC);
++
++    bool ItemShoulderCodeMatches() {
++        constexpr std::array<std::pair<u32, u32>, 10> guards{{
++            {0x878434, 0xebfd5ddb}, {0x7cfba8, 0xe92d4070}, {0x7cfbb4, 0xe59f51c4},
++            {0x7cfbc0, 0xe1c520b0}, {ItemShoulderPC, ItemShoulderWord}, {0x7cfbe8, 0xe3130902},
++            {0x7cfbec, 0x1a00002e}, {ItemShoulderCopyBackPC, 0xe1d530b0},
++            {0x7cfbf4, 0xe1c43ebd}, {0x7cfd80, 0x007f80fc}}};
++        return std::all_of(guards.begin(), guards.end(),
++                           [this](auto guard) { return guest.Read(guard.first) == guard.second; });
++    }
++
++    bool ShortcutCodeMatches() {
++        constexpr std::array<std::pair<u32, u32>, 7> guards{{
++            {0x7d0660, 0xe92d41f0}, {0x7d0674, 0xe5d4013d}, {ShortcutPC, ShortcutWord},
++            {0x7d0688, 0xe2133902}, {0x7d0698, 0xe2127008},
++            {0x7d06ac, 0xe1120003}, {0x7d0728, 0xe3a00002}}};
++        return std::all_of(guards.begin(), guards.end(),
++                           [this](auto guard) { return guest.Read(guard.first) == guard.second; });
++    }
++
++    void BeginTouchHud(u32 layout) {
++        touch_hud.Begin(guest, layout);
++    }
++
++    bool MatchesTitle() const {
++        const auto process = system.Kernel().GetCurrentProcess();
++        return process && process->codeset && process->codeset->program_id == 0x0004000000125500ULL;
++    }
++
++    Core::System& system;
++    struct GuestMemory {
++        Memory::MemorySystem& memory;
++        std::optional<u32> Read(u32 address) { return memory.Probe32(address); }
++        void Write(u32 address, u32 value) { memory.Write32(address, value); }
++    } guest;
++    MM3D::NativeStartup::Hook title;
++    MM3D::AzaharGameplay::Hook gameplay;
++    MM3D::NativeStartup::PressHook press_start;
++    MM3D::NativeStartup::LoadingIconHook loading_icon;
++    MM3D::NativeFileSelect::Hook file_select;
++    MM3D::OptionsMenu::Hook options;
++    MM3D::FileSelectPrompt::Hook file_prompt;
++    MM3D::PlayerHud::Hook touch_hud;
++    MM3D::IOSMenuPageSwitch::Hook page_switch;
++    MM3D::NativeInventory::Hook inventory;
++    MM3D::DungeonMap::Hook dungeon_map;
++    MM3D::SongList::Hook songs;
++    MM3D::OcarinaPrompt::Hook ocarina;
++    MM3D::NativeNotebook::Hook notebook;
++    MM3D::ItemPreview::Hook item_preview;
++    MM3D::HudButtons::Hook hud_buttons;
++    MM3D::RemaskedHudDraw neutral_hud;
++    u32 dual_draw_pass = 0;
++    RemaskedPauseDraw pause;
++};
++} // namespace Core::FastInterp
+--- a/src/core/file_sys/savedata_archive.cpp
++++ b/src/core/file_sys/savedata_archive.cpp
+@@ -8,6 +8,7 @@
+ #include "core/file_sys/errors.h"
+ #include "core/file_sys/path_parser.h"
+ #include "core/file_sys/savedata_archive.h"
++#include "core/arm/fastinterp/remasked_classic_save.h"
+ 
+ namespace FileSys {
+ 
+@@ -84,7 +85,9 @@
+         break; // Expected 'success' case
+     }
+ 
+-    FileUtil::IOFile file(full_path, mode.write_flag ? "r+b" : "rb");
++    const auto classic_path = MM3D::AzaharClassicSave::Saves.Open(full_path, mode.write_flag);
++    if (!classic_path) return ResultUnsupportedOpenFlags;
++    FileUtil::IOFile file(*classic_path, mode.write_flag ? "r+b" : "rb");
+     if (!file.IsOpen()) {
+         LOG_CRITICAL(Service_FS, "(unreachable) Unknown error opening {}", full_path);
+         return ResultFileNotFound;
+@@ -102,9 +105,14 @@
+         return ResultInvalidPath;
+     }
+ 
+-    const auto full_path = path_parser.BuildHostPath(mount_point);
+-
+-    switch (path_parser.GetHostStatus(mount_point)) {
++    const auto target = MM3D::AzaharClassicSave::Saves.Open(path_parser.BuildHostPath(mount_point), true);
++    if (!target) return ResultUnsupportedOpenFlags;
++    const auto& full_path = *target;
++
++    const bool staged = full_path != path_parser.BuildHostPath(mount_point);
++    const auto status = staged ? (FileUtil::Exists(full_path) ? PathParser::FileFound : PathParser::NotFound)
++                               : path_parser.GetHostStatus(mount_point);
++    switch (status) {
+     case PathParser::InvalidMountPoint:
+         LOG_CRITICAL(Service_FS, "(unreachable) Invalid mount point {}", mount_point);
+         return ResultFileNotFound;
+@@ -147,7 +155,10 @@
+     const auto src_path_full = path_parser_src.BuildHostPath(mount_point);
+     const auto dest_path_full = path_parser_dest.BuildHostPath(mount_point);
+ 
+-    if (FileUtil::Rename(src_path_full, dest_path_full)) {
++    const auto source = MM3D::AzaharClassicSave::Saves.Open(src_path_full, true);
++    const auto target = MM3D::AzaharClassicSave::Saves.Open(dest_path_full, true);
++    if (!source || !target) return ResultUnsupportedOpenFlags;
++    if (FileUtil::Rename(*source, *target)) {
+         return ResultSuccess;
+     }
+ 
+@@ -212,9 +223,14 @@
+         return ResultInvalidPath;
+     }
+ 
+-    const auto full_path = path_parser.BuildHostPath(mount_point);
+-
+-    switch (path_parser.GetHostStatus(mount_point)) {
++    const auto target = MM3D::AzaharClassicSave::Saves.Open(path_parser.BuildHostPath(mount_point), true);
++    if (!target) return ResultUnsupportedOpenFlags;
++    const auto& full_path = *target;
++
++    const bool staged = full_path != path_parser.BuildHostPath(mount_point);
++    const auto status = staged ? (FileUtil::Exists(full_path) ? PathParser::FileFound : PathParser::NotFound)
++                               : path_parser.GetHostStatus(mount_point);
++    switch (status) {
+     case PathParser::InvalidMountPoint:
+         LOG_CRITICAL(Service_FS, "(unreachable) Invalid mount point {}", mount_point);
+         return ResultFileNotFound;
+--- a/src/core/hle/service/hid/hid.cpp
++++ b/src/core/hle/service/hid/hid.cpp
+@@ -24,6 +24,7 @@
+ #include "core/hle/service/ir/ir_user.h"
+ #include "core/hle/service/service.h"
+ #include "core/movie.h"
++#include "mm3d/ocarina_input.h"
+ 
+ SERVICE_CONSTRUCT_IMPL(Service::HID::Module)
+ SERIALIZE_EXPORT_IMPL(Service::HID::Module)
+@@ -162,6 +163,9 @@
+ 
+         system.Movie().HandlePadAndCircleStatus(state, circle_pad_x, circle_pad_y);
+ 
++        u32 remasked_pad = state.hex;
++        MM3D::OcarinaInput::Filter(remasked_pad);
++        state.hex = remasked_pad;
+         mem->pad.current_state.hex = state.hex;
+         mem->pad.index = next_pad_index;
+         next_pad_index = (next_pad_index + 1) % mem->pad.entries.size();
+@@ -257,6 +261,9 @@
+         state.circle_left.Assign(direction.left);
+         state.circle_right.Assign(direction.right);
+ 
++        u32 remasked_pad = state.hex;
++        MM3D::OcarinaInput::Filter(remasked_pad);
++        state.hex = remasked_pad;
+         mem->pad.current_state.hex = state.hex;
+         mem->pad.index = next_pad_index;
+         next_pad_index = (next_pad_index + 1) % mem->pad.entries.size();
+--- a/src/core/memory.cpp
++++ b/src/core/memory.cpp
+@@ -583,7 +583,7 @@
+     }
+ }
+ 
+-template <typename T>
++template <typename T, bool ReportUnmapped>
+ T MemorySystem::Read(const std::shared_ptr<PageTable>& page_table, const VAddr vaddr) {
+     constexpr bool is_optional = is_optional_type<T>;
+     using ReadType = optional_inner_or_type<T>;
+@@ -623,7 +623,7 @@
+     switch (type) {
+     case PageType::Unmapped: {
+ 
+-        UnmappedAccess<ReadType>(vaddr, 0, true);
++        if constexpr (ReportUnmapped) UnmappedAccess<ReadType>(vaddr, 0, true);
+ 
+         if constexpr (is_optional) {
+             return std::nullopt;
+@@ -1079,6 +1079,10 @@
+     return Read<std::optional<u32_le>>(impl->current_page_table, addr);
+ }
+ 
++std::optional<u32> MemorySystem::Probe32(VAddr addr) {
++    return Read<std::optional<u32_le>, false>(impl->current_page_table, addr);
++}
++
+ std::optional<u32> MemorySystem::Read32OrNullopt(const Kernel::Process& process, VAddr addr) {
+     return Read<std::optional<u32_le>>(process.vm_manager.page_table, addr);
+ }
+--- a/src/core/memory.h
++++ b/src/core/memory.h
+@@ -399,6 +399,7 @@
+      * @returns the read 32-bit unsigned value or std::nullopt.
+      */
+     std::optional<u32> Read32OrNullopt(VAddr addr);
++    std::optional<u32> Probe32(VAddr addr);
+ 
+     /**
+      * Reads a 32-bit unsigned value from the process' address space
+@@ -709,7 +710,7 @@
+     template <typename T>
+     void UnmappedAccess(const VAddr vaddr, const T value, bool read);
+ 
+-    template <typename T>
++    template <typename T, bool ReportUnmapped = true>
+     T Read(const std::shared_ptr<PageTable>& page_table, const VAddr vaddr);
+ 
+     template <typename T>
+--- a/src/video_core/renderer_vulkan/vk_rasterizer.cpp
++++ b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
+@@ -8,9 +8,11 @@
+ #include "common/math_util.h"
+ #include "common/microprofile.h"
+ #include "common/settings.h"
++#include "core/arm/fastinterp/RemaskedPicture.h"
+ #include "core/core.h"
+ #include "core/loader/loader.h"
+ #include "core/memory.h"
++#include "video_core/custom_textures/material.h"
+ #include "video_core/pica/pica_core.h"
+ #include "video_core/renderer_vulkan/pica_to_vk.h"
+ #include "video_core/renderer_vulkan/renderer_vulkan.h"
+@@ -602,6 +604,13 @@
+         fs_data_dirty = true;
+     }
+ 
++    const float picture_scale = using_color_fb && !shadow_rendering
++        ? MM3D::AzaharPicture::ClipScale(regs, pica.vs_setup, write_depth_fb) : 1.f;
++    if (vs_data.picture_scale != picture_scale) {
++        vs_data.picture_scale = picture_scale;
++        vs_data_dirty = true;
++    }
++
+     // Sync and bind the texture surfaces
+     SyncTextureUnits(framebuffer);
+     SyncUtilityTextures(framebuffer);
+@@ -721,7 +730,24 @@
+ 
+         // Bind the texture provided by the rasterizer cache
+         Surface& surface = res_cache.GetTextureSurface(texture);
+-        Sampler& sampler = res_cache.GetSampler(texture.config);
++        auto sample_config = texture.config;
++        if (surface.IsCustom() && surface.material &&
++            (surface.material->hash == 0xa4890349af9fffb4ULL ||
++             surface.material->hash == 0xe2cebcB19da2608fULL)) {
++            // The ReMasked atlas has antialiased edges at its replacement
++            // resolution. Do not point-sample those subpixels like the stock atlas.
++            using Filter = Pica::TexturingRegs::TextureConfig::TextureFilter;
++            static bool reported_hud_sampling = false;
++            if (!reported_hud_sampling) {
++                LOG_WARNING(Render_Vulkan, "ReMasked HUD atlas: previous filters min={} mag={} lod={}-{}",
++                            unsigned(sample_config.min_filter.Value()), unsigned(sample_config.mag_filter.Value()),
++                            unsigned(sample_config.lod.min_level.Value()), unsigned(sample_config.lod.max_level.Value()));
++                reported_hud_sampling = true;
++            }
++            sample_config.min_filter.Assign(Filter::Linear);
++            sample_config.mag_filter.Assign(Filter::Linear);
++        }
++        Sampler& sampler = res_cache.GetSampler(sample_config);
+         const vk::ImageView color_view = framebuffer->ImageView(SurfaceType::Color);
+         const bool is_feedback_loop = color_view == surface.FramebufferView();
+         const vk::ImageView texture_view =
+--- a/src/video_core/shader/generator/glsl_shader_gen.cpp
++++ b/src/video_core/shader/generator/glsl_shader_gen.cpp
+@@ -35,6 +35,7 @@
+ #endif
+     bool enable_clip1;
+     bool flip_viewport;
++    float picture_scale;
+     vec4 clip_coef;
+ )"
+ #ifdef ENABLE_FREECAM
+@@ -72,10 +73,10 @@
+ 
+ #ifdef ENABLE_FREECAM
+ constexpr std::string_view PositionOutput =
+-    "    gl_Position = ApplyFreeCam(vec4(vtx_pos.x, vtx_pos.y, -vtx_pos.z, vtx_pos.w));\n";
++    "    gl_Position = ApplyFreeCam(vec4(vtx_pos.x, vtx_pos.y * picture_scale, -vtx_pos.z, vtx_pos.w));\n";
+ #else
+ constexpr std::string_view PositionOutput =
+-    "    gl_Position = vec4(vtx_pos.x, vtx_pos.y, -vtx_pos.z, vtx_pos.w);\n";
++    "    gl_Position = vec4(vtx_pos.x, vtx_pos.y * picture_scale, -vtx_pos.z, vtx_pos.w);\n";
+ #endif
+ 
+ static std::string GetVertexInterfaceDeclaration(bool is_output, bool use_clip_planes,
+--- a/src/video_core/shader/generator/shader_uniforms.h
++++ b/src/video_core/shader/generator/shader_uniforms.h
+@@ -72,6 +72,7 @@
+ struct VSUniformData {
+     u32 enable_clip1;
+     u32 flip_viewport;
++    float picture_scale = 1.f;
+     alignas(16) Common::Vec4f clip_coef;
+ #ifdef ENABLE_FREECAM
+     alignas(16) std::array<Common::Vec4f, 4> freecam_matrix{
+--- a/src/core/cheats/cheats.cpp
++++ b/src/core/cheats/cheats.cpp
+@@ -10,6 +10,9 @@
+ #include "core/cheats/gateway_cheat.h"
+ #include "core/core.h"
+ #include "core/core_timing.h"
++#include "core/hle/kernel/process.h"
++#include "core/memory.h"
++#include "mm3d/simple_cheats.h"
+ 
+ namespace Cheats {
+ 
+@@ -27,6 +30,7 @@
+ 
+ void CheatEngine::Connect(u32 process_id) {
+     this->process_id = process_id;
++    MM3D::SimpleCheats::Reset();
+     event = system.CoreTiming().RegisterEvent(
+         "CheatCore::run_event",
+         [this](u64 thread_id, s64 cycle_late) { RunCallback(thread_id, cycle_late); });
+@@ -104,6 +108,18 @@
+ }
+ 
+ void CheatEngine::RunCallback([[maybe_unused]] std::uintptr_t user_data, s64 cycles_late) {
++    if (auto process = system.Kernel().GetProcessById(process_id)) {
++        struct Guest {
++            Memory::MemorySystem& memory;
++            const Kernel::Process& process;
++            std::optional<u32> Read(u32 address) { return memory.Read32OrNullopt(process, address); }
++            void Write(u32 address, u32 value) { memory.Write32(process, address, value); }
++        } guest{system.Memory(), *process};
++        MM3D::SimpleCheats::Tick(guest, process->codeset &&
++            process->codeset->program_id == 0x0004000000125500ULL);
++    } else {
++        MM3D::SimpleCheats::Reset();
++    }
+     {
+         std::shared_lock lock{cheats_list_mutex};
+         for (const auto& cheat : cheats_list) {
+@@ -116,3 +132,16 @@
+ }
+ 
+ } // namespace Cheats
++
++extern "C" void remasked_get_cheats(int* state) {
++    const auto values = MM3D::SimpleCheats::SessionState();
++    for (std::size_t i = 0; i < values.size(); ++i) state[i] = values[i];
++}
++
++extern "C" bool remasked_queue_cheat(int action) {
++    return MM3D::SimpleCheats::RequestAction(action);
++}
++
++extern "C" bool remasked_set_continuous_cheat(int index, bool enabled) {
++    return MM3D::SimpleCheats::SetContinuous(index, enabled);
++}
+--- a/src/citra_libretro/libretro.osx.def
++++ b/src/citra_libretro/libretro.osx.def
+@@ -25,3 +25,6 @@
+ _retro_get_region
+ _retro_get_memory_data
+ _retro_get_memory_size
++_remasked_get_cheats
++_remasked_queue_cheat
++_remasked_set_continuous_cheat

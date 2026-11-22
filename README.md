@@ -4,7 +4,7 @@
 
 **Tailored for High Res 60 FPS with Player Model Mods in Majora’s Mask 3D.**
 
-Supports Android, Windows, Linux, and macOS.
+Supports Android, iPhone, iPad, Windows, Linux, and macOS. The iPhone and iPad download is an unsigned IPA.
 
 Majora ReMasked builds on [tgacquin’s DekUI](https://github.com/tgacquin/mm3d-dekui), the [Azahar emulator](https://github.com/azahar-emu/azahar), and [Project Restoration](https://restoration.zora.re/). It runs MM3D through an adapted 3DS emulator; it is not a game recompilation or a native rewrite of the game.
 

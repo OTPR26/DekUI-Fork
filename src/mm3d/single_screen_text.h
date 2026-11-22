@@ -25,8 +25,8 @@ template<class M> bool CodeMatches(M& m) {
     return m.Read(0x7d07a4)==0xea00033bu&&m.Read(0x7d079c)==0xe1510003u;
 }
 inline bool Pointer(U32 p,U32 n=4){return p>=0x100000&&n<=0x1000000&&p<=0x40000000-n;}
-template<class M> bool Apply(M& m,U32 self,U32 id) {
-    bool active=enabled.load();
+template<class M> bool Apply(M& m,U32 self,U32 id,bool single_screen=true) {
+    bool active=enabled.load()&&single_screen;
     bool return_notice=false;
     const Replacement* screen_replacement=nullptr;
     for(const auto& r:SingleScreenReplacements)if(r.id==id){screen_replacement=&r;break;}
@@ -62,8 +62,11 @@ template<class M> bool Apply(M& m,U32 self,U32 id) {
         }
     }
     const bool english_prompt=language==2&&id!=0x0c01;
+    // The neutral recipes for shared entries also contain the single-screen
+    // directions. Keep the native touchscreen directions on two displays.
+    const bool neutral=neutral_enabled.load()&&(single_screen||!screen_replacement);
     const Replacement* selected=english_prompt?
-        (neutral_enabled.load()?replacement:(active?screen_replacement:nullptr)):
+        (neutral?replacement:(active?screen_replacement:nullptr)):
         (active?replacement:nullptr);
     auto count=m.Read(*base+8);
     if(!count||!*count||*count>20000||16+*count*20>*size)return false;
