@@ -86,3 +86,13 @@ class WindowsPackageTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(ValueError):
                 package_windows.package(Path(tmp), Path(tmp) / 'out.zip', Path(tmp) / 'python.zip')
+
+    def test_rejects_dynamic_sdl2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = Path(tmp)
+            plugin = bundle / 'plugins/platforms/qwindows.dll'
+            plugin.parent.mkdir(parents=True)
+            for path in (plugin, bundle / 'azahar.exe', bundle / 'SDL2.dll'):
+                path.touch()
+            with self.assertRaisesRegex(ValueError, r'Unexpected SDL2\.dll'):
+                package_windows.package(bundle, bundle / 'out.zip', bundle / 'python.zip')

@@ -21,6 +21,8 @@ def package(bundle, output, python_archive, architecture='x64', strip_tool=None)
         raise ValueError('Missing bundled azahar.exe')
     if not (bundle / 'plugins/platforms/qwindows.dll').is_file():
         raise ValueError('Missing Qt Windows platform plugin')
+    if any(p.is_file() and p.name.lower() == 'sdl2.dll' for p in bundle.iterdir()):
+        raise ValueError('Unexpected SDL2.dll in Windows bundle. Build with bundled static SDL2.')
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / 'dekui'; root.mkdir()
         shutil.copy2(bundle / 'azahar.exe', root / 'Majora-ReMasked.exe')
